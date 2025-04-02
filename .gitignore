@@ -173,3 +173,6 @@ cython_debug/
 datasets/
 models/
 !backend/models/
+dataset
+
+node_modules/
