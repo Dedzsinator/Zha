@@ -1,0 +1,14 @@
+# Start the backend server (in one terminal)
+python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000
+
+# In another terminal, test with curl
+# First, check if the API is healthy
+curl http://localhost:8000/health
+
+# Generate music using the Markov model (simplest as it doesn't need input MIDI)
+curl -X POST http://localhost:8000/generate/markov \
+  -F "start_note=60" \
+  -F "length=64" \
+  -F "duration=30" \
+  -F "instrument=piano" \
+  -F "generate_audio=true"

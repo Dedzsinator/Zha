@@ -176,3 +176,6 @@ models/
 dataset
 
 node_modules/
+venv/
+trained_models/
+generated_files/
