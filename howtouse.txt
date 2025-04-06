@@ -12,3 +12,66 @@ curl -X POST http://localhost:8000/generate/markov \
   -F "duration=30" \
   -F "instrument=piano" \
   -F "generate_audio=true"
+
+curl -X POST http://localhost:8000/generate/combined \
+  -F "midi_file=@/path/to/your/input.mid" \
+  -F "instrument=piano" \
+  -F "creativity=0.7" \
+  -F "duration=45" \
+  -F "should_generate_audio=true"
+
+# First generate a Markov MIDI file
+curl -X POST http://localhost:8000/generate/markov \
+  -F "start_note=60" \
+  -F "length=64" \
+  -F "duration=30" \
+  -F "instrument=piano" \
+  -F "should_generate_audio=true"
+
+# Then look at the response to get the MIDI filename
+# Use that file for combined generation:
+curl -X POST http://localhost:8000/generate/combined \
+  -F "midi_file=@generated_files/midi/markov_263678ed.mid" \
+  -F "instrument=piano" \
+  -F "creativity=0.7" \
+  -F "duration=45" \
+  -F "should_generate_audio=true"
+
+# if generated from docs endpoint then:
+curl -o downloaded_music.mid http://localhost:8000/download/midi/combined_118204d6.mid
+
+curl -X POST http://localhost:8000/generate/structured_transformer \
+  -F "midi_file=@generated_files/midi/markov_0f6aff2c.mid" \
+  -F "num_sections=4" \
+  -F "section_length=16" \
+  -F "transition_smoothness=0.7" \
+  -F "temperature=0.8" \
+  -F "duration=60" \
+  -F "instrument=piano" \
+  -F "should_generate_audio=true"
+
+curl -X POST http://localhost:8000/generate/musical_markov \
+  -F "start_note=60" \
+  -F "key_context=C" \
+  -F "length=64" \
+  -F "duration=30" \
+  -F "instrument=guitar" \
+  -F "should_generate_audio=true"
+
+  curl -X POST http://localhost:8000/generate/markov \
+  -F "start_note=65" \
+  -F "length=64" \
+  -F "key_context=G major" \
+  -F "duration=30" \
+  -F "instrument=piano" \
+  -F "should_generate_audio=true"
+
+  curl -X POST http://localhost:8000/generate/transformer \
+  -F "midi_file=@generated_files/midi/markov_XXXXXXXX.mid" \
+  -F "temperature=0.7" \
+  -F "steps=100" \
+  -F "top_k=5" \
+  -F "top_p=0.92" \
+  -F "duration=45" \
+  -F "instrument=violin" \
+  -F "should_generate_audio=true"
