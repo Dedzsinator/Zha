@@ -1,216 +1,161 @@
 import os
-import numpy as np
-from music21 import converter
+import glob
+import multiprocessing
 import warnings
-import multiprocessing as mp
+import sys
+import numpy as np
+from music21 import converter, environment
 from tqdm import tqdm
-import inspect
+import logging
 from backend.models.markov_chain import MarkovChain
-import matplotlib.pyplot as plt
-import torch  # For GPU memory monitoring even though Markov doesn't use PyTorch
 
-# Filter warnings
-warnings.filterwarnings("ignore", category=UserWarning)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-class MIDIProcessor:
-    def __init__(self, midi_dir):
-        self.midi_dir = midi_dir
-        self.file_list = []
+# Suppress ALL Music21 warnings and errors
+warnings.filterwarnings("ignore")
+environment.Environment().warn = False
 
-        # Walk through all subdirectories to find MIDI files
-        for root, _, files in os.walk(midi_dir):
-            for file in files:
-                if file.endswith('.mid'):
-                    full_path = os.path.join(root, file)
-                    self.file_list.append(full_path)
-
-        print(f"Found {len(self.file_list)} MIDI files")
-
-        # Cache to avoid processing the same file multiple times
-        self.cache = {}
-
-    def extract_notes_from_midi(self, midi_path):
-        """Extract note sequences from a MIDI file with caching"""
-        if midi_path in self.cache:
-            return self.cache[midi_path]
-
-        try:
-            # Parse the MIDI file
-            score = converter.parse(midi_path)
-
-            # Extract notes
-            notes = []
-            for element in score.flatten():  # Use flatten() instead of flat
-                if hasattr(element, 'pitch'):
-                    notes.append(element.pitch.midi)
-
-            # Cache the result
-            self.cache[midi_path] = notes
-            return notes
-
-        except Exception as e:
-            print(f"Error processing {midi_path}: {e}")
-            return []
-
-    def process_file_batch(self, file_batch):
-        """Process a batch of files and return their note sequences"""
-        results = []
-        for midi_file in file_batch:
-            notes = self.extract_notes_from_midi(midi_file)
-            if notes:  # Only include non-empty sequences
-                results.append(notes)
-        return results
-
-    def process_in_parallel(self, batch_size=10, num_workers=None):
-        """Process all files in parallel with efficient batching"""
-        if num_workers is None:
-            num_workers = max(1, mp.cpu_count() - 1)
-
-        # Group files into batches for better efficiency
-        batches = [self.file_list[i:i+batch_size] for i in range(0, len(self.file_list), batch_size)]
-
-        print(f"Processing {len(self.file_list)} files in {len(batches)} batches using {num_workers} workers")
-
-        all_sequences = []
-
-        # Using process pool for parallel processing
-        with mp.Pool(processes=num_workers) as pool:
-            # Process batches in parallel
-            batch_results = list(tqdm(
-                pool.imap(self.process_file_batch, batches),
-                total=len(batches),
-                desc="Processing MIDI batches"
-            ))
-
-            # Flatten results
-            for batch_result in batch_results:
-                all_sequences.extend(batch_result)
-
-        print(f"Successfully processed {len(all_sequences)} sequences")
-        return all_sequences
-
-def train_markov_model(midi_dir="dataset/midi/",
-                       order=2,
-                       batch_size=20,
-                       num_workers=None):
-    """Train an optimized Markov Chain model with parallel processing"""
-    print("Starting optimized Markov model training...")
-
-    if torch.cuda.is_available():
-        # Monitor GPU usage even though Markov doesn't use GPU directly
-        print(f"GPU available: {torch.cuda.get_device_name(0)}")
-        print(f"Will monitor GPU memory usage during processing")
-
-        # Clear GPU memory from any previous tasks
-        torch.cuda.empty_cache()
-        start_mem = torch.cuda.memory_allocated() / 1e9
-        print(f"Initial GPU memory allocated: {start_mem:.2f} GB")
-
-    # Initialize the processor
-    processor = MIDIProcessor(midi_dir)
-
-    # Process files in parallel
-    all_sequences = processor.process_in_parallel(batch_size=batch_size, num_workers=num_workers)
-
-    if not all_sequences:
-        print("No valid sequences found. Check your MIDI files.")
+def process_midi_file(file_path):
+    """Process a single MIDI file for Markov chain training with robust error handling"""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # Using no21 environment to suppress errors
+            us = environment.UserSettings()
+            us['warnings'] = 0
+            score = converter.parse(file_path)
+        return score
+    except Exception as e:
         return None
 
-    # Display some statistics about the dataset
-    seq_lengths = [len(seq) for seq in all_sequences]
-    avg_length = sum(seq_lengths) / len(seq_lengths)
-    print(f"Dataset statistics:")
-    print(f"  - Total sequences: {len(all_sequences)}")
-    print(f"  - Average sequence length: {avg_length:.2f} notes")
-    print(f"  - Min sequence length: {min(seq_lengths)}")
-    print(f"  - Max sequence length: {max(seq_lengths)}")
-
-    # Initialize Markov model - don't pass order parameter as it's not supported
-    print(f"\nTraining Markov model (desired order: {order})...")
-    model = MarkovChain()
-
-    # Check if the model has a method to set the order
-    if hasattr(model, 'set_order'):
-        model.set_order(order)
-        print(f"Set Markov chain order to {order}")
-    elif hasattr(model, 'order'):
-        # Try setting the attribute directly if it exists
-        try:
-            model.order = order
-            print(f"Set Markov chain order to {order}")
-        except:
-            print(f"Warning: Could not set Markov chain order to {order}. Using default.")
-    else:
-        print(f"Warning: MarkovChain doesn't support setting order parameter. Using default order.")
-
-    # Check if the train method accepts a progress_callback parameter
-    train_params = inspect.signature(model.train).parameters
-    supports_progress = 'progress_callback' in train_params
-
-    if supports_progress:
-        # If the model supports progress callbacks, use them
-        with tqdm(total=len(all_sequences), desc="Training Markov model") as pbar:
-            model.train(all_sequences, progress_callback=lambda x: pbar.update(1))
-    else:
-        # Otherwise train without progress updates
-        print("Training Markov model (no progress updates available)...")
-        # Simply train on all sequences at once
-        model.train(all_sequences)
-        print("Training complete.")
-
-    # Create directory for trained models if it doesn't exist
-    os.makedirs("trained_models", exist_ok=True)
-
-    # Save the trained model
-    model.save("trained_models/trained_markov.npy")
-    print("Markov model trained and saved to trained_models/trained_markov.npy")
-
-    # Optional: visualize transition probabilities for common notes
+def train_markov_model(midi_dir="dataset/midi", order=2, max_interval=12, output_dir="output/trained_models"):
+    """Train Markov chain model with optimized processing and clear feedback"""
+    logger.info(f"Initializing Markov model (order={order}, max_interval={max_interval})")
+    model = MarkovChain(order=order, max_interval=max_interval)
+    
+    # Scan for MIDI files efficiently
+    logger.info("Scanning for MIDI files...")
+    midi_files = []
+    
+    # Use glob for faster file finding
+    for pattern in ['**/*.mid', '**/*.midi']:
+        midi_files.extend(glob.glob(os.path.join(midi_dir, pattern), recursive=True))
+    
+    # Remove duplicates
+    midi_files = list(set(midi_files))
+    
+    if not midi_files:
+        logger.error(f"No MIDI files found in {midi_dir}")
+        return None
+    
+    logger.info(f"Found {len(midi_files)} MIDI files")
+    
+    # Process files in parallel with optimized chunking
+    logger.info("Processing MIDI files in parallel...")
+    cpu_count = max(1, multiprocessing.cpu_count() - 1)
+    
+    # Use larger chunks for better performance
+    chunk_size = max(1, min(100, len(midi_files) // (cpu_count * 2)))
+    
+    with multiprocessing.Pool(processes=cpu_count) as pool:
+        scores = list(tqdm(
+            pool.imap(process_midi_file, midi_files, chunksize=chunk_size),
+            total=len(midi_files),
+            desc="Processing MIDI files"
+        ))
+    
+    # Filter out None results
+    scores = [s for s in scores if s is not None]
+    
+    if not scores:
+        logger.error("No valid scores were processed")
+        return None
+    
+    logger.info(f"Successfully processed {len(scores)}/{len(midi_files)} files")
+    
+    # Train model with progress tracking
+    logger.info("Training Markov model...")
+    progress_bar = tqdm(total=100, desc="Training")
+    
+    def update_progress(percent):
+        progress_bar.update(int(percent * 100) - progress_bar.n)
+    
+    model.train(scores, progress_callback=update_progress)
+    progress_bar.close()
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "trained_markov.npy")
+    
+    # Save model
     try:
-        # Generate a visualization of transition probabilities
-        plt.figure(figsize=(10, 8))
-
-        # Get some of the most common notes from middle C region
-        common_notes = list(range(60, 72))  # Middle C to B
-
-        # Get transition probabilities for these common notes if available
-        if hasattr(model, 'transitions') and len(common_notes) > 0:
-            # Create a heatmap of transition probabilities
-            probabilities = np.zeros((len(common_notes), len(common_notes)))
-
-            for i, from_note in enumerate(common_notes):
-                for j, to_note in enumerate(common_notes):
-                    if from_note < model.transitions.shape[0] and to_note < model.transitions.shape[1]:
-                        probabilities[i, j] = model.transitions[from_note, to_note]
-
-            plt.imshow(probabilities, cmap='viridis')
-            plt.colorbar(label="Transition Probability")
-            plt.title("Markov Chain Transition Probabilities")
-            plt.xlabel("To Note")
-            plt.ylabel("From Note")
-
-            # Label axes with note names
-            note_names = ['C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4']
-            plt.xticks(range(len(common_notes)), note_names, rotation=45)
-            plt.yticks(range(len(common_notes)), note_names)
-
-            plt.savefig("markov_transitions.png")
-            print("Created visualization of transition probabilities at markov_transitions.png")
+        model.save(output_path)
+        logger.info(f"Model saved to {output_path}")
     except Exception as e:
-        print(f"Could not create transition visualization: {e}")
-
-    # Show final memory usage
-    if torch.cuda.is_available():
-        end_mem = torch.cuda.memory_allocated() / 1e9
-        print(f"Final GPU memory allocated: {end_mem:.2f} GB")
-
+        logger.error(f"Failed to save model: {e}")
+        # Try an alternate save location
+        try:
+            alt_path = os.path.join(os.path.dirname(output_dir), "trained_markov_fallback.npy")
+            model.save(alt_path)
+            logger.info(f"Model saved to alternate location: {alt_path}")
+        except Exception as e2:
+            logger.error(f"All save attempts failed: {e2}")
+    
+    # Output model statistics
+    logger.info("\nModel Statistics:")
+    
+    # Get note transition matrix dimensions
+    if hasattr(model.transitions, 'shape'):
+        logger.info(f"Note transitions: {model.transitions.shape}")
+    
+    # Count interval transitions
+    interval_transitions = len(model.interval_transitions)
+    logger.info(f"Interval transitions: {interval_transitions}")
+    
+    # Log musical features
+    musical_features = [
+        ("Common keys", model.musical_features['common_keys']),
+        ("Chord progressions", model.musical_features['common_chord_progressions']),
+        ("Rhythm patterns", model.musical_features['rhythm_patterns']),
+        ("Time signatures", model.musical_features['time_signatures']),
+        ("Roman numeral transitions", model.musical_features['roman_numeral_transitions'])
+    ]
+    
+    for name, data in musical_features:
+        if data:
+            count = len(data)
+            examples = str(list(data.keys())[:3]) if hasattr(data, 'keys') else "..."
+            logger.info(f"{name}: {count} entries (e.g. {examples})")
+    
     return model
 
 if __name__ == "__main__":
-    # You can adjust these parameters based on your system
-    train_markov_model(
-        midi_dir="dataset/midi/",
-        order=2,
-        batch_size=20,
-        num_workers=None  # Auto-detect number of workers
-    )
+    # Get dataset directory with validation
+    default_dir = "dataset/midi"
+    
+    if len(sys.argv) > 1:
+        custom_dir = sys.argv[1]
+        if os.path.exists(custom_dir):
+            midi_dir = custom_dir
+        else:
+            logger.error(f"Directory not found: {custom_dir}")
+            sys.exit(1)
+    elif not os.path.exists(default_dir):
+        logger.warning(f"Default directory '{default_dir}' not found.")
+        print("Enter the path to your MIDI directory:")
+        custom_dir = input("> ").strip()
+        if custom_dir and os.path.exists(custom_dir):
+            midi_dir = custom_dir
+        else:
+            logger.error("Invalid directory")
+            sys.exit(1)
+    else:
+        midi_dir = default_dir
+    
+    # Allow custom parameters from command line
+    order = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+    max_interval = int(sys.argv[3]) if len(sys.argv) > 3 else 12
+    
+    train_markov_model(midi_dir=midi_dir, order=order, max_interval=max_interval)

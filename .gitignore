@@ -177,5 +177,6 @@ dataset
 
 node_modules/
 venv/
+output/
 trained_models/
 generated_files/

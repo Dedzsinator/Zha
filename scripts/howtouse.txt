@@ -14,7 +14,7 @@ curl -X POST http://localhost:8000/generate/markov \
   -F "generate_audio=true"
 
 curl -X POST http://localhost:8000/generate/combined \
-  -F "midi_file=@/path/to/your/input.mid" \
+  -F "midi_file=@generated_files/midi/markov_0f6aff2c.mid" \
   -F "instrument=piano" \
   -F "creativity=0.7" \
   -F "duration=45" \

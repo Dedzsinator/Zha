@@ -1,7 +1,15 @@
+import mido
 import numpy as np
-import torch
-from mido import MidiFile, MidiTrack, Message, MetaMessage
-import pretty_midi
+from mido import Message, MidiFile, MidiTrack
+import os
+from pathlib import Path
+import uuid
+import subprocess
+import time
+import shutil
+import math  # Add this import
+import pretty_midi  # Make sure this is imported too
+import logging
 
 def parse_midi(midi_path):
     """
@@ -97,3 +105,200 @@ def create_midi_file(feature_vector, output_path, bpm=120, duration_seconds=30):
     except Exception as e:
         print(f"Error creating MIDI file: {e}")
         return False
+
+def create_midi_with_durations(notes, durations, output_path, time_signature="4/4"):
+    """
+    Create a MIDI file with specific note durations
+    
+    Args:
+        notes: List of MIDI note numbers (0-127)
+        durations: List of durations in quarter notes (0.5 = eighth note, 1.0 = quarter, etc.)
+        output_path: Path to save the MIDI file
+        time_signature: Time signature string (e.g. "4/4", "3/4")
+    """
+    try:
+        from midiutil.MidiFile import MIDIFile
+        import os
+        
+        # Create MIDI file with 1 track
+        mf = MIDIFile(1)
+        
+        # Set track information
+        track = 0
+        channel = 0
+        time = 0  # Start at beginning
+        tempo = 120  # BPM - ensure this is a number, not a string
+        
+        # Add track name and tempo
+        mf.addTrackName(track, time, "Markov Chain Generated Track")
+        mf.addTempo(track, time, tempo)
+        
+        # Parse time signature
+        try:
+            numerator, denominator = map(int, time_signature.split('/'))
+            # Set time signature (numerator, denominator are encoded as bit shifts)
+            denominator_bits = {1: 0, 2: 1, 4: 2, 8: 3, 16: 4, 32: 5}.get(denominator, 2)
+            mf.addTimeSignature(track, time, numerator, denominator_bits, 24, 8)
+        except Exception as e:
+            logger.warning(f"Failed to parse time signature {time_signature}: {e}, defaulting to 4/4")
+            mf.addTimeSignature(track, time, 4, 2, 24, 8)
+        
+        # Ensure we have valid notes to add
+        if not notes:
+            logger.error("No notes provided for MIDI creation")
+            return False
+            
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+        
+        # Add notes with their durations
+        for i, (note_num, duration) in enumerate(zip(notes, durations)):
+            if 0 <= note_num < 128:
+                velocity = 100  # Default velocity
+                
+                # Add a bit of velocity variation
+                if i % 4 == 0:
+                    velocity = 112  # Emphasize first beat
+                elif i % 2 == 0:
+                    velocity = 96
+                
+                # Add the note
+                mf.addNote(track, channel, note_num, time, duration, velocity)
+                
+                # Increment time
+                time += duration
+        
+        # Write the MIDI file with error handling
+        try:
+            with open(output_path, 'wb') as outf:
+                mf.writeFile(outf)
+            
+            # Verify file was created
+            if not os.path.exists(output_path):
+                logger.error(f"MIDI file was not created at {output_path}")
+                return False
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error writing MIDI file: {e}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in create_midi_with_durations: {e}")
+        return False
+
+def create_midi_with_chords_and_durations(notes, durations, chords=None, bpm=120, output_path=None, instrument=0):
+    """
+    Create a MIDI file with specific note durations and chord accompaniment.
+    
+    Args:
+        notes: List of MIDI note numbers (0-127)
+        durations: List of note durations in beats (quarter notes)
+        chords: List of chord names (optional)
+        bpm: Tempo in beats per minute
+        output_path: Path to save the MIDI file
+        instrument: MIDI instrument number (0-127)
+        
+    Returns:
+        Path to the created MIDI file
+    """
+    if output_path is None:
+        output_dir = Path("generated_files/midi")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = str(output_dir / f"musical_markov_{uuid.uuid4().hex[:8]}.mid")
+    
+    # Create MIDI file with two tracks (melody + chords)
+    mid = MidiFile(ticks_per_beat=480)
+    melody_track = MidiTrack()
+    chord_track = MidiTrack()
+    mid.tracks.append(melody_track)
+    mid.tracks.append(chord_track)
+    
+    # Set tempo
+    tempo = mido.bpm2tempo(bpm)
+    melody_track.append(Message('program_change', program=instrument, time=0))
+    chord_track.append(Message('program_change', program=instrument, time=0))
+    melody_track.append(mido.MetaMessage('set_tempo', tempo=tempo))
+    
+    # Add melody notes
+    current_time = 0
+    melody_events = []
+    
+    for note, duration in zip(notes, durations):
+        if note is not None and 0 <= note <= 127 and duration > 0:
+            duration_ticks = int(duration * mid.ticks_per_beat)
+            
+            # Add note on at current time
+            melody_events.append((current_time, 'note_on', note))
+            # Add note off after duration
+            melody_events.append((current_time + duration_ticks, 'note_off', note))
+            
+            # Move time forward
+            current_time += duration_ticks
+    
+    # Sort events by time
+    melody_events.sort()
+    
+    # Add events to track with correct delta times
+    last_time = 0
+    for time, event_type, note in melody_events:
+        delta = time - last_time
+        if event_type == 'note_on':
+            melody_track.append(Message('note_on', note=note, velocity=64, time=delta))
+        else:
+            melody_track.append(Message('note_off', note=note, velocity=64, time=delta))
+        last_time = time
+    
+    # Add chords if provided
+    if chords:
+        # Implementation for chord accompaniment
+        # This is simplified and would need to be expanded based on how 
+        # your chord representation works
+        pass
+    
+    # Save MIDI file
+    mid.save(output_path)
+    return output_path
+
+def parse_key_context(key_context):
+    """
+    Parse a key context string into root and mode components
+    
+    Args:
+        key_context: String like 'C major' or 'A minor'
+        
+    Returns:
+        Tuple of (root, mode)
+    """
+    if not key_context:
+        return "C", "major"  # Default key
+        
+    # Clean input
+    key_context = key_context.strip()
+    
+    # Handle format like "C major"
+    if " " in key_context:
+        parts = key_context.split(" ", 1)
+        root = parts[0].strip()
+        mode = parts[1].strip().lower()
+    else:
+        # Handle shorthand formats like "Cmaj" or "Amin"
+        root = key_context[0]  # First character is the root
+        if len(key_context) > 1 and key_context[1] in ('#', 'b'):
+            root += key_context[1]  # Include accidental
+            mode_start = 2
+        else:
+            mode_start = 1
+            
+        mode = key_context[mode_start:].lower()
+    
+    # Map mode variations to standard names
+    mode_map = {
+        "maj": "major", "major": "major", "m": "major", "M": "major",
+        "min": "minor", "minor": "minor", "m": "minor"
+    }
+    
+    # Standardize mode name
+    mode = mode_map.get(mode, "major")
+    
+    return root, mode

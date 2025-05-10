@@ -25,6 +25,10 @@ class PositionalEncoding(nn.Module):
         
         # Add dropout for regularization
         self.dropout = nn.Dropout(0.1)
+        
+        self.memory = None
+        self.memory_length = 0
+        self.section_memories = {}
 
     def forward(self, x):
         """
@@ -39,9 +43,9 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
 
-class MusicTransformerModel(nn.Module):
+class TransformerModel(nn.Module):
     def __init__(self, input_dim=128, embed_dim=512, num_heads=8,
-                 num_layers=8, dim_feedforward=2048, dropout=0.1):
+                num_layers=8, dim_feedforward=2048, dropout=0.1):
         """
         Enhanced Music Transformer model for sequence generation
         
@@ -53,7 +57,7 @@ class MusicTransformerModel(nn.Module):
             dim_feedforward: Dimension of feedforward network
             dropout: Dropout rate
         """
-        super(MusicTransformerModel, self).__init__()
+        super(TransformerModel, self).__init__()
         
         # Input projection
         self.embedding = nn.Linear(input_dim, embed_dim)
@@ -79,61 +83,67 @@ class MusicTransformerModel(nn.Module):
         # Output projection
         self.output_projection = nn.Linear(embed_dim, input_dim)
         
-        # Initialize memory for long-term memory in generation
-        self.memory = None
-        self.memory_key = None
-        self.memory_length = 0
-        
-        # For section-based generation
-        self.section_memories = {}
-        
         # Initialize mask for auto-regressive generation
         self._generate_square_subsequent_mask = self._generate_mask
 
-    def forward(self, x, sections=None, use_memory=False):
+    def forward(self, x, use_memory=False):
         """
         Forward pass through the transformer
         
         Args:
-            x: Input tensor [batch_size, seq_len, input_dim]
-            sections: Optional section IDs for structured generation
-            use_memory: Whether to use past memory for generation
+            x: Input tensor [batch_size, input_dim] or [batch_size, seq_len, input_dim]
+            use_memory: Whether to use stored memory for generation
             
         Returns:
-            Output tensor [batch_size, seq_len, input_dim]
+            Output tensor [batch_size, input_dim] or [batch_size, seq_len, input_dim]
         """
+        # Handle input shape - add sequence dimension if needed
+        if len(x.shape) == 2:
+            # If input is [batch_size, features], reshape to [batch_size, 1, features]
+            x = x.unsqueeze(1)
+        
+        # If using memory for generation and memory exists, concatenate with input
+        if use_memory and hasattr(self, 'memory') and self.memory is not None:
+            x = torch.cat([self.memory, x], dim=1)
+        
         # Project input to embedding dimension
         x = self.embedding(x)
         
         # Add positional encoding
         x = self.pos_encoder(x)
         
-        # If using memory from previous generations
-        if use_memory and self.memory is not None:
-            # Concatenate memory with current input along sequence dimension
-            x = torch.cat([self.memory, x], dim=1)
-        
         # Pass through transformer encoder
         output = self.transformer_encoder(x)
         
-        # If we're using memory, store the current output as memory
-        if use_memory:
-            # Store the last sequence as memory for next generation
-            self.memory = output.detach()  # Detach to prevent backprop through memory
-            self.memory_length = output.size(1)  # Keep track of memory length
-            
         # Project output back to input dimension
         output = self.output_projection(output)
         
-        # Apply softmax to get probability distribution over notes
-        return F.softmax(output, dim=-1)
+        # Update memory if we're using it
+        if use_memory:
+            # Store the full sequence output in memory
+            if not hasattr(self, 'memory') or self.memory is None:
+                self.memory = output.detach()
+                self.memory_length = output.size(1)
+            else:
+                # Keep memory from growing too large by truncating if needed
+                max_memory_length = 1024  # Adjust as needed
+                self.memory = output.detach()
+                if self.memory.size(1) > max_memory_length:
+                    self.memory = self.memory[:, -max_memory_length:, :]
+                self.memory_length = self.memory.size(1)
+        
+        # Remove sequence dimension if input didn't have it
+        if len(x.shape) == 3 and x.size(1) == 1 and output.size(1) == 1:
+            output = output.squeeze(1)
+        
+        return output
 
     def _generate_mask(self, sz):
         """Generate a square mask for the sequence"""
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
-    
+
     def reset_memory(self):
         """Reset memory for a fresh generation"""
         self.memory = None
@@ -277,7 +287,15 @@ class MusicTransformerModel(nn.Module):
     
     def _generate_section(self, seed, steps=16, temperature=0.8):
         """Helper method to generate a single section"""
+        # Ensure seed has proper dimensions [batch, seq_len, features] or [batch, features]
         x = seed
+        if len(x.shape) == 2 and x.shape[1] != self.embedding.in_features:
+            # Already has sequence dimension [batch, seq_len]
+            pass
+        elif len(x.shape) == 2:
+            # Shape is [batch, features], add sequence dimension
+            x = x.unsqueeze(1)  # [batch, 1, features]
+        
         outputs = [x]
         
         # Generate steps
@@ -287,7 +305,9 @@ class MusicTransformerModel(nn.Module):
                 output = self.forward(x, use_memory=(i > 0 or self.memory is not None))
             
             # Apply temperature
-            logits = output[:, -1, :] / temperature
+            # Ensure we're accessing the last token properly
+            logits = output[:, -1, :] if output.dim() == 3 else output
+            logits = logits / temperature
             
             # Sample from the output distribution
             probs = F.softmax(logits, dim=-1)
@@ -295,13 +315,14 @@ class MusicTransformerModel(nn.Module):
             
             # Create one-hot vector for the next token
             next_token_one_hot = torch.zeros(
-                seed.size(0), 1, seed.size(-1), 
-                device=seed.device
+                x.size(0), 1, self.embedding.in_features,  # Use model's input features 
+                device=x.device
             )
             
             # Fill the one-hot vector
-            for batch_idx in range(seed.size(0)):
-                next_token_one_hot[batch_idx, 0, next_token[batch_idx]] = 1.0
+            for batch_idx in range(x.size(0)):
+                if next_token[batch_idx].item() < self.embedding.in_features:
+                    next_token_one_hot[batch_idx, 0, next_token[batch_idx]] = 1.0
             
             # Store this output
             outputs.append(next_token_one_hot)
@@ -311,6 +332,3 @@ class MusicTransformerModel(nn.Module):
         
         # Concatenate all outputs
         return torch.cat(outputs, dim=1)
-
-# For backward compatibility
-TransformerModel = MusicTransformerModel
