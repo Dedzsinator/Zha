@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.jit import script
 
 class ResidualBlock(nn.Module):
     """Residual block with normalization for better gradient flow"""
@@ -9,7 +8,7 @@ class ResidualBlock(nn.Module):
         super().__init__()
         self.linear = nn.Linear(dim, dim)
         self.norm = nn.LayerNorm(dim)
-        self.activation = nn.SiLU(inplace=True)  # SiLU/Swish is more efficient than ReLU in practice
+        self.activation = nn.SiLU(inplace=True)
     
     def forward(self, x):
         return x + self.activation(self.norm(self.linear(x)))
@@ -17,7 +16,7 @@ class ResidualBlock(nn.Module):
 class VAEModel(nn.Module):
     def __init__(self, input_dim=128, latent_dim=128, beta=1.0):
         super().__init__()
-        # Encoder with normalization and residual connections
+        # Encoder
         self.encoder_input = nn.Linear(input_dim, 512)
         self.encoder_norm1 = nn.LayerNorm(512)
         self.encoder_res1 = ResidualBlock(512)
@@ -28,7 +27,7 @@ class VAEModel(nn.Module):
         
         self.encoder_output = nn.Linear(256, latent_dim * 2)
         
-        # Decoder with similar optimizations
+        # Decoder
         self.decoder_input = nn.Linear(latent_dim, 256)
         self.decoder_norm1 = nn.LayerNorm(256)
         self.decoder_res1 = ResidualBlock(256)
@@ -39,7 +38,7 @@ class VAEModel(nn.Module):
         
         self.decoder_output = nn.Linear(512, input_dim)
         
-        # Initialize weights for faster convergence 
+        # Initialize weights
         self._init_weights()
         
         # Beta parameter for KL divergence weighting
@@ -54,15 +53,13 @@ class VAEModel(nn.Module):
                     nn.init.zeros_(m.bias)
     
     def encode(self, x):
-        """Optimized encoder forward pass"""
-        # Combined operations for more efficiency
+        """Encoder forward pass"""
         x = self.encoder_res1(F.silu(self.encoder_norm1(self.encoder_input(x)), inplace=True))
         x = self.encoder_res2(F.silu(self.encoder_norm2(self.encoder_hidden(x)), inplace=True))
         return self.encoder_output(x)
     
     def decode(self, z):
-        """Optimized decoder forward pass"""
-        # Combined operations for more efficiency
+        """Decoder forward pass"""
         z = self.decoder_res1(F.silu(self.decoder_norm1(self.decoder_input(z)), inplace=True))
         z = self.decoder_res2(F.silu(self.decoder_norm2(self.decoder_hidden(z)), inplace=True))
         return torch.sigmoid(self.decoder_output(z))
@@ -74,11 +71,10 @@ class VAEModel(nn.Module):
             eps = torch.randn_like(std)
             return mu + eps * std * temperature
         else:
-            # During inference just use the mean for deterministic output
             return mu
     
     def forward(self, x, temperature=1.0):
-        """Optimized combined forward pass with temperature control"""
+        """Combined forward pass with temperature control"""
         # Encode and get latent parameters
         mu_logvar = self.encode(x)
         mu, logvar = torch.chunk(mu_logvar, 2, dim=-1)

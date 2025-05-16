@@ -89,39 +89,24 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
     
     with tqdm(total=n_batches, desc=f"Epoch {epoch_idx+1}", ncols=100) as pbar:
         for i, batch in enumerate(dataloader):
-            # Move data to device
             batch = batch.to(device, non_blocking=True)
             
-            # Forward pass with mixed precision training if available
-            with autocast('cuda', enabled=scaler is not None):
-                # Forward pass
+            # Forward pass with mixed precision training
+            with autocast(device_type='cuda', enabled=scaler is not None):
                 recon_batch, mu, logvar = model(batch)
-                
-                # Move calculations out of autocast to avoid dtype issues
-            
-            # BCE is unsafe for autocast - we need to ensure both tensors have the same dtype
-            # Convert half-precision output back to full precision if needed
-            recon_batch_float = recon_batch.float()  # Ensure float32 precision
             
             # Calculate losses in full precision
-            # Reconstruction loss (binary cross entropy)
+            recon_batch_float = recon_batch.float()
             recon_loss = F.binary_cross_entropy(recon_batch_float, batch, reduction='sum')
-            
-            # KL divergence
             kl_loss = -0.5 * torch.sum(1 + logvar.float() - mu.float().pow(2) - logvar.float().exp())
-            
-            # Apply beta weighting to KL divergence
             beta_kl_loss = model.beta * kl_loss
             
-            # Consistency loss: penalize big jumps between adjacent notes
+            # Consistency loss
             note_diffs = torch.abs(recon_batch_float[:, 1:] - recon_batch_float[:, :-1])
             consistency_loss = torch.mean(note_diffs) * batch.size(0) * consistency_weight
             
             # Total loss
-            loss = recon_loss + beta_kl_loss + consistency_loss
-            
-            # Normalize by batch size
-            loss = loss / batch.size(0)
+            loss = (recon_loss + beta_kl_loss + consistency_loss) / batch.size(0)
             
             # Backward pass with gradient accumulation
             if scaler is not None:
@@ -140,7 +125,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
                     if scheduler.step_every_batch:
                         scheduler.step()
             
-            # Update metrics - use .item() to get Python numbers, not tensors
+            # Update metrics
             epoch_loss += loss.item()
             epoch_recon_loss += recon_loss.item() / batch.size(0)
             epoch_kl_loss += kl_loss.item() / batch.size(0)
@@ -173,7 +158,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
         torch.cuda.empty_cache()
         print(f"📊 GPU: {torch.cuda.get_device_name(0)}")
     
-    # Initialize model with beta parameter
+    # Initialize model
     model = VAEModel(input_dim=128, latent_dim=latent_dim, beta=beta).to(device)
     print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
     print(f"🎵 Using beta={beta}, consistency_weight={consistency_weight}")
@@ -184,8 +169,8 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
         optimizer, T_max=epochs, eta_min=learning_rate * 0.01)
     scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=False)
     
-    # Use the new API format for GradScaler
-    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None
+    # Create gradient scaler for mixed precision training
+    scaler = torch.amp.GradScaler() if torch.cuda.is_available() else None
     
     # Early stopping
     early_stopping = EarlyStopping(patience=patience, verbose=True)
@@ -196,14 +181,14 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, 
                           num_workers=4, pin_memory=True)
     
-    # Training loop
+    # Training loop setup
     os.makedirs("output/trained_models", exist_ok=True)
     all_metrics = []
     
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
     
     for epoch in range(epochs):
-        # Train one epoch with consistency loss
+        # Train one epoch
         metrics = train_epoch(
             model=model,
             dataloader=dataloader,
@@ -234,7 +219,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
             print(f"⚠️ Early stopping triggered after {epoch+1} epochs")
             break
         
-        # Generate samples periodically to check progress
+        # Generate samples periodically
         if (epoch + 1) % 10 == 0:
             with torch.no_grad():
                 samples = model.sample(num_samples=3, temperature=0.8, device=device)
@@ -248,7 +233,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     torch.save(model.state_dict(), "output/trained_models/trained_vae.pt")
     print("✅ Training complete! Model saved to output/trained_models/trained_vae.pt")
     
-    # Export to ONNX format for efficient inference
+    # Export to ONNX format
     try:
         onnx_path = "output/trained_models/trained_vae.onnx"
         model.export_to_onnx(onnx_path)

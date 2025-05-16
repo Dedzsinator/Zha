@@ -6,6 +6,10 @@ import torch.nn.functional as F
 class PositionalEncoding(nn.Module):
     """
     Positional encoding for helping the model understand sequence position
+    
+    Args:
+        embed_dim: Embedding dimension
+        max_len: Maximum sequence length to pre-compute encodings for
     """
     def __init__(self, embed_dim, max_len=2048):
         super(PositionalEncoding, self).__init__()
@@ -25,10 +29,6 @@ class PositionalEncoding(nn.Module):
         
         # Add dropout for regularization
         self.dropout = nn.Dropout(0.1)
-        
-        self.memory = None
-        self.memory_length = 0
-        self.section_memories = {}
 
     def forward(self, x):
         """
@@ -82,6 +82,11 @@ class TransformerModel(nn.Module):
         
         # Output projection
         self.output_projection = nn.Linear(embed_dim, input_dim)
+        
+        # Initialize memory structures
+        self.memory = None
+        self.memory_length = 0
+        self.section_memories = {}
         
         # Initialize mask for auto-regressive generation
         self._generate_square_subsequent_mask = self._generate_mask
@@ -280,8 +285,7 @@ class TransformerModel(nn.Module):
             all_outputs.append(section_output)
             last_section_output = section_output
         
-        # Concatenate all sections or return them separately based on needs
-        # For now, we'll concatenate them along the sequence dimension
+        # Concatenate all sections
         full_output = torch.cat(all_outputs, dim=1)
         return full_output
     

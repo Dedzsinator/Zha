@@ -13,7 +13,7 @@ from backend.models.markov_chain import MarkovChain
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Suppress ALL Music21 warnings and errors
+# Suppress Music21 warnings
 warnings.filterwarnings("ignore")
 environment.Environment().warn = False
 
@@ -27,7 +27,7 @@ def process_midi_file(file_path):
             us['warnings'] = 0
             score = converter.parse(file_path)
         return score
-    except Exception as e:
+    except Exception:
         return None
 
 def extract_note_sequence_from_score(score):

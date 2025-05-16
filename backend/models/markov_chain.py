@@ -2,7 +2,6 @@ import numpy as np
 import random
 from collections import defaultdict, Counter
 from music21 import note, pitch, scale, key, chord, stream, roman, meter
-import pickle
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,7 +15,7 @@ class MarkovChain:
         self.transitions = np.zeros((128, 128), dtype=np.float32)
         self.max_interval = max_interval
         self.interval_range = 2 * max_interval + 1
-        self.interval_transitions = {}  # Sparse dict instead of defaultdict for better memory usage
+        self.interval_transitions = {}  # Sparse dict for better memory usage
         
         # Model configuration
         self.order = order
@@ -41,6 +40,39 @@ class MarkovChain:
             'grouping_patterns': []  # [[patterns]]
         }
         
+    def train(self, midi_sequences, progress_callback=None):
+        """Train the model with optimized flow and memory usage"""
+        logger.info("Starting model training...")
+        
+        # Extract musical features
+        if len(midi_sequences) <= 500:
+            try:
+                # Extract musical features from a subset of data
+                music_features = self.extract_musical_features(midi_sequences[:min(len(midi_sequences), 200)])
+                
+                if music_features:
+                    # Process extracted features
+                    self._process_time_signatures(music_features)
+                    self._process_rhythm_patterns(music_features)
+                    self._process_chord_progressions(music_features)
+                    self._process_key_features(music_features)
+                    self._process_roman_numeral_transitions(music_features)
+            except Exception as e:
+                logger.warning(f"Feature extraction issue: {e}. Using simplified training.")
+        else:
+            logger.info("Large dataset detected, using simplified feature extraction")
+        
+        # Train core transition matrices
+        logger.info("Training note transitions...")
+        self._train_note_transitions(midi_sequences, progress_callback)
+        
+        logger.info("Training interval transitions...")
+        self._train_interval_transitions(midi_sequences, progress_callback)
+        
+        self.trained = True
+        logger.info("Training complete!")
+        return True
+
     def extract_musical_features(self, midi_sequences):
         """Streamlined extraction of musical features from MIDI sequences"""
         logger.info("Extracting musical features...")
@@ -207,47 +239,6 @@ class MarkovChain:
                     )
         except Exception:
             pass
-            
-    def train(self, midi_sequences, progress_callback=None):
-        """Train the model with optimized flow and memory usage"""
-        logger.info("Starting model training...")
-        
-        # Extract musical features efficiently with timeout handling
-        logger.info("Extracting musical features...")
-        
-        # Skip extensive feature extraction if we have too many sequences
-        # Focus on core note transitions which are more important
-        skip_detailed_features = len(midi_sequences) > 500
-        if skip_detailed_features:
-            logger.info("Large dataset detected, using simplified feature extraction")
-            
-        if not skip_detailed_features:
-            try:
-                # Extract musical features from a subset of data
-                music_features = self.extract_musical_features(midi_sequences[:min(len(midi_sequences), 200)])
-                
-                if music_features:
-                    # Process time signatures and rhythmic features
-                    self._process_time_signatures(music_features)
-                    self._process_rhythm_patterns(music_features)
-                    self._process_chord_progressions(music_features)
-                    self._process_key_features(music_features)
-                    # Process Roman numeral transitions
-                    self._process_roman_numeral_transitions(music_features)
-            except Exception as e:
-                logger.warning(f"Feature extraction issue: {e}. Using simplified training.")
-        
-        # Train note transitions (the core functionality)
-        logger.info("Training note transitions...")
-        self._train_note_transitions(midi_sequences, progress_callback)
-        
-        # Train interval transitions
-        logger.info("Training interval transitions...")
-        self._train_interval_transitions(midi_sequences, progress_callback)
-        
-        self.trained = True
-        logger.info("Training complete!")
-        return True
 
     def _process_time_signatures(self, music_features):
         """Process time signature related features"""
@@ -868,13 +859,11 @@ class MarkovChain:
         try:
             cleaned_key = self._clean_key_context(key_context)
             
-            # Generate more chords than seemingly needed to ensure coverage
+            # Generate chord progression
             num_chords = max(8, length // 4)
             chords = self.generate_chord_progression(key_context=cleaned_key, num_chords=num_chords)
             
-            # Log chord progression for debugging
-            logger.info(f"Generated chord progression: {chords[:8]}...")
-            
+            # Determine starting note
             start_note = self._determine_start_note(cleaned_key)
             
             # Handle time signature
@@ -883,14 +872,8 @@ class MarkovChain:
                 if self.musical_features['time_signatures']:
                     time_signature = max(self.musical_features['time_signatures'].items(), key=lambda x: x[1])[0]
                     
+            # Calculate appropriate measures and note density
             target_density = self.musical_features['note_density'].get(time_signature, 4)
-            try:
-                numerator, denominator = map(int, time_signature.split('/'))
-                beats_per_measure = numerator
-            except Exception:
-                beats_per_measure = 4
-                
-            # Calculate appropriate length
             target_measures = max(1, round(length / target_density))
             actual_length = int(target_measures * target_density) or length
             
@@ -904,90 +887,31 @@ class MarkovChain:
                 use_interval_generation=True
             )
             
-            # Extract components
+            # Process and harmonize the sequence
             notes = [n for n, _, _ in notes_with_timings]
             durations = [d for _, d, _ in notes_with_timings]
             beat_positions = [p for _, _, p in notes_with_timings]
             
-            # Enhanced chord mapping
-            chord_sequence = []
-            # Determine beats per chord (typically 4 beats = 1 measure)
-            beats_per_chord = 4  
-            current_position = 0.0
-            chord_index = 0
+            # Map notes to appropriate chords
+            chord_sequence = self._map_notes_to_chords(notes, durations, chords)
             
-            # For each note, determine which chord it belongs to based on its position
-            for i, (note, duration) in enumerate(zip(notes, durations)):
-                # When we cross a chord boundary, advance to next chord
-                if current_position >= beats_per_chord * (chord_index + 1):
-                    chord_index = min(len(chords) - 1, int(current_position / beats_per_chord))
-                
-                chord_sequence.append(chords[chord_index])
-                current_position += duration
-                
-            # Log chord usage statistics
-            chord_counts = {}
-            for chord in chord_sequence:
-                chord_counts[chord] = chord_counts.get(chord, 0) + 1
-            logger.info(f"Chord distribution in output: {chord_counts}")
+            # Apply chord-aware pitch correction
+            adjusted_notes = self._adjust_notes_to_chords(notes, chord_sequence)
             
-            # Ensure everything is same length
-            final_length = len(notes)
-            
-            # Create harmonized notes based on chord information
-            chord_notes = []
-            for i, chord_name in enumerate(chord_sequence[:final_length]):
-                try:
-                    # Extract chord notes from the chord name
-                    ch = self._parse_chord_name(chord_name)
-                    if ch and ch.pitches:
-                        # Store the chord pitches for potential harmonization
-                        chord_notes.append([p.midi % 12 for p in ch.pitches])
-                    else:
-                        chord_notes.append([0, 4, 7])  # C major fallback
-                except Exception as e:
-                    logger.debug(f"Error parsing chord {chord_name}: {e}")
-                    chord_notes.append([0, 4, 7])  # C major fallback
-            
-            # Apply chord-aware pitch correction (ensure notes fit with chords)
-            adjusted_notes = []
-            for i, note in enumerate(notes[:final_length]):
-                chord_pitches = chord_notes[i]
-                # If the current note doesn't fit the chord, adjust it
-                if (note % 12) not in chord_pitches:
-                    # Find the nearest chord pitch
-                    note_class = note % 12
-                    distances = [(p - note_class) % 12 for p in chord_pitches]
-                    min_dist_idx = distances.index(min(distances))
-                    octave = note // 12
-                    adjusted = chord_pitches[min_dist_idx] + (octave * 12)
-                    adjusted_notes.append(adjusted)
-                else:
-                    adjusted_notes.append(note)
-            
-            # Return the generated sequence with chord information
+            # Return the complete sequence information
             return {
-                'notes': adjusted_notes,  # Use pitch-corrected notes
-                'durations': durations[:final_length],
-                'chords': chord_sequence[:final_length],
-                'beat_positions': beat_positions[:final_length],
+                'notes': adjusted_notes,
+                'durations': durations[:len(adjusted_notes)],
+                'chords': chord_sequence[:len(adjusted_notes)],
+                'beat_positions': beat_positions[:len(adjusted_notes)],
                 'key': cleaned_key,
                 'time_signature': time_signature
             }
             
         except Exception as e:
             logger.error(f"Error in generate_with_chords: {e}")
-            # Fallback generation
-            notes = self.generate_sequence(start_note=60, length=length)
-            durations = [0.5] * len(notes)
-            return {
-                'notes': notes,
-                'durations': durations,
-                'chords': ['C major'] * len(notes),
-                'beat_positions': list(np.arange(0, len(notes)*0.5, 0.5)),
-                'key': 'C major',
-                'time_signature': '4/4'
-            }
+            # Fallback to simple generation
+            return self._generate_fallback_sequence(length)
 
     def _parse_chord_name(self, chord_name):
         """Convert chord name string to music21 chord object"""

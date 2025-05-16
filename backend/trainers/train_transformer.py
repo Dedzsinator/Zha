@@ -1,4 +1,4 @@
-import torch, os, numpy as np, warnings
+import torch, os, warnings
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler
 from backend.models.transformer import TransformerModel
@@ -8,9 +8,36 @@ from backend.trainers.train_vae import MIDIDataset  # Reuse the dataset class
 warnings.filterwarnings("ignore")
 torch.backends.cudnn.benchmark = True
 
-def train_transformer_model(epochs=100, batch_size=64, learning_rate=1e-4, 
-                           grad_accum_steps=1, patience=10):
-    """Transformer model training with improved efficiency"""
+def train_transformer_model(
+    epochs=100, 
+    batch_size=64, 
+    learning_rate=1e-4, 
+    grad_accum_steps=1, 
+    patience=10,
+    embed_dim=512,
+    num_heads=8,
+    num_layers=8,
+    dim_feedforward=2048,
+    dropout=0.1
+):
+    """
+    Train a transformer model for music generation with enhanced performance
+    
+    Args:
+        epochs: Number of training epochs
+        batch_size: Batch size for training
+        learning_rate: Peak learning rate for the scheduler
+        grad_accum_steps: Gradient accumulation steps for larger effective batch size
+        patience: Early stopping patience
+        embed_dim: Embedding dimension for the transformer
+        num_heads: Number of attention heads
+        num_layers: Number of transformer layers
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout rate for regularization
+    
+    Returns:
+        Trained model and training metrics
+    """
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🧠 Training on: {device}")
@@ -21,18 +48,25 @@ def train_transformer_model(epochs=100, batch_size=64, learning_rate=1e-4,
     # Initialize model
     model = TransformerModel(
         input_dim=128, 
-        embed_dim=512, 
-        num_heads=8,
-        num_layers=8,
-        dim_feedforward=2048
+        embed_dim=embed_dim, 
+        num_heads=num_heads,
+        num_layers=num_layers,
+        dim_feedforward=dim_feedforward,
+        dropout=dropout
     ).to(device)
     print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
     
     # Optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=learning_rate, total_steps=epochs * 1000 // grad_accum_steps, 
-        pct_start=0.1, anneal_strategy='cos', div_factor=25, final_div_factor=1e4)
+        optimizer, 
+        max_lr=learning_rate, 
+        total_steps=epochs * 1000 // grad_accum_steps, 
+        pct_start=0.1, 
+        anneal_strategy='cos', 
+        div_factor=25, 
+        final_div_factor=1e4
+    )
     scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=True)
     scaler = GradScaler() if torch.cuda.is_available() else None
     
@@ -42,8 +76,13 @@ def train_transformer_model(epochs=100, batch_size=64, learning_rate=1e-4,
     # Data loading with memory-efficient caching
     print("📂 Setting up data loader...")
     dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=500)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, 
-                          num_workers=4, pin_memory=True)
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=4, 
+        pin_memory=True
+    )
     
     # Training loop
     os.makedirs("output/trained_models", exist_ok=True)
@@ -98,5 +137,10 @@ if __name__ == "__main__":
         epochs=100, 
         batch_size=64,
         grad_accum_steps=4,  # Accumulate gradients for larger effective batch size
-        patience=15          # Early stopping patience
+        patience=15,         # Early stopping patience
+        embed_dim=512,
+        num_heads=8,
+        num_layers=8,
+        dim_feedforward=2048,
+        dropout=0.1
     )
