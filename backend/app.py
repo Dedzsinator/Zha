@@ -1,6 +1,7 @@
 import os
 import uuid
 import shutil
+import mido
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Query
@@ -21,6 +22,139 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+INSTRUMENT_MAP = {
+    "piano": 0,
+    "acoustic_grand_piano": 0,
+    "bright_acoustic_piano": 1,
+    "electric_grand_piano": 2,
+    "honky_tonk_piano": 3,
+    "electric_piano": 4,
+    "electric_piano_1": 4,
+    "electric_piano_2": 5,
+    "harpsichord": 6,
+    "clavinet": 7,
+    "celesta": 8,
+    "glockenspiel": 9,
+    "music_box": 10,
+    "vibraphone": 11,
+    "marimba": 12,
+    "xylophone": 13,
+    "tubular_bells": 14,
+    "dulcimer": 15,
+    "drawbar_organ": 16,
+    "percussive_organ": 17,
+    "rock_organ": 18,
+    "church_organ": 19,
+    "reed_organ": 20,
+    "accordion": 21,
+    "harmonica": 22,
+    "tango_accordion": 23,
+    "acoustic_guitar_nylon": 24,
+    "acoustic_guitar_steel": 25,
+    "electric_guitar_jazz": 26,
+    "electric_guitar_clean": 27,
+    "electric_guitar_muted": 28,
+    "overdriven_guitar": 29,
+    "distortion_guitar": 30,
+    "guitar_harmonics": 31,
+    "acoustic_bass": 32,
+    "electric_bass_finger": 33,
+    "electric_bass_pick": 34,
+    "fretless_bass": 35,
+    "slap_bass_1": 36,
+    "slap_bass_2": 37,
+    "synth_bass_1": 38,
+    "synth_bass_2": 39,
+    "violin": 40,
+    "viola": 41,
+    "cello": 42,
+    "contrabass": 43,
+    "tremolo_strings": 44,
+    "pizzicato_strings": 45,
+    "orchestral_harp": 46,
+    "timpani": 47,
+    "string_ensemble_1": 48,
+    "string_ensemble_2": 49,
+    "synth_strings_1": 50,
+    "synth_strings_2": 51,
+    "choir_aahs": 52,
+    "voice_oohs": 53,
+    "synth_choir": 54,
+    "orchestra_hit": 55,
+    "trumpet": 56,
+    "trombone": 57,
+    "tuba": 58,
+    "muted_trumpet": 59,
+    "french_horn": 60,
+    "brass_section": 61,
+    "synth_brass_1": 62,
+    "synth_brass_2": 63,
+    "soprano_sax": 64,
+    "alto_sax": 65,
+    "tenor_sax": 66,
+    "baritone_sax": 67,
+    "oboe": 68,
+    "english_horn": 69,
+    "bassoon": 70,
+    "clarinet": 71,
+    "piccolo": 72,
+    "flute": 73,
+    "recorder": 74,
+    "pan_flute": 75,
+    "blown_bottle": 76,
+    "shakuhachi": 77,
+    "whistle": 78,
+    "ocarina": 79,
+    "lead_1_square": 80,
+    "lead_2_sawtooth": 81,
+    "lead_3_calliope": 82,
+    "lead_4_chiff": 83,
+    "lead_5_charang": 84,
+    "lead_6_voice": 85,
+    "lead_7_fifths": 86,
+    "lead_8_bass_lead": 87,
+    "pad_1_new_age": 88,
+    "pad_2_warm": 89,
+    "pad_3_polysynth": 90,
+    "pad_4_choir": 91,
+    "pad_5_bowed": 92,
+    "pad_6_metallic": 93,
+    "pad_7_halo": 94,
+    "pad_8_sweep": 95,
+    "fx_1_rain": 96,
+    "fx_2_soundtrack": 97,
+    "fx_3_crystal": 98,
+    "fx_4_atmosphere": 99,
+    "fx_5_brightness": 100,
+    "fx_6_goblins": 101,
+    "fx_7_echoes": 102,
+    "fx_8_sci_fi": 103,
+    "sitar": 104,
+    "banjo": 105,
+    "shamisen": 106,
+    "koto": 107,
+    "kalimba": 108,
+    "bagpipe": 109,
+    "fiddle": 110,
+    "shanai": 111,
+    "tinkle_bell": 112,
+    "agogo": 113,
+    "steel_drums": 114,
+    "woodblock": 115,
+    "taiko_drum": 116,
+    "melodic_tom": 117,
+    "synth_drum": 118,
+    "reverse_cymbal": 119,
+    "guitar_fret_noise": 120,
+    "breath_noise": 121,
+    "seashore": 122,
+    "bird_tweet": 123,
+    "telephone_ring": 124,
+    "helicopter": 125,
+    "applause": 126,
+    "gunshot": 127
+}
+
 app = FastAPI(
     title="Zha Music Generation API",
     description="API for music generation using various AI models"
@@ -39,7 +173,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Load model paths
-MODEL_DIR = os.environ.get("MODEL_DIR", "./trained_models")
+MODEL_DIR = os.environ.get("MODEL_DIR", "./output/trained_models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 # Create persistent directories for generated files
@@ -161,9 +295,20 @@ async def generate_combined(
         try:
             score = converter.parse(temp_midi_path)
             key_obj = analysis.discrete.analyzeStream(score, 'key')
-            detected_key = str(key_obj.tonic.name) + " " + key_obj.mode
-            scale_obj = scale.ConcreteScale(pitches=scale.DiatonicScale(detected_key).getPitches())
+            
+            # Properly format the key with space between tonic and mode
+            tonic_name = key_obj.tonic.name
+            mode_name = key_obj.mode
+            detected_key = f"{tonic_name} {mode_name}"
+            
+            # Clean the key for music21 compatibility
+            detected_key = detected_key.strip()
+            
+            # Create scale with explicit key object for safety
+            key_obj = key.Key(tonic_name, mode_name)  # Create key with separate parameters
+            scale_obj = scale.DiatonicScale(key_obj)
             scale_notes = set([p.midi % 12 for p in scale_obj.getPitches()])
+            
             logger.info(f"Detected key: {detected_key}, Scale notes: {scale_notes}")
         except Exception as e:
             logger.warning(f"Error detecting key: {e}, using C major")
@@ -307,7 +452,11 @@ async def generate_combined(
             # Get current chord
             chord_name = chord_progression[chord_idx % len(chord_progression)]
             try:
-                chord_obj = harmony.ChordSymbol(chord_name)
+                # Convert chord name to music21 format
+                music21_chord_name = convert_chord_name(chord_name)
+                logger.debug(f"Converting '{chord_name}' to '{music21_chord_name}' for music21")
+                
+                chord_obj = harmony.ChordSymbol(music21_chord_name)
                 chord_notes = [p.midi for p in chord_obj.pitches]
                 
                 # Add chord notes
@@ -324,7 +473,31 @@ async def generate_combined(
                 
             except Exception as e:
                 logger.warning(f"Error processing chord {chord_name}: {e}")
-                chord_idx += 1
+                # Fallback to a simple triad based on the first part of the chord name
+                try:
+                    root_note = chord_name.split()[0]
+                    # Create a simple triad (1-3-5)
+                    from music21 import chord
+                    simple_chord = chord.Chord(root_note + ' ' + root_note + ' ' + root_note)
+                    simple_chord.root(root_note)
+                    simple_chord = simple_chord.closedPosition()
+                    chord_notes = [p.midi for p in simple_chord.pitches]
+                    
+                    # Add fallback chord notes
+                    for note in chord_notes:
+                        chord_track.append(Message('note_on', note=note, velocity=70, time=0 if note == chord_notes[0] else 0))
+                    
+                    # Make sure notes end at different times
+                    for i, note in enumerate(chord_notes):
+                        end_time = chord_duration if i == 0 else 0
+                        chord_track.append(Message('note_off', note=note, velocity=0, time=end_time))
+                    
+                    current_tick += chord_duration
+                    chord_idx += 1
+                    
+                except Exception as e2:
+                    logger.warning(f"Failed to create fallback chord for {chord_name}: {e2}")
+                    chord_idx += 1
         
         # Add melody using the filtered notes
         current_tick = 0
@@ -708,6 +881,40 @@ def create_midi_with_durations(notes, durations, output_path, time_signature="4/
     except Exception as e:
         logger.error(f"Error creating MIDI file: {e}")
         return False
+
+def convert_chord_name(chord_name):
+    """Convert chord names from 'C major' format to music21-compatible format"""
+    if not chord_name or ' ' not in chord_name:
+        return chord_name
+        
+    # Standard conversions
+    conversions = {
+        'major': '',  # C major -> C
+        'minor': 'm',  # A minor -> Am
+        'diminished': 'dim',
+        'augmented': 'aug',
+        'dominant': '7',
+        'major seventh': 'maj7',
+        'minor seventh': 'm7',
+        'half diminished': 'm7b5',
+        'diminished seventh': 'dim7',
+        'augmented seventh': 'aug7',
+        'suspended fourth': 'sus4',
+        'suspended second': 'sus2'
+    }
+    
+    parts = chord_name.split(' ', 1)
+    if len(parts) != 2:
+        return chord_name
+        
+    root, quality = parts
+    
+    # Handle basic conversions
+    if quality.lower() in conversions:
+        return root + conversions[quality.lower()]
+    
+    # Pass through if unknown
+    return chord_name
 
 @app.get("/download/midi/{filename}")
 async def download_midi(filename: str):

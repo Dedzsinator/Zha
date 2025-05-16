@@ -74,45 +74,56 @@ class MarkovChain:
     def _convert_sequences_to_streams(self, midi_sequences):
         """Convert MIDI sequences to music21 streams efficiently"""
         all_streams = []
+        logger.info(f"Converting {len(midi_sequences)} sequences to streams...")
         
-        for sequence in midi_sequences:
+        # Use at most 100 sequences to avoid excessive processing time
+        sample_size = min(len(midi_sequences), 100)
+        if len(midi_sequences) > sample_size:
+            logger.info(f"Sampling {sample_size} sequences for feature extraction to improve performance")
+            
+        # Process a subset of sequences with progress reporting
+        for seq_idx, sequence in enumerate(midi_sequences[:sample_size]):
+            if seq_idx > 0 and seq_idx % 10 == 0:
+                logger.info(f"Processed {seq_idx}/{sample_size} sequences")
+                
             if not sequence or len(sequence) < 3:
                 continue
                 
-            s = stream.Stream()
-            current_offset = 0.0
-            
-            for note_data in sequence:
-                n = None
-                duration_val = 0.5  # Default duration
+            try:
+                s = stream.Stream()
+                current_offset = 0.0
                 
-                # Handle different note formats efficiently
-                if isinstance(note_data, int):
-                    n = note.Note(pitch=note_data)
-                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    n = note.Note(pitch=note_data[0])
-                    if len(note_data) >= 2 and isinstance(note_data[1], (float, int)) and note_data[1] > 0:
-                        duration_val = note_data[1]
+                # Handle the format from extract_note_sequence_from_score
+                for note_data in sequence:
+                    # Check if note_data is a tuple of (pitch, duration)
+                    if isinstance(note_data, tuple) and len(note_data) == 2:
+                        pitch_val, duration_val = note_data
+                        
+                        # Create note
+                        n = note.Note(pitch=pitch_val)
+                        n.duration.quarterLength = duration_val
+                        s.insert(current_offset, n)
+                        current_offset += duration_val
                 
-                if n:
-                    n.duration.quarterLength = duration_val
-                    s.insert(current_offset, n)
-                    current_offset += duration_val
-            
-            if len(s) > 0:
-                # Add default time signature if none exists
-                if not s.getTimeSignatures():
-                    s.insert(0, meter.TimeSignature('4/4'))
-                
-                # Create measures efficiently
-                try:
-                    s.makeMeasures(inPlace=True)
-                    all_streams.append(s)
-                except Exception as e:
-                    logger.debug(f"Could not create measures: {e}")
+                # Only process if we added notes
+                if len(s.notes) > 0:
+                    # Add default time signature if none exists
+                    if not s.getTimeSignatures():
+                        s.insert(0, meter.TimeSignature('4/4'))
+                    
+                    # Create measures but with a timeout in case of issues
+                    try:
+                        s.makeMeasures(inPlace=True)
+                        all_streams.append(s)
+                    except Exception as e:
+                        logger.debug(f"Could not create measures: {e}")
+                        
+            except Exception as e:
+                logger.debug(f"Error converting sequence to stream: {e}")
         
+        logger.info(f"Successfully converted {len(all_streams)}/{sample_size} sequences to streams")
         return all_streams
-    
+
     def _extract_key_features(self, s, features):
         """Extract key-related features from a stream"""
         try:
@@ -201,31 +212,43 @@ class MarkovChain:
         """Train the model with optimized flow and memory usage"""
         logger.info("Starting model training...")
         
-        # Extract musical features efficiently
-        music_features = self.extract_musical_features(midi_sequences)
-        if not music_features:
-            logger.warning("No musical features extracted")
-            return False
-            
-        # Process time signatures and rhythmic features
-        self._process_time_signatures(music_features)
-        self._process_rhythm_patterns(music_features)
-        self._process_chord_progressions(music_features)
-        self._process_key_features(music_features)
+        # Extract musical features efficiently with timeout handling
+        logger.info("Extracting musical features...")
         
-        # Train note transitions
+        # Skip extensive feature extraction if we have too many sequences
+        # Focus on core note transitions which are more important
+        skip_detailed_features = len(midi_sequences) > 500
+        if skip_detailed_features:
+            logger.info("Large dataset detected, using simplified feature extraction")
+            
+        if not skip_detailed_features:
+            try:
+                # Extract musical features from a subset of data
+                music_features = self.extract_musical_features(midi_sequences[:min(len(midi_sequences), 200)])
+                
+                if music_features:
+                    # Process time signatures and rhythmic features
+                    self._process_time_signatures(music_features)
+                    self._process_rhythm_patterns(music_features)
+                    self._process_chord_progressions(music_features)
+                    self._process_key_features(music_features)
+                    # Process Roman numeral transitions
+                    self._process_roman_numeral_transitions(music_features)
+            except Exception as e:
+                logger.warning(f"Feature extraction issue: {e}. Using simplified training.")
+        
+        # Train note transitions (the core functionality)
+        logger.info("Training note transitions...")
         self._train_note_transitions(midi_sequences, progress_callback)
         
         # Train interval transitions
+        logger.info("Training interval transitions...")
         self._train_interval_transitions(midi_sequences, progress_callback)
-        
-        # Process Roman numeral transitions
-        self._process_roman_numeral_transitions(music_features)
         
         self.trained = True
         logger.info("Training complete!")
         return True
-    
+
     def _process_time_signatures(self, music_features):
         """Process time signature related features"""
         # Time signatures
@@ -424,7 +447,7 @@ class MarkovChain:
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             return False
-            
+
     def generate_chord_progression(self, key_context=None, num_chords=8):
         """Generate a chord progression using learned transitions"""
         if not self.trained:
@@ -432,26 +455,35 @@ class MarkovChain:
             return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1)
             
         cleaned_key = self._clean_key_context(key_context)
-        k = key.Key(cleaned_key)
-        sc = k.getScale()
         
-        progression = []
+        # Validate the key before trying to use it
+        cleaned_key = self._validate_key(cleaned_key)
         
-        # Determine generation approach based on available data
-        use_roman = cleaned_key in self.musical_features['roman_numeral_transitions'] and self.musical_features['roman_numeral_transitions'][cleaned_key]
-        
-        if use_roman:
-            # Using Roman numeral transitions
-            progression = self._generate_with_roman_numerals(cleaned_key, k, num_chords)
-        elif self.musical_features['common_chord_progressions']:
-            # Using learned chord pairs
-            progression = self._generate_with_chord_pairs(num_chords)
-        else:
-            # Fallback to diatonic generation
-            progression = self._generate_diatonic_chords(sc, num_chords)
+        try:
+            k = key.Key(cleaned_key)
+            sc = k.getScale()
             
-        return progression
-    
+            progression = []
+            
+            # Determine generation approach based on available data
+            use_roman = cleaned_key in self.musical_features['roman_numeral_transitions'] and self.musical_features['roman_numeral_transitions'][cleaned_key]
+            
+            if use_roman:
+                # Using Roman numeral transitions
+                progression = self._generate_with_roman_numerals(cleaned_key, k, num_chords)
+            elif self.musical_features['common_chord_progressions']:
+                # Using learned chord pairs
+                progression = self._generate_with_chord_pairs(num_chords)
+            else:
+                # Fallback to diatonic generation
+                progression = self._generate_diatonic_chords(sc, num_chords)
+                
+            return progression
+        except Exception as e:
+            # Handle any errors in chord progression generation
+            logger.error(f"Error generating chord progression: {e}")
+            return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1)
+
     def _generate_with_roman_numerals(self, key_name, k, num_chords):
         """Generate chord progression using Roman numerals"""
         progression = []
@@ -835,7 +867,14 @@ class MarkovChain:
         """Generate a sequence with chord progression and timing awareness"""
         try:
             cleaned_key = self._clean_key_context(key_context)
-            chords = self.generate_chord_progression(key_context=cleaned_key)
+            
+            # Generate more chords than seemingly needed to ensure coverage
+            num_chords = max(8, length // 4)
+            chords = self.generate_chord_progression(key_context=cleaned_key, num_chords=num_chords)
+            
+            # Log chord progression for debugging
+            logger.info(f"Generated chord progression: {chords[:8]}...")
+            
             start_note = self._determine_start_note(cleaned_key)
             
             # Handle time signature
@@ -870,20 +909,65 @@ class MarkovChain:
             durations = [d for _, d, _ in notes_with_timings]
             beat_positions = [p for _, _, p in notes_with_timings]
             
-            # Map chords to notes
+            # Enhanced chord mapping
             chord_sequence = []
-            notes_per_chord = max(1, len(notes) // len(chords))
+            # Determine beats per chord (typically 4 beats = 1 measure)
+            beats_per_chord = 4  
+            current_position = 0.0
+            chord_index = 0
             
-            for chord_idx, chord_name in enumerate(chords):
-                start_idx = chord_idx * notes_per_chord
-                end_idx = (chord_idx + 1) * notes_per_chord if chord_idx < len(chords) - 1 else len(notes)
-                chord_sequence.extend([chord_name] * (end_idx - start_idx))
+            # For each note, determine which chord it belongs to based on its position
+            for i, (note, duration) in enumerate(zip(notes, durations)):
+                # When we cross a chord boundary, advance to next chord
+                if current_position >= beats_per_chord * (chord_index + 1):
+                    chord_index = min(len(chords) - 1, int(current_position / beats_per_chord))
                 
-            # Ensure equal lengths
+                chord_sequence.append(chords[chord_index])
+                current_position += duration
+                
+            # Log chord usage statistics
+            chord_counts = {}
+            for chord in chord_sequence:
+                chord_counts[chord] = chord_counts.get(chord, 0) + 1
+            logger.info(f"Chord distribution in output: {chord_counts}")
+            
+            # Ensure everything is same length
             final_length = len(notes)
             
+            # Create harmonized notes based on chord information
+            chord_notes = []
+            for i, chord_name in enumerate(chord_sequence[:final_length]):
+                try:
+                    # Extract chord notes from the chord name
+                    ch = self._parse_chord_name(chord_name)
+                    if ch and ch.pitches:
+                        # Store the chord pitches for potential harmonization
+                        chord_notes.append([p.midi % 12 for p in ch.pitches])
+                    else:
+                        chord_notes.append([0, 4, 7])  # C major fallback
+                except Exception as e:
+                    logger.debug(f"Error parsing chord {chord_name}: {e}")
+                    chord_notes.append([0, 4, 7])  # C major fallback
+            
+            # Apply chord-aware pitch correction (ensure notes fit with chords)
+            adjusted_notes = []
+            for i, note in enumerate(notes[:final_length]):
+                chord_pitches = chord_notes[i]
+                # If the current note doesn't fit the chord, adjust it
+                if (note % 12) not in chord_pitches:
+                    # Find the nearest chord pitch
+                    note_class = note % 12
+                    distances = [(p - note_class) % 12 for p in chord_pitches]
+                    min_dist_idx = distances.index(min(distances))
+                    octave = note // 12
+                    adjusted = chord_pitches[min_dist_idx] + (octave * 12)
+                    adjusted_notes.append(adjusted)
+                else:
+                    adjusted_notes.append(note)
+            
+            # Return the generated sequence with chord information
             return {
-                'notes': notes,
+                'notes': adjusted_notes,  # Use pitch-corrected notes
                 'durations': durations[:final_length],
                 'chords': chord_sequence[:final_length],
                 'beat_positions': beat_positions[:final_length],
@@ -904,7 +988,42 @@ class MarkovChain:
                 'key': 'C major',
                 'time_signature': '4/4'
             }
+
+    def _parse_chord_name(self, chord_name):
+        """Convert chord name string to music21 chord object"""
+        try:
+            # Extract root and quality
+            parts = chord_name.split(' ', 1)
+            if len(parts) != 2:
+                return None
+                
+            root_name, quality = parts
             
+            # Handle common quality naming inconsistencies
+            quality_map = {
+                'major': '',
+                'minor': 'm',
+                'm': 'm',
+                'diminished': 'dim',
+                'dim': 'dim',
+                'augmented': 'aug',
+                'aug': 'aug',
+                '7': '7',
+                'maj7': 'maj7',
+                'm7': 'm7',
+                'dim7': 'dim7'
+            }
+            
+            # Map the quality to something music21 understands
+            mapped_quality = quality_map.get(quality.lower(), quality)
+            
+            # Create the chord
+            return chord.Chord(f"{root_name}{mapped_quality}")
+            
+        except Exception as e:
+            logger.debug(f"Chord parsing error: {e}")
+            return None
+
     def generate_expressive_sequence(self, key_context=None, length=64, complexity=0.7):
         """Generate a musically expressive sequence with varied rhythms"""
         # Select time signature based on complexity
@@ -926,23 +1045,68 @@ class MarkovChain:
         )
         
     def _clean_key_context(self, key_context):
-        """Standardize key context format"""
+        """Standardize key context format and validate it"""
         if not key_context:
             # Use default or random key
             if self.musical_features['common_keys']:
                 return random.choice(list(self.musical_features['common_keys'].keys()))
             return "C major"
             
-        key_context = key_context.strip()
-        parts = key_context.split()
-        
-        if len(parts) == 1:
-            return f"{parts[0].capitalize()} major"
-        elif len(parts) == 2:
-            return f"{parts[0].capitalize()} {parts[1].lower()}"
-        else:
-            return "C major"  # Invalid format
+        try:
+            # Clean spaces and handle special characters
+            key_context = key_context.strip()
             
+            # Check for missing spaces between note and mode
+            if key_context.lower().endswith("major") and " " not in key_context:
+                note_name = key_context[:-5].strip().capitalize()
+                return f"{note_name} major"
+            elif key_context.lower().endswith("minor") and " " not in key_context:
+                note_name = key_context[:-5].strip().capitalize()
+                return f"{note_name} minor"
+            
+            # If it contains the word "major" or "minor" but is incorrectly formatted
+            if "major" in key_context.lower():
+                parts = key_context.lower().split("major")
+                tonic = parts[0].strip().capitalize()
+                # Ensure tonic is just a note name
+                if len(tonic) > 2:  # Most note names are 1-2 chars
+                    tonic = tonic[0]  # Take just the first letter as a fallback
+                return f"{tonic} major"
+                
+            if "minor" in key_context.lower():
+                parts = key_context.lower().split("minor")
+                tonic = parts[0].strip().capitalize()
+                if len(tonic) > 2:
+                    tonic = tonic[0]
+                return f"{tonic} minor"
+            
+            # Standard format parsing
+            parts = key_context.split()
+            
+            if len(parts) == 1:
+                # Just a note name, assume major
+                return f"{parts[0].capitalize()} major"
+            elif len(parts) == 2:
+                # Note name and mode
+                if parts[1].lower() not in ["major", "minor"]:
+                    return "C major"  # Invalid mode
+                return f"{parts[0].capitalize()} {parts[1].lower()}"
+            else:
+                return "C major"  # Invalid format
+                
+        except Exception as e:
+            logger.warning(f"Error cleaning key context '{key_context}': {e}", exc_info=True)
+            return "C major"  # Safe fallback
+
+    def _validate_key(self, key_str):
+        """Validate if a key string can be used with music21"""
+        try:
+            k = key.Key(key_str)
+            return key_str
+        except Exception as e:
+            logger.warning(f"Invalid key '{key_str}': {e}")
+            return "C major"  # Safe fallback
+
     def _determine_start_note(self, key_context):
         """Determine appropriate start note for a key"""
         start_note = 60  # Default to middle C

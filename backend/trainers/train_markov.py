@@ -4,7 +4,7 @@ import multiprocessing
 import warnings
 import sys
 import numpy as np
-from music21 import converter, environment
+from music21 import converter, environment, note, chord
 from tqdm import tqdm
 import logging
 from backend.models.markov_chain import MarkovChain
@@ -29,6 +29,24 @@ def process_midi_file(file_path):
         return score
     except Exception as e:
         return None
+
+def extract_note_sequence_from_score(score):
+    """Convert a music21 score to a sequence of (note, duration) pairs"""
+    note_sequence = []
+    try:
+        # Flatten the score and process each note
+        for element in score.flatten().notes:
+            if isinstance(element, note.Note):
+                # Add the note's MIDI pitch and duration
+                note_sequence.append((element.pitch.midi, float(element.duration.quarterLength)))
+            elif isinstance(element, chord.Chord):
+                # For chords, add each pitch separately with the same duration
+                for pitch in element.pitches:
+                    note_sequence.append((pitch.midi, float(element.duration.quarterLength)))
+    except Exception as e:
+        logger.debug(f"Error extracting note sequence: {e}")
+    
+    return note_sequence
 
 def train_markov_model(midi_dir="dataset/midi", order=2, max_interval=12, output_dir="output/trained_models"):
     """Train Markov chain model with optimized processing and clear feedback"""
@@ -75,6 +93,20 @@ def train_markov_model(midi_dir="dataset/midi", order=2, max_interval=12, output
     
     logger.info(f"Successfully processed {len(scores)}/{len(midi_files)} files")
     
+    # Convert music21 scores to note sequences that the Markov model expects
+    logger.info("Converting scores to note sequences...")
+    note_sequences = []
+    for score in tqdm(scores, desc="Extracting sequences"):
+        sequence = extract_note_sequence_from_score(score)
+        if sequence and len(sequence) >= 3:  # Only add if we have a meaningful sequence
+            note_sequences.append(sequence)
+    
+    if not note_sequences:
+        logger.error("No valid note sequences could be extracted")
+        return None
+    
+    logger.info(f"Extracted {len(note_sequences)} valid note sequences for training")
+    
     # Train model with progress tracking
     logger.info("Training Markov model...")
     progress_bar = tqdm(total=100, desc="Training")
@@ -82,7 +114,7 @@ def train_markov_model(midi_dir="dataset/midi", order=2, max_interval=12, output
     def update_progress(percent):
         progress_bar.update(int(percent * 100) - progress_bar.n)
     
-    model.train(scores, progress_callback=update_progress)
+    model.train(note_sequences, progress_callback=update_progress)
     progress_bar.close()
     
     # Ensure output directory exists

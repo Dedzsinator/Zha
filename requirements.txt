@@ -1,0 +1,11 @@
+torch
+torchaudio
+torchvision
+numpy
+music21
+fastapi
+uvicorn
+python-multipart
+fluidsynth
+scipy
+tqdm
