@@ -103,6 +103,107 @@ class MarkovChain:
             
         return features
         
+    def _map_notes_to_chords(self, notes, durations, chords):
+        """Map each note to the appropriate chord in the progression"""
+        if not notes or not chords:
+            return []
+            
+        chord_sequence = []
+        total_notes = len(notes)
+        notes_per_chord = max(1, total_notes // len(chords))
+        
+        for i in range(total_notes):
+            chord_idx = min(i // notes_per_chord, len(chords) - 1)
+            chord_sequence.append(chords[chord_idx])
+            
+        return chord_sequence
+
+    def _adjust_notes_to_chords(self, notes, chord_sequence):
+        """Adjust notes to better fit with their corresponding chords"""
+        if not notes or not chord_sequence:
+            return notes
+            
+        adjusted_notes = []
+        
+        try:
+            from music21 import harmony
+            
+            for i, (note_value, chord_name) in enumerate(zip(notes, chord_sequence)):
+                # Try to create a chord object
+                try:
+                    chord_obj = harmony.ChordSymbol(chord_name)
+                    chord_pitches = set([p.midi % 12 for p in chord_obj.pitches])
+                    
+                    note_pitch_class = note_value % 12
+                    
+                    # If note is already in chord, keep it
+                    if note_pitch_class in chord_pitches:
+                        adjusted_notes.append(note_value)
+                        continue
+                        
+                    # Otherwise, find the nearest chord tone
+                    distance_to_chord = [(abs((pc - note_pitch_class) % 12), pc) for pc in chord_pitches]
+                    nearest_pitch_class = min(distance_to_chord, key=lambda x: x[0])[1]
+                    
+                    # Adjust the note to the nearest chord tone while preserving octave
+                    octave = note_value // 12
+                    adjusted_note = (octave * 12) + nearest_pitch_class
+                    
+                    # Ensure the note is in valid MIDI range
+                    if 0 <= adjusted_note < 128:
+                        adjusted_notes.append(adjusted_note)
+                    else:
+                        adjusted_notes.append(note_value)  # Keep original if out of range
+                        
+                except Exception:
+                    # If chord parsing fails, keep the original note
+                    adjusted_notes.append(note_value)
+                    
+        except ImportError:
+            # If music21 is not available, return the original notes
+            return notes
+            
+        return adjusted_notes
+
+    def _generate_fallback_sequence(self, length):
+        """Generate a simple sequence when other methods fail"""
+        # Create a C major scale
+        c_major = [60, 62, 64, 65, 67, 69, 71, 72]
+        
+        # Generate random notes from the scale
+        import random
+        notes = [random.choice(c_major) for _ in range(length)]
+        
+        # Generate simple durations (quarter and eighth notes)
+        durations = [0.5 if random.random() > 0.5 else 0.25 for _ in range(length)]
+        
+        # Create simple output
+        return {
+            'notes': notes,
+            'durations': durations,
+            'chords': ['C', 'G', 'Am', 'F'] * (length // 4 + 1),
+            'beat_positions': [i % 4 for i in range(length)],
+            'key': 'C major',
+            'time_signature': '4/4'
+        }
+
+    def generate_expressive_sequence(self, key_context=None, length=64, complexity=0.7):
+        """Generate an expressive musical sequence with proper rhythm and harmony"""
+        try:
+            # Clean the key context
+            cleaned_key = self._clean_key_context(key_context)
+            logger.info(f"Generating expressive sequence in key: {cleaned_key}")
+            
+            # Generate with chords for more musical structure
+            return self.generate_with_chords(
+                key_context=cleaned_key,
+                length=length,
+                time_signature="4/4"
+            )
+        except Exception as e:
+            logger.error(f"Error in generate_expressive_sequence: {e}")
+            return self._generate_fallback_sequence(length)
+        
     def _convert_sequences_to_streams(self, midi_sequences):
         """Convert MIDI sequences to music21 streams efficiently"""
         all_streams = []
@@ -910,8 +1011,6 @@ class MarkovChain:
             
         except Exception as e:
             logger.error(f"Error in generate_with_chords: {e}")
-            # Fallback to simple generation
-            return self._generate_fallback_sequence(length)
 
     def _parse_chord_name(self, chord_name):
         """Convert chord name string to music21 chord object"""
@@ -967,60 +1066,40 @@ class MarkovChain:
             length=length,
             time_signature=time_sig
         )
-        
+
     def _clean_key_context(self, key_context):
-        """Standardize key context format and validate it"""
-        if not key_context:
-            # Use default or random key
-            if self.musical_features['common_keys']:
-                return random.choice(list(self.musical_features['common_keys'].keys()))
-            return "C major"
+        """Properly clean and format key string for music21 compatibility"""
+        if key_context is None or not isinstance(key_context, str):
+            return "C major"  # Default key
             
         try:
-            # Clean spaces and handle special characters
-            key_context = key_context.strip()
+            # Handle common issues with key parsing
+            key_str = key_context.strip()
             
-            # Check for missing spaces between note and mode
-            if key_context.lower().endswith("major") and " " not in key_context:
-                note_name = key_context[:-5].strip().capitalize()
-                return f"{note_name} major"
-            elif key_context.lower().endswith("minor") and " " not in key_context:
-                note_name = key_context[:-5].strip().capitalize()
-                return f"{note_name} minor"
-            
-            # If it contains the word "major" or "minor" but is incorrectly formatted
-            if "major" in key_context.lower():
-                parts = key_context.lower().split("major")
-                tonic = parts[0].strip().capitalize()
-                # Ensure tonic is just a note name
-                if len(tonic) > 2:  # Most note names are 1-2 chars
-                    tonic = tonic[0]  # Take just the first letter as a fallback
-                return f"{tonic} major"
+            # Split into tonic and mode
+            if ' ' in key_str:
+                parts = key_str.split(' ', 1)
+                tonic, mode = parts[0], parts[1]
                 
-            if "minor" in key_context.lower():
-                parts = key_context.lower().split("minor")
-                tonic = parts[0].strip().capitalize()
-                if len(tonic) > 2:
-                    tonic = tonic[0]
-                return f"{tonic} minor"
-            
-            # Standard format parsing
-            parts = key_context.split()
-            
-            if len(parts) == 1:
-                # Just a note name, assume major
-                return f"{parts[0].capitalize()} major"
-            elif len(parts) == 2:
-                # Note name and mode
-                if parts[1].lower() not in ["major", "minor"]:
-                    return "C major"  # Invalid mode
-                return f"{parts[0].capitalize()} {parts[1].lower()}"
+                # Normalize tonic name
+                tonic = tonic.capitalize()
+                
+                # Normalize mode name
+                mode = mode.lower()
+                if mode not in ['major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'aeolian', 'locrian']:
+                    mode = 'major'  # Default to major if invalid mode
+                    
+                # Format properly for music21
+                from music21 import key
+                key_obj = key.Key(tonic, mode)
+                return f"{tonic} {mode}"
             else:
-                return "C major"  # Invalid format
+                # Assume major if only tonic is provided
+                return f"{key_str} major"
                 
         except Exception as e:
-            logger.warning(f"Error cleaning key context '{key_context}': {e}", exc_info=True)
-            return "C major"  # Safe fallback
+            logger.warning(f"Failed to parse key '{key_context}': {e}, defaulting to C major")
+            return "C major"
 
     def _validate_key(self, key_str):
         """Validate if a key string can be used with music21"""

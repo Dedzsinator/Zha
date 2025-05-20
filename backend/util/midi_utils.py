@@ -261,44 +261,25 @@ def create_midi_with_chords_and_durations(notes, durations, chords=None, bpm=120
     return output_path
 
 def parse_key_context(key_context):
-    """
-    Parse a key context string into root and mode components
-    
-    Args:
-        key_context: String like 'C major' or 'A minor'
+    """Properly parse a key context string into root and mode"""
+    if not key_context or not isinstance(key_context, str):
+        return "C", "major"
         
-    Returns:
-        Tuple of (root, mode)
-    """
-    if not key_context:
-        return "C", "major"  # Default key
-        
-    # Clean input
-    key_context = key_context.strip()
+    key_str = key_context.strip()
     
-    # Handle format like "C major"
-    if " " in key_context:
-        parts = key_context.split(" ", 1)
-        root = parts[0].strip()
-        mode = parts[1].strip().lower()
+    # Split string on whitespace
+    parts = key_str.split()
+    
+    if len(parts) == 1:
+        # Only tonic provided, assume major
+        return parts[0], "major"
     else:
-        # Handle shorthand formats like "Cmaj" or "Amin"
-        root = key_context[0]  # First character is the root
-        if len(key_context) > 1 and key_context[1] in ('#', 'b'):
-            root += key_context[1]  # Include accidental
-            mode_start = 2
-        else:
-            mode_start = 1
+        # Get the first part as tonic, rest as mode
+        tonic = parts[0]
+        mode = " ".join(parts[1:]).lower()
+        
+        # Normalize mode
+        if mode not in ['major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'aeolian', 'locrian']:
+            mode = 'major'
             
-        mode = key_context[mode_start:].lower()
-    
-    # Map mode variations to standard names
-    mode_map = {
-        "maj": "major", "major": "major", "m": "major", "M": "major",
-        "min": "minor", "minor": "minor", "m": "minor"
-    }
-    
-    # Standardize mode name
-    mode = mode_map.get(mode, "major")
-    
-    return root, mode
+        return tonic, mode
