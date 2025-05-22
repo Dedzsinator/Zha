@@ -1,21 +1,60 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Base theme colors - light mode */
+  --background: #f8f9fb;
+  --foreground: #1a1a2e;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  
+  /* Additional colors for AI theme - light mode */
+  --ai-gradient-start: #4338ca;
+  --ai-gradient-middle: #7e22ce;
+  --ai-gradient-end: #3730a3;
+  --ai-accent: #f0abfc;
+  --ai-text: #1e293b;
+  --ai-container: #f5f7ff;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Base theme colors - dark mode */
+    --background: #0f1729;
+    --foreground: #f9fafb;
+    --primary: #6d60ff;
+    --primary-foreground: #ffffff;
+    --secondary: #9061ff;
+    --secondary-foreground: #ffffff;
+    --muted: #1f2937;
+    --muted-foreground: #9ca3af;
+    
+    /* Additional colors for AI theme - dark mode */
+    --ai-gradient-start: #4c1d95;
+    --ai-gradient-middle: #6d28d9;
+    --ai-gradient-end: #5b21b6;
+    --ai-accent: #c084fc;
+    --ai-text: #f1f5f9;
+    --ai-container: #1e293b;
   }
 }
 
@@ -23,4 +62,216 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Enhanced contrast default styles */
+.bg-white {
+  background-color: var(--background);
+}
+
+.text-gray-500 {
+  color: var(--muted-foreground);
+}
+
+.text-gray-600, .text-gray-700 {
+  color: var(--foreground);
+  opacity: 0.9;
+}
+
+.text-gray-800 {
+  color: var(--foreground);
+}
+
+.text-indigo-100 {
+  color: var(--secondary-foreground);
+  opacity: 0.95;
+}
+
+.text-indigo-700, .text-purple-800 {
+  color: var(--secondary);
+}
+
+/* Enhanced AI gradient styling */
+.from-indigo-900.via-purple-800.to-indigo-900 {
+  background-image: linear-gradient(to right, 
+    var(--ai-gradient-start), 
+    var(--ai-gradient-middle), 
+    var(--ai-gradient-end)
+  );
+}
+
+.from-indigo-100.to-purple-100 {
+  background-image: linear-gradient(to right, 
+    rgba(224, 231, 255, 0.8), 
+    rgba(243, 232, 255, 0.8)
+  );
+}
+
+/* Improved text contrast on generated content */
+.bg-gradient-to-r.from-indigo-100.to-purple-100 p {
+  color: #374151 !important; /* Force stronger contrast */
+}
+
+/* Enhanced box styling */
+.bg-gray-50 {
+  background-color: #f8fafc;
+}
+
+/* Make white content areas stand out better in dark mode */
+@media (prefers-color-scheme: dark) {
+  .bg-white {
+    background-color: #1a2234;
+  }
+  
+  .bg-gray-50 {
+    background-color: #1e293b;
+  }
+  
+  .text-gray-800 {
+    color: #e2e8f0;
+  }
+  
+  .border-gray-200 {
+    border-color: #334155;
+  }
+  
+  .border-purple-200 {
+    border-color: #7e22ce;
+    opacity: 0.5;
+  }
+  
+  /* Make text on white backgrounds more visible in dark mode */
+  .bg-white p,
+  .bg-white h2,
+  .bg-white h3,
+  .bg-white button:not(.text-white),
+  .bg-white div {
+    color: var(--foreground);
+  }
+  
+  /* Specifically for the AI-generated audio player container */
+  .bg-white.p-4.rounded-md.shadow-sm.border.border-purple-200 p {
+    color: #e2e8f0 !important;
+  }
+}
+
+/* AI-themed styles */
+.text-ai-accent {
+  color: var(--ai-accent);
+}
+
+.bg-ai-container {
+  background-color: var(--ai-container);
+}
+
+/* Pulsing animation for AI elements */
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.ai-pulse {
+  animation: subtle-pulse 3s infinite ease-in-out;
+}
+
+/* Enhanced styling for model selection buttons in GenerationForm */
+button[class*="p-3 rounded-lg border text-left"] .text-xs.mt-1.text-gray-500 {
+  /* Improve contrast for model description text */
+  color: #4b5563 !important; /* Darker gray for better readability in light mode */
+  font-weight: 500;
+}
+
+/* Make selected model's description text even more readable */
+button[class*="border-blue-500 bg-blue-50"] .text-xs.mt-1.text-gray-500 {
+  color: #3b4252 !important; /* Even darker for selected button */
+  font-weight: 500;
+}
+
+/* AI themed glowing effects for the generator components */
+.from-indigo-900.via-purple-800.to-indigo-900 {
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* Enhanced model selection buttons */
+button[class*="p-3 rounded-lg border text-left"] {
+  border-width: 2px;
+  transition: all 0.2s ease-in-out;
+}
+
+button[class*="p-3 rounded-lg border text-left"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  button[class*="p-3 rounded-lg border text-left"] .text-xs.mt-1.text-gray-500 {
+    color: #cbd5e1 !important; /* Lighter color for dark mode */
+  }
+
+  button[class*="border-blue-500"] {
+    border-color: var(--ai-accent) !important;
+  }
+
+  button[class*="bg-blue-50"] {
+    background-color: rgba(76, 29, 149, 0.3) !important;
+  }
+  
+  button[class*="border-blue-500 bg-blue-50"] .text-xs.mt-1.text-gray-500 {
+    color: #e2e8f0 !important; /* Even lighter for selected button in dark mode */
+  }
+
+  /* Fix for text in the generationForm */
+  .bg-gray-50.rounded-lg.border.border-purple-200 h2,
+  .bg-gray-50.rounded-lg.border.border-purple-200 label,
+  .bg-gray-50.rounded-lg.border.border-purple-200 p,
+  .bg-gray-50.rounded-lg.border.border-purple-200 button:not(.text-white),
+  .bg-gray-50.rounded-lg.border.border-purple-200 span {
+    color: var(--foreground) !important;
+  }
+  
+  /* Fix audio player container in dark mode */
+  .bg-white.p-4.rounded-md {
+    background-color: rgba(30, 41, 59, 0.8) !important;
+    border-color: var(--ai-accent) !important;
+  }
+}
+
+/* AI Pulse animation for certain elements */
+.from-indigo-900.via-purple-800.to-indigo-900 h2,
+.from-indigo-900.via-purple-800.to-indigo-900 .text-yellow-300 {
+  text-shadow: 0 0 8px rgba(254, 240, 138, 0.3);
+}
+
+.text-purple-600,
+button[class*="bg-purple-700"] {
+  position: relative;
+  overflow: hidden;
+}
+
+button[class*="bg-purple-700"]:after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    to bottom right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: rotate(45deg);
+  animation: shine 3s infinite ease-in-out;
+}
+
+@keyframes shine {
+  0% { transform: translateX(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) rotate(45deg); }
 }

@@ -14,10 +14,10 @@ export interface Track {
 }
 
 export interface GenerationResponse {
-  midi_url: string;
+  midi_url?: string;
   audio_url?: string;
-  message: string;
-  key?: string;
-  time_signature?: string;
-  sections?: string;
+  message?: string;
+  model_used?: string;
+  duration?: number;
+  parameters?: Record<string, any>;
 }
