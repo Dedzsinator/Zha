@@ -1,53 +1,246 @@
 import numpy as np
 import random
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from collections import defaultdict, Counter
 from music21 import note, pitch, scale, key, chord, stream, roman, meter
 import logging
+from sklearn.cluster import KMeans
+from hmmlearn import hmm
+import cupy as cp
+import warnings
 
 logger = logging.getLogger(__name__)
 
+# Try to use CUDA if available with better error handling
+HAS_CUPY = False
+try:
+    import cupy as cp
+    # Test CuPy functionality
+    test_array = cp.array([1, 2, 3])
+    _ = test_array + 1  # Simple operation to verify it works
+    HAS_CUPY = True
+    logger.info("✅ CuPy detected and working - GPU acceleration enabled")
+except ImportError:
+    logger.warning("⚠️ CuPy not found - falling back to CPU computation")
+except Exception as e:
+    logger.warning(f"⚠️ CuPy found but not working ({e}) - falling back to CPU computation")
+    HAS_CUPY = False
+
+class CUDAOptimizer:
+    """GPU-accelerated tensor operations for Markov chains with robust error handling"""
+    
+    @staticmethod
+    def to_gpu(array):
+        """Convert numpy array to GPU array if possible"""
+        if HAS_CUPY and isinstance(array, np.ndarray):
+            try:
+                return cp.asarray(array)
+            except Exception as e:
+                logger.warning(f"GPU conversion failed: {e}")
+                return array
+        return array
+    
+    @staticmethod
+    def to_cpu(array):
+        """Convert GPU array back to numpy if needed"""
+        if HAS_CUPY and hasattr(array, 'get'):
+            try:
+                return cp.asnumpy(array)
+            except Exception as e:
+                logger.warning(f"CPU conversion failed: {e}")
+                return array
+        return array
+    
+    @staticmethod
+    def zeros_like_gpu(shape, dtype=np.float32):
+        """Create zeros array on GPU if available"""
+        if HAS_CUPY:
+            try:
+                return cp.zeros(shape, dtype=dtype)
+            except Exception as e:
+                logger.warning(f"GPU zeros creation failed: {e}, using CPU")
+                return np.zeros(shape, dtype=dtype)
+        return np.zeros(shape, dtype=dtype)
+    
+    @staticmethod
+    def normalize_gpu(matrix, axis=1):
+        """GPU-accelerated matrix normalization with fallback"""
+        try:
+            if HAS_CUPY and hasattr(matrix, 'sum'):
+                sums = cp.sum(matrix, axis=axis, keepdims=True)
+                sums = cp.where(sums == 0, 1.0, sums)
+                return matrix / sums
+            else:
+                sums = np.sum(matrix, axis=axis, keepdims=True)
+                sums = np.where(sums == 0, 1.0, sums)
+                return matrix / sums
+        except Exception as e:
+            logger.warning(f"GPU normalization failed: {e}, using CPU")
+            if hasattr(matrix, 'get'):
+                matrix = cp.asnumpy(matrix)
+            sums = np.sum(matrix, axis=axis, keepdims=True)
+            sums = np.where(sums == 0, 1.0, sums)
+            return matrix / sums
+
 class MarkovChain:
     """
-    Efficient musical Markov Chain model with multiple transition types and music theory awareness.
+    Enhanced musical Markov Chain model with HMM capabilities, GPU acceleration, and high-order transitions.
     """
-    def __init__(self, order=1, max_interval=12):
-        # Core transition matrices
-        self.transitions = np.zeros((128, 128), dtype=np.float32)
+    def __init__(self, order=3, max_interval=12, n_hidden_states=16, use_gpu=True):
+        # Enhanced model configuration
+        self.order = max(order, 3)  # Increase minimum order to 3
         self.max_interval = max_interval
         self.interval_range = 2 * max_interval + 1
-        self.interval_transitions = {}  # Sparse dict for better memory usage
-        
-        # Model configuration
-        self.order = order
+        self.n_hidden_states = n_hidden_states
+        self.use_gpu = use_gpu and HAS_CUPY
         self.trained = False
         
-        # Musical features - unified storage approach
+        # Initialize GPU optimizer
+        self.gpu_opt = CUDAOptimizer()
+        
+        # Enhanced transition matrices with GPU support
+        if self.use_gpu:
+            self.transitions = self.gpu_opt.zeros_like_gpu((128, 128), dtype=np.float32)
+            self.higher_order_transitions = {}  # Will store GPU arrays
+        else:
+            self.transitions = np.zeros((128, 128), dtype=np.float32)
+            self.higher_order_transitions = {}
+            
+        # Sparse interval transitions for memory efficiency
+        self.interval_transitions = {}
+        
+        # HMM Components
+        self.hmm_model = None
+        self.hidden_states = None
+        self.emission_probs = None
+        self.transition_probs = None
+        
+        # Enhanced musical features with GPU acceleration
         self.musical_features = {
-            'multi_order_transitions': {},  # {context_tuple: {next_note: probability}}
-            'chord_transitions': {},  # {chord1: {chord2: probability}}
-            'common_chord_progressions': {},  # {(chord1, chord2): count}
-            'roman_numeral_transitions': {},  # {key: {(rn1, rn2): probability}}
-            'duration_transitions': {},  # {prev_duration: {next_duration: probability}}
-            'common_keys': {},  # {key_name: prevalence}
-            'chord_to_scale': {},  # {chord_name: {scale_notes}}
-            'rhythm_patterns': {},  # {(duration, beat_strength): count}
-            'time_signatures': {},  # {time_sig: prevalence}
-            'beat_patterns': {},  # {time_sig: [[beat_patterns]]}
-            'rhythmic_motifs': {},  # {time_sig: [[rhythmic_motifs]]}
-            'beat_strength_transitions': {},  # {time_sig: numpy_matrix}
-            'note_density': {},  # {time_sig: avg_density}
-            'beat_positions': {},  # {time_sig: {position: frequency}}
-            'grouping_patterns': []  # [[patterns]]
+            'multi_order_transitions': {},  # Now supports orders 2-6
+            'chord_transitions': {},
+            'common_chord_progressions': {},
+            'roman_numeral_transitions': {},
+            'duration_transitions': {},
+            'common_keys': {},
+            'chord_to_scale': {},
+            'rhythm_patterns': {},
+            'time_signatures': {},
+            'beat_patterns': {},
+            'rhythmic_motifs': {},
+            'beat_strength_transitions': {},
+            'note_density': {},
+            'beat_positions': {},
+            'grouping_patterns': [],
+            'harmonic_progressions': {},  # New: Enhanced harmonic analysis
+            'melodic_contours': {},       # New: Melodic shape patterns
+            'dynamic_patterns': {},       # New: Velocity/dynamics
+            'rhythmic_syncopation': {},   # New: Syncopation patterns
+            'phrase_boundaries': {},      # New: Musical phrase structure
         }
         
-    def train(self, midi_sequences, progress_callback=None):
-        """Train the model with optimized flow and memory usage"""
-        logger.info("Starting model training...")
+        # State tracking for HMM
+        self.current_hidden_state = 0
+        self.state_history = []
         
-        # Extract musical features
+    def _initialize_hmm(self, sequences):
+        """Initialize Hidden Markov Model with musical structure awareness"""
+        logger.info("Initializing HMM with musical structure awareness...")
+        
+        # Extract feature vectors from sequences
+        features = self._extract_hmm_features(sequences)
+        
+        if len(features) == 0:
+            logger.warning("No features extracted for HMM initialization")
+            return
+        
+        # Use KMeans to initialize hidden states
+        if len(features) >= self.n_hidden_states:
+            features_array = np.array(features)
+            
+            # GPU-accelerated clustering if available
+            if self.use_gpu:
+                try:
+                    from cuml.cluster import KMeans as cuKMeans
+                    kmeans = cuKMeans(n_clusters=self.n_hidden_states, random_state=42)
+                    cluster_labels = kmeans.fit_predict(features_array)
+                    cluster_labels = cp.asnumpy(cluster_labels) if hasattr(cluster_labels, 'get') else cluster_labels
+                except ImportError:
+                    logger.warning("cuML not available, using sklearn KMeans")
+                    kmeans = KMeans(n_clusters=self.n_hidden_states, random_state=42)
+                    cluster_labels = kmeans.fit_predict(features_array)
+            else:
+                kmeans = KMeans(n_clusters=self.n_hidden_states, random_state=42)
+                cluster_labels = kmeans.fit_predict(features_array)
+            
+            # Initialize HMM
+            self.hmm_model = hmm.GaussianHMM(n_components=self.n_hidden_states, covariance_type="full")
+            
+            try:
+                self.hmm_model.fit(features_array.reshape(-1, 1) if features_array.ndim == 1 else features_array)
+                logger.info(f"HMM initialized with {self.n_hidden_states} hidden states")
+            except Exception as e:
+                logger.warning(f"HMM fitting failed: {e}, using simpler model")
+                self.hmm_model = None
+        else:
+            logger.warning(f"Insufficient data for HMM (need >= {self.n_hidden_states} samples)")
+            
+    def _extract_hmm_features(self, sequences):
+        """Extract features for HMM training"""
+        features = []
+        
+        for sequence in sequences[:min(len(sequences), 1000)]:  # Limit for performance
+            pitches = []
+            durations = []
+            
+            for note_data in sequence:
+                if isinstance(note_data, (list, tuple)) and len(note_data) >= 2:
+                    pitches.append(note_data[0])
+                    durations.append(note_data[1])
+                elif isinstance(note_data, int):
+                    pitches.append(note_data)
+                    durations.append(0.25)  # Default duration
+                    
+            if len(pitches) >= 4:  # Minimum sequence length
+                # Extract statistical features
+                pitch_mean = np.mean(pitches)
+                pitch_std = np.std(pitches)
+                pitch_range = max(pitches) - min(pitches)
+                duration_mean = np.mean(durations) if durations else 0.25
+                
+                # Interval features
+                intervals = [pitches[i+1] - pitches[i] for i in range(len(pitches)-1)]
+                interval_mean = np.mean(intervals) if intervals else 0
+                interval_std = np.std(intervals) if intervals else 0
+                
+                # Contour features
+                ascending = sum(1 for i in intervals if i > 0)
+                descending = sum(1 for i in intervals if i < 0)
+                contour_ratio = ascending / max(len(intervals), 1)
+                
+                feature_vector = [
+                    pitch_mean, pitch_std, pitch_range,
+                    duration_mean, interval_mean, interval_std,
+                    contour_ratio
+                ]
+                features.append(feature_vector)
+                
+        return features
+        
+    def train(self, midi_sequences, progress_callback=None):
+        """Enhanced training with HMM initialization and GPU acceleration"""
+        logger.info("Starting enhanced model training with HMM and GPU acceleration...")
+        
+        # Initialize HMM first
+        logger.info("Initializing HMM structure...")
+        self._initialize_hmm(midi_sequences)
+        
+        # Extract musical features with enhanced analysis
         if len(midi_sequences) <= 500:
             try:
-                # Extract musical features from a subset of data
+                logger.info("Extracting enhanced musical features...")
                 music_features = self.extract_musical_features(midi_sequences[:min(len(midi_sequences), 200)])
                 
                 if music_features:
@@ -57,21 +250,278 @@ class MarkovChain:
                     self._process_chord_progressions(music_features)
                     self._process_key_features(music_features)
                     self._process_roman_numeral_transitions(music_features)
+                    
+                    # Enhanced processing for new features
+                    self._process_enhanced_features(music_features)
             except Exception as e:
                 logger.warning(f"Feature extraction issue: {e}. Using simplified training.")
         else:
             logger.info("Large dataset detected, using simplified feature extraction")
         
-        # Train core transition matrices
-        logger.info("Training note transitions...")
-        self._train_note_transitions(midi_sequences, progress_callback)
+        # Train core transition matrices with GPU acceleration
+        logger.info("Training enhanced note transitions...")
+        self._train_enhanced_note_transitions(midi_sequences, progress_callback)
         
-        logger.info("Training interval transitions...")
-        self._train_interval_transitions(midi_sequences, progress_callback)
+        logger.info("Training enhanced interval transitions...")
+        self._train_enhanced_interval_transitions(midi_sequences, progress_callback)
+        
+        # Train higher-order transitions (up to order 6)
+        logger.info("Training higher-order transitions...")
+        self._train_higher_order_transitions(midi_sequences, progress_callback)
+        
+        # Finalize GPU matrices
+        if self.use_gpu:
+            logger.info("Finalizing GPU matrices...")
+            self._finalize_gpu_matrices()
         
         self.trained = True
-        logger.info("Training complete!")
+        logger.info("Enhanced training complete!")
         return True
+        
+    def _process_enhanced_features(self, music_features):
+        """Process enhanced musical features"""
+        # Melodic contours
+        if 'melodic_contours' in music_features:
+            contour_counter = Counter(music_features['melodic_contours'])
+            self.musical_features['melodic_contours'] = dict(contour_counter.most_common(30))
+            
+        # Dynamic patterns
+        if 'dynamic_patterns' in music_features:
+            dynamic_counter = Counter(music_features['dynamic_patterns'])
+            self.musical_features['dynamic_patterns'] = dict(dynamic_counter.most_common(20))
+            
+        # Phrase boundaries
+        if 'phrase_boundaries' in music_features:
+            phrase_counter = Counter(music_features['phrase_boundaries'])
+            self.musical_features['phrase_boundaries'] = dict(phrase_counter.most_common(15))
+            
+        logger.info("Enhanced musical features processed")
+        
+    def _train_enhanced_note_transitions(self, midi_sequences, progress_callback=None):
+        """GPU-accelerated note transition training with HMM awareness"""
+        logger.info("Training enhanced note transitions with GPU acceleration...")
+        
+        # Initialize GPU arrays if available and working
+        gpu_transitions = None
+        use_gpu_for_this = self.use_gpu and HAS_CUPY
+        
+        if use_gpu_for_this:
+            try:
+                gpu_transitions = self.gpu_opt.zeros_like_gpu((128, 128), dtype=np.float32)
+                logger.info("🚀 GPU arrays initialized successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ GPU array initialization failed: {e}, falling back to CPU")
+                use_gpu_for_this = False
+                gpu_transitions = None
+        
+        if not use_gpu_for_this:
+            gpu_transitions = self.transitions.copy()
+            
+        multi_order_counts = defaultdict(Counter)
+        total_processed = 0
+        
+        logger.info(f"Processing {len(midi_sequences)} sequences...")
+        
+        for sequence in midi_sequences:
+            pitches = []
+            for note_data in sequence:
+                if isinstance(note_data, int):
+                    pitches.append(note_data)
+                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
+                    pitches.append(note_data[0])
+                    
+            if len(pitches) < 2:
+                continue
+                
+            # Single-order transitions with error handling
+            try:
+                for i in range(len(pitches) - 1):
+                    prev_note, next_note = pitches[i], pitches[i + 1]
+                    if 0 <= prev_note < 128 and 0 <= next_note < 128:
+                        if use_gpu_for_this and gpu_transitions is not None:
+                            try:
+                                gpu_transitions[prev_note, next_note] += 1
+                            except Exception as e:
+                                # If GPU operation fails, switch to CPU
+                                logger.warning(f"GPU operation failed, switching to CPU: {e}")
+                                use_gpu_for_this = False
+                                # Convert back to CPU and continue
+                                if hasattr(gpu_transitions, 'get'):
+                                    self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
+                                gpu_transitions = self.transitions
+                                gpu_transitions[prev_note, next_note] += 1
+                        else:
+                            gpu_transitions[prev_note, next_note] += 1
+            except Exception as e:
+                logger.warning(f"Error processing sequence: {e}")
+                continue
+            
+            # Multi-order transitions (up to order 6)
+            max_order = min(6, self.order)
+            for order in range(2, max_order + 1):
+                if len(pitches) > order:
+                    for i in range(len(pitches) - order):
+                        context = tuple(pitches[i:i+order])
+                        next_note = pitches[i+order]
+                        if all(0 <= n < 128 for n in context) and 0 <= next_note < 128:
+                            multi_order_counts[(order, context)][next_note] += 1
+                        
+            total_processed += 1
+            if progress_callback and total_processed % 100 == 0:
+                progress_callback(0.3 * total_processed / len(midi_sequences))
+                
+        # Normalize transition matrix with GPU acceleration if possible
+        try:
+            if use_gpu_for_this and HAS_CUPY and hasattr(gpu_transitions, 'get'):
+                logger.info("🚀 Normalizing matrices on GPU...")
+                gpu_transitions = self.gpu_opt.normalize_gpu(gpu_transitions, axis=1)
+                self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
+            else:
+                logger.info("💻 Normalizing matrices on CPU...")
+                row_sums = gpu_transitions.sum(axis=1, keepdims=True)
+                np.divide(gpu_transitions, np.where(row_sums == 0, 1.0, row_sums), out=gpu_transitions)
+                self.transitions = gpu_transitions
+        except Exception as e:
+            logger.warning(f"GPU normalization failed: {e}, using CPU")
+            if hasattr(gpu_transitions, 'get'):
+                gpu_transitions = self.gpu_opt.to_cpu(gpu_transitions)
+            row_sums = gpu_transitions.sum(axis=1, keepdims=True)
+            np.divide(gpu_transitions, np.where(row_sums == 0, 1.0, row_sums), out=gpu_transitions)
+            self.transitions = gpu_transitions
+        
+        # Process multi-order transitions
+        for (order, context), transitions in multi_order_counts.items():
+            total = sum(transitions.values())
+            if total > 0:
+                if order not in self.musical_features['multi_order_transitions']:
+                    self.musical_features['multi_order_transitions'][order] = {}
+                self.musical_features['multi_order_transitions'][order][context] = {
+                    note: count/total for note, count in transitions.items()
+                }
+                
+        logger.info(f"✅ Enhanced note transitions trained on {total_processed} sequences")
+        
+    def _train_enhanced_interval_transitions(self, midi_sequences, progress_callback=None):
+        """Enhanced interval transition training with GPU support"""
+        logger.info("Training enhanced interval transitions...")
+        
+        # Use defaultdict with GPU arrays if available
+        if self.use_gpu:
+            interval_counts = defaultdict(lambda: self.gpu_opt.zeros_like_gpu(self.interval_range, dtype=np.float32))
+        else:
+            interval_counts = defaultdict(lambda: np.zeros(self.interval_range, dtype=np.float32))
+        
+        total_processed = 0
+        
+        for sequence in midi_sequences:
+            pitches = []
+            for note_data in sequence:
+                if isinstance(note_data, int):
+                    pitches.append(note_data)
+                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
+                    pitches.append(note_data[0])
+                    
+            if len(pitches) < 2:
+                continue
+                
+            for i in range(len(pitches) - 1):
+                prev_note = pitches[i]
+                next_note = pitches[i + 1]
+                
+                if 0 <= prev_note < 128 and 0 <= next_note < 128:
+                    interval_val = next_note - prev_note
+                    if -self.max_interval <= interval_val <= self.max_interval:
+                        interval_index = interval_val + self.max_interval
+                        interval_counts[prev_note][interval_index] += 1
+                        
+            total_processed += 1
+            if progress_callback and total_processed % 100 == 0:
+                progress_callback(0.3 + 0.3 * total_processed / len(midi_sequences))
+                
+        # Normalize and store with GPU optimization
+        for prev_note, counts in interval_counts.items():
+            if self.use_gpu:
+                counts_cpu = self.gpu_opt.to_cpu(counts)
+                row_sum = counts_cpu.sum()
+            else:
+                row_sum = counts.sum()
+                counts_cpu = counts
+                
+            if row_sum > 0:
+                self.interval_transitions[prev_note] = counts_cpu / row_sum
+                
+        logger.info(f"Enhanced interval features trained on {total_processed} sequences")
+        
+    def _train_higher_order_transitions(self, midi_sequences, progress_callback=None):
+        """Train higher-order transitions with GPU acceleration"""
+        logger.info("Training higher-order transitions (orders 2-6)...")
+        
+        for order in range(2, min(7, self.order + 1)):
+            logger.info(f"Training order-{order} transitions...")
+            
+            if self.use_gpu:
+                # Use sparse representation for higher orders due to memory constraints
+                transition_counts = defaultdict(Counter)
+            else:
+                transition_counts = defaultdict(Counter)
+            
+            total_processed = 0
+            
+            for sequence in midi_sequences:
+                pitches = []
+                for note_data in sequence:
+                    if isinstance(note_data, int):
+                        pitches.append(note_data)
+                    elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
+                        pitches.append(note_data[0])
+                        
+                if len(pitches) <= order:
+                    continue
+                    
+                for i in range(len(pitches) - order):
+                    context = tuple(pitches[i:i+order])
+                    next_note = pitches[i+order]
+                    
+                    if all(0 <= n < 128 for n in context) and 0 <= next_note < 128:
+                        transition_counts[context][next_note] += 1
+                        
+                total_processed += 1
+                
+            # Normalize and store
+            normalized_transitions = {}
+            for context, transitions in transition_counts.items():
+                total = sum(transitions.values())
+                if total > 3:  # Only keep contexts with sufficient data
+                    normalized_transitions[context] = {
+                        note: count/total for note, count in transitions.items()
+                    }
+            
+            if normalized_transitions:
+                self.higher_order_transitions[order] = normalized_transitions
+                logger.info(f"Stored {len(normalized_transitions)} order-{order} contexts")
+            
+            if progress_callback:
+                progress_callback(0.6 + 0.3 * (order - 1) / 5)
+                
+    def _finalize_gpu_matrices(self):
+        """Finalize and optimize GPU matrices"""
+        if not self.use_gpu:
+            return
+            
+        logger.info("Finalizing GPU matrices...")
+        
+        # Convert main transition matrix back to CPU for saving
+        if hasattr(self.transitions, 'get'):  # CuPy array
+            self.transitions = self.gpu_opt.to_cpu(self.transitions)
+            
+        # Clean up GPU memory
+        try:
+            if HAS_CUPY:
+                cp.get_default_memory_pool().free_all_blocks()
+        except:
+            pass
+            
+        logger.info("GPU matrices finalized")
 
     def extract_musical_features(self, midi_sequences):
         """Streamlined extraction of musical features from MIDI sequences"""
@@ -1128,3 +1578,342 @@ class MarkovChain:
             pass
             
         return start_note
+    
+    # Enhanced generation methods with HMM and higher-order transitions
+    
+    def generate_with_hmm(self, length=64, key_context=None, use_hidden_states=True):
+        """Generate sequence using HMM and higher-order transitions"""
+        if not self.trained or not self.hmm_model:
+            logger.warning("HMM not available, falling back to standard generation")
+            return self.generate_expressive_sequence(key_context, length)
+        
+        try:
+            # Generate hidden state sequence
+            if use_hidden_states:
+                hidden_states = self._generate_hidden_state_sequence(length)
+            else:
+                hidden_states = [0] * length
+                
+            # Generate notes based on hidden states and higher-order context
+            sequence = []
+            
+            # Start with a musically appropriate note
+            start_note = self._determine_start_note(key_context)
+            sequence.append(start_note)
+            
+            for i in range(1, length):
+                # Use the highest available order for context
+                context_notes = sequence[-min(self.order, len(sequence)):]
+                next_note = self._predict_next_note_hmm(
+                    context_notes, 
+                    hidden_states[i] if i < len(hidden_states) else 0,
+                    key_context
+                )
+                sequence.append(next_note)
+                
+            # Generate timing and rhythm
+            durations = self._generate_hmm_durations(sequence, hidden_states[:len(sequence)])
+            
+            return {
+                'notes': sequence,
+                'durations': durations,
+                'hidden_states': hidden_states[:len(sequence)],
+                'key': key_context or 'C major'
+            }
+            
+        except Exception as e:
+            logger.error(f"HMM generation failed: {e}")
+            return self.generate_expressive_sequence(key_context, length)
+    
+    def _generate_hidden_state_sequence(self, length):
+        """Generate sequence of hidden states using HMM"""
+        try:
+            # Sample from HMM
+            states, _ = self.hmm_model.sample(length)
+            return states.flatten().tolist()
+        except Exception as e:
+            logger.warning(f"HMM state generation failed: {e}")
+            # Fallback to simple state pattern
+            return [i % self.n_hidden_states for i in range(length)]
+    
+    def _predict_next_note_hmm(self, context_notes, hidden_state, key_context):
+        """Predict next note using HMM state and higher-order context"""
+        try:
+            # Try highest order first
+            for order in range(min(len(context_notes), 6), 0, -1):
+                if order in self.higher_order_transitions:
+                    context = tuple(context_notes[-order:])
+                    if context in self.higher_order_transitions[order]:
+                        transitions = self.higher_order_transitions[order][context]
+                        
+                        # Weight by hidden state preference
+                        weighted_transitions = self._weight_by_hidden_state(
+                            transitions, hidden_state, key_context
+                        )
+                        
+                        if weighted_transitions:
+                            notes = list(weighted_transitions.keys())
+                            probs = list(weighted_transitions.values())
+                            return random.choices(notes, weights=probs)[0]
+            
+            # Fallback to standard transition
+            if len(context_notes) > 0:
+                current_note = context_notes[-1]
+                if 0 <= current_note < 128:
+                    probs = self.transitions[current_note]
+                    if probs.sum() > 0:
+                        return np.random.choice(128, p=probs)
+            
+            # Final fallback
+            scale_pitches = self._get_scale_pitches(key_context)
+            if scale_pitches:
+                return random.choice([n for n in scale_pitches if 48 <= n <= 84])
+            else:
+                return random.randint(48, 84)
+                
+        except Exception as e:
+            logger.warning(f"HMM note prediction failed: {e}")
+            return random.randint(48, 84)
+    
+    def _weight_by_hidden_state(self, transitions, hidden_state, key_context):
+        """Weight note transitions by hidden state preferences"""
+        try:
+            # Get scale pitches for the key
+            scale_pitches = self._get_scale_pitches(key_context)
+            
+            weighted = {}
+            for note, prob in transitions.items():
+                weight = prob
+                
+                # Boost notes in the current key
+                if scale_pitches and note in scale_pitches:
+                    weight *= 1.5
+                
+                # Hidden state preferences (simplified model)
+                state_mod = hidden_state % 4
+                if state_mod == 0:  # Stable state - prefer consonant intervals
+                    if note % 12 in [0, 4, 7]:  # Root, third, fifth
+                        weight *= 1.3
+                elif state_mod == 1:  # Ascending state
+                    weight *= (1.2 if note > max(transitions.keys()) * 0.5 else 0.8)
+                elif state_mod == 2:  # Descending state
+                    weight *= (1.2 if note < max(transitions.keys()) * 0.5 else 0.8)
+                else:  # Transitional state - prefer stepwise motion
+                    prev_notes = list(transitions.keys())
+                    if prev_notes:
+                        avg_note = sum(prev_notes) / len(prev_notes)
+                        if abs(note - avg_note) <= 2:  # Within step
+                            weight *= 1.4
+                
+                if weight > 0:
+                    weighted[note] = weight
+            
+            # Normalize
+            total_weight = sum(weighted.values())
+            if total_weight > 0:
+                return {note: weight/total_weight for note, weight in weighted.items()}
+            
+            return transitions
+            
+        except Exception:
+            return transitions
+    
+    def _generate_hmm_durations(self, notes, hidden_states):
+        """Generate durations based on HMM states"""
+        durations = []
+        
+        for i, (note, state) in enumerate(zip(notes, hidden_states)):
+            # Duration based on hidden state
+            state_mod = state % 4
+            
+            if state_mod == 0:  # Stable - longer notes
+                duration = random.choices([0.5, 1.0, 1.5], weights=[0.5, 0.4, 0.1])[0]
+            elif state_mod == 1:  # Active - varied durations
+                duration = random.choices([0.25, 0.5, 0.75], weights=[0.4, 0.5, 0.1])[0]
+            elif state_mod == 2:  # Flowing - medium durations
+                duration = random.choices([0.375, 0.5, 0.75], weights=[0.3, 0.6, 0.1])[0]
+            else:  # Transitional - short notes
+                duration = random.choices([0.125, 0.25, 0.5], weights=[0.3, 0.5, 0.2])[0]
+            
+            durations.append(duration)
+        
+        return durations
+    
+    def generate_with_adaptive_order(self, length=64, key_context=None, complexity=0.7):
+        """Generate sequence with adaptive order selection based on context"""
+        if not self.trained:
+            return self.generate_expressive_sequence(key_context, length)
+        
+        sequence = []
+        start_note = self._determine_start_note(key_context)
+        sequence.append(start_note)
+        
+        scale_pitches = self._get_scale_pitches(key_context)
+        
+        for i in range(1, length):
+            # Adaptively choose order based on position and complexity
+            max_available_order = min(len(sequence), 6)
+            
+            # Higher complexity prefers higher order
+            if complexity > 0.8:
+                preferred_order = max_available_order
+            elif complexity > 0.5:
+                preferred_order = max(3, max_available_order - 1)
+            else:
+                preferred_order = max(2, max_available_order - 2)
+            
+            # Try orders from high to low
+            next_note = None
+            for order in range(min(preferred_order, max_available_order), 0, -1):
+                context = tuple(sequence[-order:])
+                
+                # Check multiple transition sources
+                transitions = None
+                if order in self.higher_order_transitions and context in self.higher_order_transitions[order]:
+                    transitions = self.higher_order_transitions[order][context]
+                elif order <= 3 and order in self.musical_features.get('multi_order_transitions', {}):
+                    if context in self.musical_features['multi_order_transitions'][order]:
+                        transitions = self.musical_features['multi_order_transitions'][order][context]
+                
+                if transitions:
+                    # Apply scale filtering
+                    if scale_pitches:
+                        filtered_transitions = {
+                            note: prob for note, prob in transitions.items()
+                            if note in scale_pitches
+                        }
+                        if filtered_transitions:
+                            total = sum(filtered_transitions.values())
+                            filtered_transitions = {
+                                note: prob/total for note, prob in filtered_transitions.items()
+                            }
+                            transitions = filtered_transitions
+                    
+                    # Sample from transitions
+                    if transitions:
+                        notes_list = list(transitions.keys())
+                        probs_list = list(transitions.values())
+                        next_note = random.choices(notes_list, weights=probs_list)[0]
+                        break
+            
+            # Fallback to interval-based generation
+            if next_note is None:
+                if sequence[-1] in self.interval_transitions:
+                    interval_probs = self.interval_transitions[sequence[-1]]
+                    interval_idx = np.random.choice(len(interval_probs), p=interval_probs)
+                    interval = interval_idx - self.max_interval
+                    next_note = max(0, min(127, sequence[-1] + interval))
+                else:
+                    # Final fallback
+                    if scale_pitches:
+                        valid_notes = [n for n in scale_pitches if 48 <= n <= 84]
+                        if valid_notes:
+                            next_note = random.choice(valid_notes)
+                        else:
+                            next_note = random.randint(48, 84)
+                    else:
+                        next_note = sequence[-1] + random.randint(-5, 5)
+                        next_note = max(0, min(127, next_note))
+            
+            sequence.append(next_note)
+        
+        return sequence
+    
+    def generate_structured_piece(self, length=128, key_context=None, sections=4):
+        """Generate a structured musical piece with multiple sections"""
+        if not self.trained:
+            return self.generate_expressive_sequence(key_context, length)
+        
+        section_length = length // sections
+        piece = {'notes': [], 'durations': [], 'sections': [], 'key': key_context or 'C major'}
+        
+        current_key = key_context
+        
+        for section_idx in range(sections):
+            logger.info(f"Generating section {section_idx + 1}/{sections}")
+            
+            # Vary complexity and key for different sections
+            if section_idx == 0:  # Introduction
+                complexity = 0.5
+                section_key = current_key
+            elif section_idx == sections - 1:  # Conclusion
+                complexity = 0.6
+                section_key = current_key  # Return to original key
+            else:  # Development sections
+                complexity = min(0.9, 0.6 + section_idx * 0.1)
+                # Optionally modulate to related keys
+                if random.random() < 0.3:
+                    section_key = self._get_related_key(current_key)
+                else:
+                    section_key = current_key
+            
+            # Generate section with HMM if available
+            if self.hmm_model:
+                section_data = self.generate_with_hmm(
+                    length=section_length,
+                    key_context=section_key,
+                    use_hidden_states=True
+                )
+            else:
+                section_notes = self.generate_with_adaptive_order(
+                    length=section_length,
+                    key_context=section_key,
+                    complexity=complexity
+                )
+                section_data = {
+                    'notes': section_notes,
+                    'durations': [0.5] * len(section_notes)
+                }
+            
+            # Add section to piece
+            piece['notes'].extend(section_data['notes'])
+            piece['durations'].extend(section_data['durations'])
+            piece['sections'].append({
+                'start': len(piece['notes']) - len(section_data['notes']),
+                'end': len(piece['notes']),
+                'key': section_key,
+                'complexity': complexity
+            })
+        
+        return piece
+    
+    def _get_related_key(self, key_context):
+        """Get a musically related key for modulation"""
+        if not key_context:
+            return "C major"
+        
+        try:
+            k = key.Key(key_context)
+            
+            # Get relative and closely related keys
+            related_keys = []
+            
+            if k.mode == 'major':
+                # Relative minor
+                relative_minor = k.relative
+                related_keys.append(f"{relative_minor.tonic.name} minor")
+                
+                # Dominant and subdominant
+                dominant = k.tonic.transpose(7)  # Perfect fifth up
+                subdominant = k.tonic.transpose(-5)  # Perfect fourth down
+                related_keys.extend([
+                    f"{dominant.name} major",
+                    f"{subdominant.name} major"
+                ])
+            else:  # minor
+                # Relative major
+                relative_major = k.relative
+                related_keys.append(f"{relative_major.tonic.name} major")
+                
+                # Mediant and submediant
+                mediant = k.tonic.transpose(3)  # Minor third up
+                submediant = k.tonic.transpose(-4)  # Major sixth down
+                related_keys.extend([
+                    f"{mediant.name} major",
+                    f"{submediant.name} major"
+                ])
+            
+            return random.choice(related_keys) if related_keys else key_context
+            
+        except Exception:
+            return key_context
