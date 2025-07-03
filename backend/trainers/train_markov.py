@@ -211,6 +211,115 @@ def extract_enhanced_note_sequence(score):
     
     return note_sequence
 
+def demonstrate_hmm_algorithms(model, sequences):
+    """Demonstrate the HMM algorithms with sample sequences"""
+    logger.info("🔬 Running HMM Algorithm Demonstrations...")
+    
+    if not sequences or not model.hmm_model:
+        logger.warning("⚠️ No sequences or HMM model available for demonstration")
+        return
+    
+    try:
+        # Select a representative sequence
+        demo_sequence = sequences[0] if sequences else None
+        if not demo_sequence or len(demo_sequence) < 10:
+            logger.warning("⚠️ Demo sequence too short, skipping HMM demonstration")
+            return
+            
+        # Extract features for demonstration
+        features = model._sequence_to_features(demo_sequence)
+        if not features:
+            logger.warning("⚠️ Could not extract features for demonstration")
+            return
+            
+        logger.info(f"📊 Demo sequence length: {len(demo_sequence)} notes")
+        logger.info(f"📊 Feature vectors: {len(features)}")
+        
+        # 1. Forward Algorithm Demonstration
+        logger.info("🔄 Running Forward Algorithm...")
+        alpha, log_likelihood = model.forward_algorithm(features)
+        if alpha is not None:
+            logger.info(f"✅ Forward Algorithm - Log Likelihood: {log_likelihood:.4f}")
+            logger.info(f"📈 Forward probabilities shape: {alpha.shape}")
+        else:
+            logger.warning("⚠️ Forward Algorithm failed")
+        
+        # 2. Backward Algorithm Demonstration
+        logger.info("🔄 Running Backward Algorithm...")
+        beta = model.backward_algorithm(features)
+        if beta is not None:
+            logger.info(f"✅ Backward Algorithm completed")
+            logger.info(f"📈 Backward probabilities shape: {beta.shape}")
+        else:
+            logger.warning("⚠️ Backward Algorithm failed")
+        
+        # 3. Forward-Backward Algorithm Demonstration
+        logger.info("🔄 Running Forward-Backward Algorithm...")
+        gamma, xi = model.forward_backward_algorithm(features)
+        if gamma is not None and xi is not None:
+            logger.info(f"✅ Forward-Backward Algorithm completed")
+            logger.info(f"📈 State posteriors (gamma) shape: {gamma.shape}")
+            logger.info(f"📈 Transition posteriors (xi) shape: {xi.shape}")
+            
+            # Show most likely states
+            most_likely_states = np.argmax(gamma, axis=1)
+            logger.info(f"🎯 Most likely state sequence: {most_likely_states[:10]}...")
+        else:
+            logger.warning("⚠️ Forward-Backward Algorithm failed")
+        
+        # 4. Viterbi Algorithm Demonstration
+        logger.info("🔄 Running Viterbi Algorithm...")
+        state_sequence, log_prob = model.viterbi_algorithm(features)
+        if state_sequence is not None:
+            logger.info(f"✅ Viterbi Algorithm - Log Probability: {log_prob:.4f}")
+            logger.info(f"🎯 Optimal state sequence: {state_sequence[:10]}...")
+            logger.info(f"📊 State sequence length: {len(state_sequence)}")
+            
+            # Show state distribution
+            unique_states, counts = np.unique(state_sequence, return_counts=True)
+            logger.info(f"📊 State distribution: {dict(zip(unique_states, counts))}")
+        else:
+            logger.warning("⚠️ Viterbi Algorithm failed")
+        
+        # 5. Baum-Welch Algorithm Demonstration
+        logger.info("🔄 Running Baum-Welch Algorithm (limited iterations)...")
+        trained_model, convergence = model.baum_welch_algorithm(features, max_iterations=5)
+        if trained_model is not None and convergence:
+            logger.info(f"✅ Baum-Welch Algorithm completed")
+            logger.info(f"📈 Convergence history: {[f'{ll:.4f}' for ll in convergence[-3:]]}")
+            
+            # Compare before/after likelihood
+            initial_ll = convergence[0] if convergence else 0
+            final_ll = convergence[-1] if convergence else 0
+            improvement = final_ll - initial_ll
+            logger.info(f"📊 Likelihood improvement: {improvement:.4f}")
+        else:
+            logger.warning("⚠️ Baum-Welch Algorithm failed")
+        
+        # 6. Prediction Demonstration
+        logger.info("🔄 Running HMM-based Prediction...")
+        test_sequence = demo_sequence[:len(demo_sequence)//2]  # Use first half
+        predicted_note, confidence = model.predict_next_note_hmm(test_sequence)
+        
+        logger.info(f"🎵 Input sequence (last 5 notes): {[n[0] if isinstance(n, (list, tuple)) else n for n in test_sequence[-5:]]}")
+        logger.info(f"🎯 Predicted next note: {predicted_note}")
+        logger.info(f"📊 Prediction confidence: {confidence:.3f}")
+        
+        # Compare with actual next note if available
+        if len(demo_sequence) > len(test_sequence):
+            actual_next = demo_sequence[len(test_sequence)]
+            actual_note = actual_next[0] if isinstance(actual_next, (list, tuple)) else actual_next
+            logger.info(f"🎵 Actual next note: {actual_note}")
+            error = abs(predicted_note - actual_note)
+            logger.info(f"📊 Prediction error: {error} semitones")
+        
+        logger.info("✅ HMM Algorithm demonstration completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"❌ HMM demonstration failed: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+
 def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output_dir="output/trained_models", 
                        n_hidden_states=16, use_gpu=True, enhanced_features=True):
     """Enhanced Markov chain model training with HMM, GPU acceleration, and hyperoptimization"""
@@ -344,6 +453,10 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
     if not training_success:
         logger.error("❌ Training failed")
         return None
+
+    # Demonstrate HMM algorithms after training
+    logger.info("🔬 Demonstrating HMM algorithms...")
+    demonstrate_hmm_algorithms(model, note_sequences[:5])  # Use first 5 sequences for demo
     
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

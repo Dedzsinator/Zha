@@ -1,0 +1,7 @@
+REMOVED (Not Actually Implemented):
+❌ Multi-head attention detailed derivations (uses standard PyTorch)
+❌ Full HMM algorithms (Forward, Viterbi, Baum-Welch) - uses hmmlearn
+❌ Pitch class vectors and interval vectors (not in the actual implementation)
+❌ Information-theoretic measures (entropy, mutual information, cross-entropy)
+❌ Memory coalescing details (not explicitly implemented)
+❌ Mathematical chord template similarity (not in the code)

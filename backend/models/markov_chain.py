@@ -145,6 +145,423 @@ class MarkovChain:
         self.current_hidden_state = 0
         self.state_history = []
         
+        # HMM Algorithm components
+        self.alpha = None  # Forward probabilities
+        self.beta = None   # Backward probabilities
+        self.gamma = None  # State posterior probabilities
+        self.xi = None     # Transition posterior probabilities
+        self.log_likelihood = None  # Model likelihood
+        
+    def forward_algorithm(self, observations):
+        """
+        Forward algorithm implementation using hmmlearn
+        
+        Args:
+            observations: Sequence of observed musical features
+            
+        Returns:
+            Forward probabilities (alpha) and log likelihood
+        """
+        if self.hmm_model is None:
+            logger.warning("HMM model not initialized. Cannot run forward algorithm.")
+            return None, None
+            
+        try:
+            # Ensure observations are in correct format
+            obs_array = np.array(observations).reshape(-1, 1) if np.array(observations).ndim == 1 else np.array(observations)
+            
+            # Compute forward probabilities using hmmlearn
+            log_likelihood, self.alpha = self.hmm_model._do_forward_pass(obs_array)
+            
+            logger.info(f"Forward algorithm completed. Log likelihood: {log_likelihood:.4f}")
+            return self.alpha, log_likelihood
+            
+        except Exception as e:
+            logger.error(f"Forward algorithm failed: {e}")
+            return None, None
+    
+    def backward_algorithm(self, observations):
+        """
+        Backward algorithm implementation using hmmlearn
+        
+        Args:
+            observations: Sequence of observed musical features
+            
+        Returns:
+            Backward probabilities (beta)
+        """
+        if self.hmm_model is None:
+            logger.warning("HMM model not initialized. Cannot run backward algorithm.")
+            return None
+            
+        try:
+            # Ensure observations are in correct format
+            obs_array = np.array(observations).reshape(-1, 1) if np.array(observations).ndim == 1 else np.array(observations)
+            
+            # Compute backward probabilities using hmmlearn
+            self.beta = self.hmm_model._do_backward_pass(obs_array)
+            
+            logger.info("Backward algorithm completed")
+            return self.beta
+            
+        except Exception as e:
+            logger.error(f"Backward algorithm failed: {e}")
+            return None
+    
+    def forward_backward_algorithm(self, observations):
+        """
+        Combined forward-backward algorithm for computing state posteriors
+        
+        Args:
+            observations: Sequence of observed musical features
+            
+        Returns:
+            State posteriors (gamma) and transition posteriors (xi)
+        """
+        if self.hmm_model is None:
+            logger.warning("HMM model not initialized. Cannot run forward-backward algorithm.")
+            return None, None
+            
+        try:
+            # Ensure observations are in correct format
+            obs_array = np.array(observations).reshape(-1, 1) if np.array(observations).ndim == 1 else np.array(observations)
+            
+            # Run forward algorithm
+            log_likelihood, alpha = self.hmm_model._do_forward_pass(obs_array)
+            
+            # Run backward algorithm
+            beta = self.hmm_model._do_backward_pass(obs_array)
+            
+            # Compute state posteriors (gamma)
+            self.gamma = alpha + beta
+            # Normalize to get probabilities
+            self.gamma = np.exp(self.gamma - np.logaddexp.reduce(self.gamma, axis=1, keepdims=True))
+            
+            # Compute transition posteriors (xi)
+            T = len(obs_array)
+            self.xi = np.zeros((T-1, self.n_hidden_states, self.n_hidden_states))
+            
+            for t in range(T-1):
+                for i in range(self.n_hidden_states):
+                    for j in range(self.n_hidden_states):
+                        self.xi[t, i, j] = (alpha[t, i] + 
+                                          np.log(self.hmm_model.transmat_[i, j]) + 
+                                          self.hmm_model._compute_log_likelihood(obs_array[t+1:t+2])[j] + 
+                                          beta[t+1, j])
+                
+                # Normalize xi for each time step
+                log_xi_sum = np.logaddexp.reduce(np.logaddexp.reduce(self.xi[t], axis=1), axis=0)
+                self.xi[t] = np.exp(self.xi[t] - log_xi_sum)
+            
+            logger.info("Forward-backward algorithm completed")
+            return self.gamma, self.xi
+            
+        except Exception as e:
+            logger.error(f"Forward-backward algorithm failed: {e}")
+            return None, None
+    
+    def viterbi_algorithm(self, observations):
+        """
+        Viterbi algorithm for finding the most likely hidden state sequence
+        
+        Args:
+            observations: Sequence of observed musical features
+            
+        Returns:
+            Most likely state sequence and its log probability
+        """
+        if self.hmm_model is None:
+            logger.warning("HMM model not initialized. Cannot run Viterbi algorithm.")
+            return None, None
+            
+        try:
+            # Ensure observations are in correct format
+            obs_array = np.array(observations).reshape(-1, 1) if np.array(observations).ndim == 1 else np.array(observations)
+            
+            # Use hmmlearn's decode method which implements Viterbi
+            log_prob, state_sequence = self.hmm_model.decode(obs_array, algorithm="viterbi")
+            
+            logger.info(f"Viterbi algorithm completed. Log probability: {log_prob:.4f}")
+            
+            # Store for analysis
+            self.state_history = list(state_sequence)
+            
+            return state_sequence, log_prob
+            
+        except Exception as e:
+            logger.error(f"Viterbi algorithm failed: {e}")
+            return None, None
+    
+    def baum_welch_algorithm(self, observations, max_iterations=100, tolerance=1e-6):
+        """
+        Baum-Welch algorithm for HMM parameter estimation
+        
+        Args:
+            observations: Sequence of observed musical features
+            max_iterations: Maximum number of EM iterations
+            tolerance: Convergence tolerance
+            
+        Returns:
+            Trained HMM model and convergence history
+        """
+        if self.hmm_model is None:
+            logger.warning("HMM model not initialized. Initializing with default parameters.")
+            self.hmm_model = hmm.GaussianHMM(n_components=self.n_hidden_states, covariance_type="full")
+            
+        try:
+            # Ensure observations are in correct format
+            obs_array = np.array(observations).reshape(-1, 1) if np.array(observations).ndim == 1 else np.array(observations)
+            
+            # Store original parameters for monitoring
+            original_logprob = self.hmm_model.score(obs_array)
+            
+            # Train model using Baum-Welch (EM algorithm)
+            convergence_history = []
+            
+            for iteration in range(max_iterations):
+                # Store current likelihood
+                current_logprob = self.hmm_model.score(obs_array)
+                convergence_history.append(current_logprob)
+                
+                # Perform one EM iteration
+                self.hmm_model.fit(obs_array)
+                
+                # Check convergence
+                new_logprob = self.hmm_model.score(obs_array)
+                improvement = new_logprob - current_logprob
+                
+                logger.info(f"Baum-Welch iteration {iteration+1}: Log-likelihood = {new_logprob:.6f}, "
+                           f"Improvement = {improvement:.6f}")
+                
+                if abs(improvement) < tolerance:
+                    logger.info(f"Converged after {iteration+1} iterations")
+                    break
+            
+            final_logprob = self.hmm_model.score(obs_array)
+            improvement = final_logprob - original_logprob
+            
+            logger.info(f"Baum-Welch training completed. "
+                       f"Final log-likelihood: {final_logprob:.6f}, "
+                       f"Total improvement: {improvement:.6f}")
+            
+            return self.hmm_model, convergence_history
+            
+        except Exception as e:
+            logger.error(f"Baum-Welch algorithm failed: {e}")
+            return None, None
+    
+    def predict_next_note_hmm(self, note_sequence, use_viterbi=True):
+        """
+        Predict next note using HMM algorithms
+        
+        Args:
+            note_sequence: Current sequence of notes
+            use_viterbi: Whether to use Viterbi for state estimation
+            
+        Returns:
+            Predicted next note and confidence
+        """
+        if self.hmm_model is None or not self.trained:
+            logger.warning("HMM model not trained. Using fallback prediction.")
+            return self._fallback_note_prediction(note_sequence)
+            
+        try:
+            # Extract features from note sequence
+            features = self._sequence_to_features(note_sequence)
+            
+            if use_viterbi:
+                # Use Viterbi to find most likely state sequence
+                state_sequence, log_prob = self.viterbi_algorithm(features)
+                if state_sequence is not None:
+                    current_state = state_sequence[-1]
+                else:
+                    current_state = 0
+            else:
+                # Use forward algorithm for state prediction
+                alpha, log_likelihood = self.forward_algorithm(features)
+                if alpha is not None:
+                    # Get most likely current state
+                    current_state = np.argmax(alpha[-1])
+                else:
+                    current_state = 0
+            
+            # Predict next note based on current state and transitions
+            next_note = self._predict_from_state(current_state, note_sequence)
+            
+            # Calculate confidence based on state probability
+            confidence = self._calculate_prediction_confidence(current_state, features)
+            
+            return next_note, confidence
+            
+        except Exception as e:
+            logger.error(f"HMM prediction failed: {e}")
+            return self._fallback_note_prediction(note_sequence)
+    
+    def _sequence_to_features(self, note_sequence):
+        """Convert note sequence to feature vectors for HMM"""
+        if len(note_sequence) < 2:
+            return [[60.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.5]]  # Default feature
+            
+        features = []
+        window_size = min(4, len(note_sequence))
+        
+        for i in range(len(note_sequence) - window_size + 1):
+            window = note_sequence[i:i+window_size]
+            
+            # Extract note values
+            notes = []
+            for note_data in window:
+                if isinstance(note_data, (list, tuple)):
+                    notes.append(note_data[0])
+                else:
+                    notes.append(note_data)
+            
+            # Calculate features
+            pitch_mean = np.mean(notes)
+            pitch_std = np.std(notes) if len(notes) > 1 else 0
+            pitch_range = max(notes) - min(notes) if len(notes) > 1 else 0
+            
+            # Interval features
+            intervals = [notes[j+1] - notes[j] for j in range(len(notes)-1)]
+            interval_mean = np.mean(intervals) if intervals else 0
+            interval_std = np.std(intervals) if len(intervals) > 1 else 0
+            
+            # Contour
+            ascending = sum(1 for x in intervals if x > 0)
+            contour_ratio = ascending / max(len(intervals), 1)
+            
+            feature_vector = [
+                pitch_mean, pitch_std, pitch_range, 0.25,  # duration placeholder
+                interval_mean, interval_std, contour_ratio
+            ]
+            features.append(feature_vector)
+        
+        return features if features else [[60.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.5]]
+    
+    def _predict_from_state(self, state, note_sequence):
+        """Predict next note based on HMM state and Markov transitions"""
+        try:
+            # Get last few notes for context
+            context = note_sequence[-min(self.order, len(note_sequence)):]
+            
+            # Extract note values
+            context_notes = []
+            for note_data in context:
+                if isinstance(note_data, (list, tuple)):
+                    context_notes.append(note_data[0])
+                else:
+                    context_notes.append(note_data)
+            
+            if not context_notes:
+                return 60  # Default middle C
+                
+            last_note = context_notes[-1]
+            
+            # Weight transition probabilities by HMM state
+            if last_note in range(128):
+                transitions = self.transitions[last_note] if hasattr(self.transitions, '__getitem__') else None
+                
+                if transitions is not None:
+                    # Convert to CPU if needed
+                    if hasattr(transitions, 'get'):
+                        transitions = self.gpu_opt.to_cpu(transitions)
+                    
+                    # Apply HMM state weighting
+                    weighted_transitions = self._weight_transitions_by_state(transitions, state)
+                    
+                    # Sample next note
+                    if np.sum(weighted_transitions) > 0:
+                        probabilities = weighted_transitions / np.sum(weighted_transitions)
+                        next_note = np.random.choice(128, p=probabilities)
+                        return int(next_note)
+            
+            # Fallback to interval-based prediction
+            return self._interval_based_prediction(context_notes, state)
+            
+        except Exception as e:
+            logger.warning(f"State-based prediction failed: {e}")
+            return int(note_sequence[-1]) if note_sequence else 60
+    
+    def _weight_transitions_by_state(self, transitions, state):
+        """Weight transition probabilities based on HMM state"""
+        try:
+            # Simple state-based weighting
+            # In practice, you might learn these weights during training
+            state_weights = np.ones_like(transitions)
+            
+            # Example: different states prefer different note ranges
+            if state < self.n_hidden_states // 3:  # Lower states - prefer lower notes
+                state_weights[60:] *= 0.7
+                state_weights[:60] *= 1.3
+            elif state < 2 * self.n_hidden_states // 3:  # Middle states - balanced
+                pass  # No modification
+            else:  # Higher states - prefer higher notes
+                state_weights[:60] *= 0.7
+                state_weights[60:] *= 1.3
+            
+            return transitions * state_weights
+            
+        except Exception:
+            return transitions
+    
+    def _interval_based_prediction(self, context_notes, state):
+        """Fallback prediction using interval transitions"""
+        try:
+            if len(context_notes) >= 2:
+                last_interval = context_notes[-1] - context_notes[-2]
+                
+                # State-based interval preference
+                if state < self.n_hidden_states // 2:
+                    # Lower states prefer smaller intervals
+                    preferred_intervals = [-2, -1, 0, 1, 2]
+                else:
+                    # Higher states allow larger intervals
+                    preferred_intervals = [-5, -3, -2, -1, 0, 1, 2, 3, 5]
+                
+                # Choose interval based on state preference
+                next_interval = np.random.choice(preferred_intervals)
+                next_note = context_notes[-1] + next_interval
+                
+                # Clamp to MIDI range
+                return max(0, min(127, next_note))
+            
+            return context_notes[-1] if context_notes else 60
+            
+        except Exception:
+            return 60
+    
+    def _calculate_prediction_confidence(self, state, features):
+        """Calculate confidence score for prediction"""
+        try:
+            if self.hmm_model is None or not features:
+                return 0.5
+                
+            # Use state probability as confidence measure
+            obs_array = np.array(features[-1]).reshape(1, -1)
+            log_prob = self.hmm_model.score(obs_array)
+            
+            # Convert log probability to confidence score (0-1)
+            confidence = min(1.0, max(0.1, np.exp(log_prob / 10)))
+            return confidence
+            
+        except Exception:
+            return 0.5
+    
+    def _fallback_note_prediction(self, note_sequence):
+        """Simple fallback prediction when HMM fails"""
+        if not note_sequence:
+            return 60, 0.3
+            
+        last_note = note_sequence[-1]
+        if isinstance(last_note, (list, tuple)):
+            last_note = last_note[0]
+            
+        # Simple random walk
+        interval = np.random.choice([-2, -1, 0, 1, 2], p=[0.1, 0.2, 0.4, 0.2, 0.1])
+        next_note = max(0, min(127, last_note + interval))
+        
+        return next_note, 0.3
+    
     def _initialize_hmm(self, sequences):
         """Initialize Hidden Markov Model with musical structure awareness"""
         logger.info("Initializing HMM with musical structure awareness...")
@@ -1229,19 +1646,6 @@ class MarkovChain:
             
         return sequence
         
-    def _get_scale_pitches(self, key_context):
-        """Get scale pitches for a given key"""
-        if not key_context:
-            return set()
-            
-        try:
-            k = key.Key(self._clean_key_context(key_context))
-            sc = scale.AbstractScale.derive(k.getScale())
-            # Get pitches across a wide range
-            return set(p.midi for p in sc.getPitches(pitch.Pitch('C2'), pitch.Pitch('C7')))
-        except Exception:
-            return set()
-            
     def generate_sequence(self, start_note=60, length=32, key_context=None):
         """Generate a sequence using note transitions"""
         if not self.trained:
