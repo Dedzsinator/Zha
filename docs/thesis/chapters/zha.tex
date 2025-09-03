@@ -1,0 +1,234 @@
+\chapter{System Design of Zha}
+\section{High-level System Overview}
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.9\textwidth]{pipeline_diagram.png}
+  \caption{End‐to‐End Zha Pipeline: Markov → VAE → Transformer → MIDI}
+  \label{fig:pipeline}
+\end{figure}
+Figure \ref{fig:pipeline} illustrates Zha’s sequential flow. Raw MIDI files are preprocessed into token sequences. A Markov chain generates an initial draft, the VAE transforms this draft via latent sampling, and the Transformer produces the final output, suitable for conversion back to MIDI.
+
+\section{Data Flow}
+\begin{enumerate}
+  \item \textbf{Raw MIDI} — stored in \texttt{data/raw/}.
+  \item \textbf{Processed Tokens} — quantized and tokenized into JSON/NumPy arrays in \texttt{data/processed/}.
+  \item \textbf{Markov Output} — sequence of tokens saved to disk as \texttt{markov\_sample.npy}.
+  \item \textbf{VAE Output} — decoded tokens after latent sampling.
+  \item \textbf{Transformer Output} — final token stream, then reassembled into a MIDI file.
+\end{enumerate}
+
+\section{Data Preprocessing Pipeline}
+
+\subsection{MIDI Parsing and Cleaning}
+We parse each MIDI using \texttt{pretty\_midi}:
+\begin{itemize}
+  \item Discard tracks with fewer than 10 notes.
+  \item Normalize tempo globally to 120 BPM to reduce variance.
+  \item Remove non‐note events except sustain pedal controls.
+\end{itemize}
+
+\subsection{Quantization}
+Time is discretized to 16th‐note grid. For each note event:
+\[
+  t_{\text{quant}} = \mathrm{round}\!\bigl(t_{\text{actual}} \times 4 \bigr) \,/\,4.
+\]
+This ensures all onset and offset times snap to discrete bins.
+
+\subsection{Tokenization Schema}
+We adopt an extended REMI representation:
+\begin{itemize}
+  \item \texttt{NOTE\_ON\_p} / \texttt{NOTE\_OFF\_p} for pitches $p\in[0,127]$.
+  \item \texttt{TIME\_SHIFT\_i} for $i\in[1,32]$ sixteenth‐note steps.
+  \item \texttt{VELOCITY\_b} for eight velocity bins $b\in[1,8]$ computed via quantiles.
+  \item \texttt{CONTROL\_SUSTAIN\_ON}, \texttt{CONTROL\_SUSTAIN\_OFF} tokens.
+\end{itemize}
+Total vocabulary size: 128 (notes) + 32 (time) + 8 (velocity) + 4 (controls) + 4 (special) = 176.
+
+\subsection{Dataset Statistics}
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    \textbf{Subset} & \# Tracks & Avg. Tokens & Min / Max Tokens \\
+    \midrule
+    Bach Chorales   & 389 & 512 & 256 / 1024 \\
+    POP1K7          & 1000 & 1024 & 512 / 2048 \\
+    Jazz Leadsheets & 500 & 768 & 384 / 1536 \\
+    \midrule
+    \textbf{Total}  & 1889 & 840 & 256 / 2048 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Tokenized Dataset Breakdown}
+\end{table}
+
+\newpage
+\section{Model Architectures}
+
+\subsection{Markov Chain}
+\subsubsection{Implementation Details}
+\begin{itemize}
+  \item Stored in \texttt{src/models/markov.py}.
+  \item Supports $n$th‐order chains ($n\le4$).
+  \item Uses Python \texttt{defaultdict(Counter)} for count accumulation.
+  \item Applies Laplace smoothing with configurable $\alpha$.
+\end{itemize}
+
+\subsubsection{Sampling Algorithm}
+\begin{enumerate}
+  \item Initialize context with \texttt{START} tokens.
+  \item For each step:
+    \begin{itemize}
+      \item Retrieve probability distribution $P(\cdot\mid\mathrm{context})$.
+      \item Sample next token via cumulative multinomial sampling.
+      \item Slide context window forward.
+    \end{itemize}
+  \item Terminate upon \texttt{END} token or length limit.
+\end{enumerate}
+
+\subsection{Variational Autoencoder}
+\subsubsection{Encoder}
+\[
+  h_t = \mathrm{BiLSTM}(x_t, h_{t-1}),\quad
+  \mu = W_\mu \, h_{T},\quad
+  \log\sigma^2 = W_\sigma \, h_{T}.
+\]
+Implementation resides in \texttt{src/models/vae.py}.
+
+\subsubsection{Decoder}
+At each time step $t$:
+\[
+  \hat{x}_t = \mathrm{Softmax}\bigl(W_o [e_{t-1} \,\|\, z]\bigr),
+\]
+where $e_{t-1}$ is the embedding of the previous token and $z$ the sampled latent.
+
+\subsubsection{Training Tricks}
+\begin{itemize}
+  \item \textbf{KL‐Annealing}: $\beta(e)=\min(1, e/E_{\mathrm{warmup}})$.
+  \item \textbf{Free Bits}: floor KL per dimension at $0.1$ to prevent collapse.
+  \item \textbf{Gradient Clipping}: $\lVert \nabla \rVert_\infty \le 1.0$.
+\end{itemize}
+
+\subsection{Transformer}
+\subsubsection{Architecture}
+\begin{itemize}
+  \item Six layers, eight heads, $d_{\mathrm{model}}=512$.
+  \item Rotary positional embeddings as per Su et al.\ (2020).
+  \item Feed‐forward hidden size: 2048.
+  \item Dropout: 0.1 on attention and feed‐forward sublayers.
+\end{itemize}
+
+\subsubsection{Relative Position Bias}
+A learned bias matrix $B_{i,j}$ is added to attention logits to model musical interval relationships.
+
+\newpage
+\section{Training Methodologies}
+
+\subsection{Common Infrastructure}
+\begin{itemize}
+  \item All trainers in \texttt{src/trainers/}, share \texttt{TrainerBase} for logging and checkpointing.
+  \item Use \texttt{Hydra} for hyperparameter configuration.
+  \item Metrics written to TensorBoard and CSV.
+\end{itemize}
+
+\subsection{Markov Trainer}
+\begin{itemize}
+  \item Processes all token sequences, builds and saves $\text{P}_{\mathrm{matrix}}$.
+  \item Validates by generating 100 sequences and checking unique transition coverage.
+\end{itemize}
+
+\subsection{VAE Trainer}
+\begin{lstlisting}[language=Python]
+for epoch in range(num_epochs):
+    for batch in dataloader:
+        recon, mu, logvar = model(batch)
+        recon_loss = F.cross_entropy(recon, batch)
+        kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        loss = recon_loss + beta(epoch)*kl
+        optimizer.zero_grad(); loss.backward()
+        clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+\end{lstlisting}
+Early stopping triggered if validation loss does not improve for 5 epochs.
+
+\subsection{Transformer Trainer}
+\begin{itemize}
+  \item Mixed‐precision via \texttt{torch.cuda.amp}.
+  \item Learning rate: warmup over first 5k steps, then cosine decay to zero by 200k steps.
+  \item Gradient accumulation to simulate batch size of 512 when GPU memory limited.
+\end{itemize}
+
+\newpage
+\section{Inference Engine}
+
+\subsection{End-to-End Script (\texttt{generate.py})}
+\begin{lstlisting}[language=Python]
+def generate(length=512, top_p=0.9, temp=1.0):
+    # Stage 1: Markov
+    mk = MarkovModel.load('checkpoints/markov.npy')
+    seq1 = mk.sample(length=128)
+
+    # Stage 2: VAE
+    vae = VAE.load('checkpoints/vae.pt')
+    z = vae.encode(seq1)
+    seq2 = vae.decode(z, temperature=temp)
+
+    # Stage 3: Transformer
+    trans = MusicTransformer.load('checkpoints/trans.pt')
+    seq3 = trans.generate(prefix=seq2, max_len=length, top_p=top_p)
+
+    midi = detokenize(seq3)
+    midi.write('output/generated.mid')
+\end{lstlisting}
+
+\subsection{Performance}
+\begin{itemize}
+  \item Markov sampling: $\approx$0.5 ms/token on CPU.
+  \item VAE decode: $\approx$2 ms/token on GPU.
+  \item Transformer generate: $\approx$4 ms/token with cache.
+\end{itemize}
+
+\newpage
+\section{Evaluation and Experiments}
+
+\subsection{Objective Metrics}
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    Model        & Perplexity & BLEU-4 & Self-BLEU & Time/Epoch \\
+    \midrule
+    Markov       & 2.48       & 0.09   & 0.87      & 1 s        \\
+    VAE          & 1.95       & 0.18   & 0.79      & 100 s      \\
+    Transformer  & 1.60       & 0.30   & 0.65      & 450 s      \\
+    \bottomrule
+  \end{tabular}
+  \caption{Quantitative Results on Validation Set}
+\end{table}
+
+\subsection{Subjective Listening Study}
+Thirty participants (15 novice, 15 expert) rated 30 clips each on:
+\begin{itemize}
+  \item \emph{Coherence} (1–5)
+  \item \emph{Creativity} (1–5)
+\end{itemize}
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Model        & Coherence & Creativity \\
+    \midrule
+    Markov       & 2.8       & 2.5        \\
+    VAE          & 3.2       & 3.8        \\
+    Transformer  & 4.4       & 3.9        \\
+    \bottomrule
+  \end{tabular}
+  \caption{Average Listening Test Scores}
+\end{table}
+\section{Limitations and Future Work}
+
+\subsection{Current Limitations}
+\begin{itemize}
+  \item The VAE occasionally experiences posterior collapse despite free‐bits regularization.
+  \item Transformer stage incurs high memory and compute costs, limiting real‐time use on consumer hardware.
+  \item Evaluation remains partly subjective; automatic metrics only approximate musical quality.
+\end{itemize}

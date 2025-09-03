@@ -1,0 +1,255 @@
+\begin{thebibliography}{42}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Akiba et~al.(2019)Akiba, Sano, Yanase, Ohta, \'es Koyama]{optuna2019}
+Akiba, T., Sano, S., Yanase, T., Ohta, T., \'es Koyama, M.
+\newblock Optuna: A next-generation hyperparameter optimization framework.
+\newblock \emph{Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery \& Data Mining}, pages 2623--2631, 2019.
+
+\bibitem[Ba et~al.(2016)Ba, Kiros, \'es Hinton]{ba2016layer}
+Ba, J.~L., Kiros, J.~R., \'es Hinton, G.~E.
+\newblock Layer normalization.
+\newblock \emph{arXiv preprint arXiv:1607.06450}, 2016.
+\newblock URL \url{https://arxiv.org/abs/1607.06450}.
+
+\bibitem[Baum et~al.(1970)Baum, Petrie, Soules, \'es Weiss]{baum1972inequality}
+Baum, L.~E., Petrie, T., Soules, G., \'es Weiss, N.
+\newblock A maximization technique occurring in the statistical analysis of probabilistic functions of markov chains.
+\newblock \emph{The Annals of Mathematical Statistics}, 41\penalty0 (1):\penalty0 164--171, 1970.
+\newblock \doi{10.1214/aoms/1177697196}.
+
+\bibitem[Briot et~al.(2017)Briot, Hadjeres, \'es Pachet]{briot2017deep}
+Briot, J.-P., Hadjeres, G., \'es Pachet, F.
+\newblock Deep learning techniques for music generation -- a survey.
+\newblock \emph{arXiv preprint arXiv:1709.01620}, 2017.
+\newblock URL \url{https://arxiv.org/abs/1709.01620}.
+
+\bibitem[Brunner et~al.(2018)Brunner, Konrad, Wang, \'es Wattenhofer]{brunner2018midivae}
+Brunner, G., Konrad, A., Wang, Y., \'es Wattenhofer, R.
+\newblock Midi-vae: Modeling dynamics and instrumentation of music with applications to style transfer.
+\newblock In \emph{Proceedings of the 19th International Society for Music Information Retrieval Conference}, pages 747--753, 2018.
+\newblock URL \url{https://archives.ismir.net/ismir2018/paper/000204.pdf}.
+
+\bibitem[Cuthbert \'es Ariza(2010)]{music21}
+Cuthbert, M.~S. \'es Ariza, C.
+\newblock music21: A toolkit for computer-aided musicology and symbolic music data.
+\newblock \emph{Proceedings of the 11th International Society for Music Information Retrieval Conference}, pages 637--642, 2010.
+\newblock URL \url{https://archives.ismir.net/ismir2010/paper/000112.pdf}.
+
+\bibitem[de~Carvalho(2019)]{carvalho2019markov}
+Carvalho, H.~T.de.
+\newblock An introduction to markov chains in music composition and analysis.
+\newblock \emph{MusMat: Brazilian Journal of Music and Mathematics}, 3\penalty0 (2):\penalty0 18--43, 2019.
+\newblock URL \url{https://musmat.org/wp-content/uploads/2019/12/06-Carvalho.pdf}.
+
+\bibitem[Dhariwal et~al.(2020)Dhariwal, Jun, Payne, Kim, Radford, \'es Sutskever]{dhariwal2020jukebox}
+Dhariwal, P., Jun, H., Payne, C., Kim, J.~W., Radford, A., \'es Sutskever, I.
+\newblock Jukebox: A generative model for music.
+\newblock In \emph{arXiv preprint arXiv:2005.00341}, 2020.
+\newblock URL \url{https://arxiv.org/abs/2005.00341}.
+
+\bibitem[Dong et~al.(2017)Dong, Hsiao, Yang, \'es Yang]{dong2017musegan}
+Dong, H.-W., Hsiao, W.-Y., Yang, L.-C., \'es Yang, Y.-H.
+\newblock Musegan: Demonstration of a convolutional generative adversarial network for multi-track music generation.
+\newblock In \emph{Proceedings of the 18th ISMIR Conference}, 2017.
+\newblock URL \url{https://archives.ismir.net/ismir2017/paper/000112.pdf}.
+
+\bibitem[Dong et~al.(2018)Dong, Hsiao, Yang, \'es Yang]{dong2018musegan}
+Dong, H.-W., Hsiao, W.-Y., Yang, L.-C., \'es Yang, Y.-H.
+\newblock Musegan: Multi-track sequential generative adversarial networks for symbolic music generation and accompaniment.
+\newblock In \emph{Proceedings of the Thirty-Second AAAI Conference on Artificial Intelligence}, pages 34--41, 2018.
+\newblock URL \url{https://ojs.aaai.org/index.php/AAAI/article/view/11312}.
+
+\bibitem[Eck \'es Schmidhuber(2002)]{eck2002learning}
+Eck, D. \'es Schmidhuber, J.
+\newblock Learning the long-term structure of the blues.
+\newblock In \emph{International Conference on Artificial Neural Networks}, pages 284--289. Springer, 2002.
+
+\bibitem[Fan et~al.(2018)Fan, Lewis, \'es Dauphin]{fan2018hierarchical}
+Fan, A., Lewis, M., \'es Dauphin, Y.
+\newblock Hierarchical neural story generation.
+\newblock \emph{Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics}, pages 889--898, 2018.
+\newblock URL \url{https://aclanthology.org/P18-1082/}.
+
+\bibitem[He et~al.(2016)He, Zhang, Ren, \'es Sun]{he2016deep}
+He, K., Zhang, X., Ren, S., \'es Sun, J.
+\newblock Deep residual learning for image recognition.
+\newblock \emph{IEEE Conference on Computer Vision and Pattern Recognition}, pages 770--778, 2016.
+\newblock \doi{10.1109/CVPR.2016.90}.
+
+\bibitem[Higgins et~al.(2017)Higgins, Matthey, Pal, Burgess, Glorot, Botvinick, Mohamed, \'es Lerchner]{higgins2017beta}
+Higgins, I., Matthey, L., Pal, A., Burgess, C., Glorot, X., Botvinick, M., Mohamed, S., \'es Lerchner, A.
+\newblock beta-vae: Learning basic visual concepts with a constrained variational framework.
+\newblock \emph{International Conference on Learning Representations}, 2017.
+\newblock URL \url{https://openreview.net/forum?id=Sy2fzU9gl}.
+
+\bibitem[Holtzman et~al.(2020)Holtzman, Buys, Du, Forbes, \'es Choi]{holtzman2020nucleus}
+Holtzman, A., Buys, J., Du, L., Forbes, M., \'es Choi, Y.
+\newblock The curious case of neural text degeneration.
+\newblock \emph{International Conference on Learning Representations}, 2020.
+\newblock URL \url{https://openreview.net/forum?id=rygGQyrFvH}.
+
+\bibitem[Huang et~al.(2018)Huang, Vaswani, Uszkoreit, Simon, Hawthorne, \'es Eck]{huang2018music}
+Huang, C.-Z.~A., Vaswani, A., Uszkoreit, J., Simon, I., Hawthorne, C., \'es Eck, D.
+\newblock Music transformer.
+\newblock \emph{arXiv preprint arXiv:1809.04281}, 2018.
+\newblock URL \url{https://arxiv.org/abs/1809.04281}.
+
+\bibitem[Huang et~al.(2019)Huang, Vaswani, Uszkoreit, Shazeer, Simon, Hawthorne, Dai, Hoffman, Dinculescu, \'es Eck]{huang2019music}
+Huang, C.-Z.~A., Vaswani, A., Uszkoreit, J., Shazeer, N., Simon, I., Hawthorne, C., Dai, A.~M., Hoffman, M.~D., Dinculescu, M., \'es Eck, D.
+\newblock Music transformer: Generating music with long-term structure.
+\newblock In \emph{International Conference on Learning Representations}, 2019.
+\newblock URL \url{https://openreview.net/forum?id=rJe4ShAcF7}.
+\newblock Workshop Track.
+
+\bibitem[Huang et~al.(2021)Huang, Wei, Cui, Song, Tan, Wu, Zhou, \'es Xie]{ji2020survey}
+Huang, S., Wei, F., Cui, L., Song, K., Tan, X., Wu, Y., Zhou, D., \'es Xie, S.
+\newblock Cosqa: 20,000+ web queries for code search and question answering.
+\newblock \emph{Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics}, 2021.
+\newblock URL \url{https://aclanthology.org/2021.acl-long.442/}.
+
+\bibitem[Kingma \'es Welling(2014)]{kingma2014auto}
+Kingma, D.~P. \'es Welling, M.
+\newblock Auto-encoding variational bayes.
+\newblock In \emph{2nd International Conference on Learning Representations}, 2014.
+\newblock URL \url{https://arxiv.org/abs/1312.6114}.
+
+\bibitem[Kitaev et~al.(2020)Kitaev, Łukasz Kaiser, \'es Levskaya]{kitaev2020reformer}
+Kitaev, N., Kaiser, Łukasz, \'es Levskaya, A.
+\newblock Reformer: The efficient transformer.
+\newblock In \emph{International Conference on Learning Representations}, 2020.
+\newblock URL \url{https://openreview.net/forum?id=rkgNKkHtvB}.
+
+\bibitem[Loshchilov \'es Hutter(2017)]{loshchilov2016sgdr}
+Loshchilov, I. \'es Hutter, F.
+\newblock Sgdr: Stochastic gradient descent with warm restarts.
+\newblock \emph{International Conference on Learning Representations}, 2017.
+\newblock URL \url{https://openreview.net/forum?id=Skq89Scxx}.
+
+\bibitem[Micikevicius et~al.(2018)Micikevicius, Narang, Alben, Diamos, Elsen, Garcia, Ginsburg, Houston, Kuchaiev, Venkatesh, \'es Wu]{micikevicius2018mixed}
+Micikevicius, P., Narang, S., Alben, J., Diamos, G., Elsen, E., Garcia, D., Ginsburg, B., Houston, M., Kuchaiev, O., Venkatesh, G., \'es Wu, H.
+\newblock Mixed precision training.
+\newblock \emph{International Conference on Learning Representations}, 2018.
+\newblock URL \url{https://openreview.net/forum?id=r1gs9JgRZ}.
+
+\bibitem[Mortezapour~Shiri et~al.(2024)]{sciencedirect_lstm}
+Mortezapour~Shiri, F. \'es others, .
+\newblock Rnn-lstm: From applications to modeling techniques and beyond.
+\newblock \emph{ScienceDirect}, 2024.
+\newblock URL \url{https://www.sciencedirect.com/science/article/pii/S1319157824001575}.
+
+\bibitem[of~Deep~Learning”(2023)]{mdpi_comprehensive}
+Deep~Learning”, �.~C.~R.of.
+\newblock \emph{Information (MDPI)}, 2023.
+\newblock URL \url{https://www.mdpi.com/2078-2489/15/12/755}.
+
+\bibitem[Okuta et~al.(2017)Okuta, Unno, Nishino, Hido, \'es Loomis]{cupy2017}
+Okuta, R., Unno, Y., Nishino, D., Hido, S., \'es Loomis, C.
+\newblock Cupy: A numpy-compatible library for nvidia gpu calculations.
+\newblock \emph{Proceedings of Workshop on Machine Learning Systems (LearningSys) in the Thirty-first Annual Conference on Neural Information Processing Systems}, 2017.
+\newblock URL \url{http://learningsys.org/nips17/assets/papers/paper_16.pdf}.
+
+\bibitem[Pai(2025)]{analytics_12nets}
+Pai, A.
+\newblock 12 types of neural networks in deep learning.
+\newblock \emph{Analytics Vidhya}, 2025.
+\newblock URL \url{https://www.analyticsvidhya.com/blog/2020/02/cnn-vs-rnn-vs-mlp-analyzing-3-types-of-neural-networks-in-deep-learning/}.
+
+\bibitem[Pedregosa et~al.(2011)Pedregosa, Varoquaux, Gramfort, Michel, Thirion, Grisel, Blondel, Prettenhofer, Weiss, Dubourg, Vanderplas, Passos, Cournapeau, Brucher, Perrot, \'es Édouard Duchesnay]{pedregosa2011scikit}
+Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion, B., Grisel, O., Blondel, M., Prettenhofer, P., Weiss, R., Dubourg, V., Vanderplas, J., Passos, A., Cournapeau, D., Brucher, M., Perrot, M., \'es Duchesnay, Édouard.
+\newblock Scikit-learn: Machine learning in python.
+\newblock \emph{Journal of Machine Learning Research}, 12:\penalty0 2825--2830, 2011.
+\newblock URL \url{https://jmlr.org/papers/v12/pedregosa11a.html}.
+
+\bibitem[Rabiner(1989)]{rabiner1989hmm}
+Rabiner, L.~R.
+\newblock A tutorial on hidden markov models and selected applications in speech recognition.
+\newblock \emph{Proceedings of the IEEE}, 77\penalty0 (2):\penalty0 257--286, 1989.
+\newblock \doi{10.1109/5.18626}.
+
+\bibitem[Ramachandran et~al.(2017)Ramachandran, Zoph, \'es Le]{ramachandran2017swish}
+Ramachandran, P., Zoph, B., \'es Le, Q.~V.
+\newblock Searching for activation functions.
+\newblock \emph{arXiv preprint arXiv:1710.05941}, 2017.
+\newblock URL \url{https://arxiv.org/abs/1710.05941}.
+
+\bibitem[Ramirez(2023)]{fastapi2023}
+Ramirez, S.
+\newblock Fastapi: Modern, fast web framework for building apis with python.
+\newblock \emph{GitHub Repository}, 2023.
+\newblock URL \url{https://github.com/tiangolo/fastapi}.
+
+\bibitem[Rezende et~al.(2014)Rezende, Mohamed, \'es Wierstra]{rezende2014stochastic}
+Rezende, D.~J., Mohamed, S., \'es Wierstra, D.
+\newblock Stochastic backpropagation and approximate inference in deep generative models.
+\newblock \emph{International Conference on Machine Learning}, pages 1278--1286, 2014.
+\newblock URL \url{https://proceedings.mlr.press/v32/rezende14.html}.
+
+\bibitem[Roberts et~al.(2018)Roberts, Engel, Raffel, Hawthorne, \'es Eck]{roberts2018hierarchical}
+Roberts, A., Engel, J., Raffel, C., Hawthorne, C., \'es Eck, D.
+\newblock A hierarchical latent vector model for learning long-term structure in music.
+\newblock In \emph{Proceedings of the 35th International Conference on Machine Learning}, volume~80 of \emph{Proceedings of Machine Learning Research}, pages 4364--4373. PMLR, 2018.
+\newblock URL \url{https://proceedings.mlr.press/v80/roberts18a.html}.
+
+\bibitem[Simplilearn(2025)]{simplilearn_top_algos}
+Simplilearn, .
+\newblock Top 10 deep learning algorithms you should know in 2025, 2025.
+\newblock URL \url{https://www.simplilearn.com/tutorials/deep-learning-tutorial/deep-learning-algorithm}.
+
+\bibitem[Smith(2017)]{smith2017superconvergence}
+Smith, L.~N.
+\newblock Cyclical learning rates for training neural networks.
+\newblock \emph{IEEE Winter Conference on Applications of Computer Vision}, pages 464--472, 2017.
+\newblock \doi{10.1109/WACV.2017.58}.
+
+\bibitem[Sola \'es Sevilla(1997)]{sola1997importance}
+Sola, J. \'es Sevilla, J.
+\newblock Importance of input data normalization for the application of neural networks to complex industrial problems.
+\newblock \emph{IEEE Transactions on Nuclear Science}, 44\penalty0 (3):\penalty0 1464--1468, 1997.
+\newblock \doi{10.1109/23.589532}.
+
+\bibitem[Team(2023)]{torch2023}
+Team, P.
+\newblock Pytorch: An imperative style, high-performance deep learning library.
+\newblock \emph{GitHub Repository}, 2023.
+\newblock URL \url{https://pytorch.org/}.
+
+\bibitem[Vaswani et~al.(2017)Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Łukasz Kaiser, \'es Polosukhin]{vaswani2017attention}
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.~N., Kaiser, Łukasz, \'es Polosukhin, I.
+\newblock Attention is all you need.
+\newblock In \emph{Advances in Neural Information Processing Systems}, volume~30, pages 5998--6008, 2017.
+\newblock URL \url{https://papers.nips.cc/paper/7181-attention-is-all-you-need}.
+
+\bibitem[Viterbi(1967)]{viterbi1967error}
+Viterbi, A.~J.
+\newblock Error bounds for convolutional codes and an asymptotically optimum decoding algorithm.
+\newblock \emph{IEEE Transactions on Information Theory}, 13\penalty0 (2):\penalty0 260--269, 1967.
+\newblock \doi{10.1109/TIT.1967.1054010}.
+
+\bibitem[Wikipedia(2025{\natexlab{a}})]{wikipedia_gan}
+Wikipedia, .
+\newblock Generative adversarial network, 2025{\natexlab{a}}.
+\newblock URL \url{https://en.wikipedia.org/wiki/Generative_adversarial_network}.
+
+\bibitem[Wikipedia(2025{\natexlab{b}})]{wikipedia_generative_ai}
+Wikipedia, .
+\newblock Generative artificial intelligence, 2025{\natexlab{b}}.
+\newblock URL \url{https://en.wikipedia.org/wiki/Generative_artificial_intelligence}.
+
+\bibitem[Zhang et~al.(2020)Zhang, Liu, \'es Wang]{zhang2020deep}
+Zhang, H., Liu, Y., \'es Wang, X.
+\newblock Deep learning for music generation: A comprehensive survey.
+\newblock \emph{IEEE Transactions on Audio, Speech, and Language Processing}, 28:\penalty0 2934--2950, 2020.
+\newblock \doi{10.1109/TASLP.2020.3021896}.
+
+\bibitem[“Understanding Deep Learning:~DNN \'es R-CNN”(2018)]{medium_deep_arch}
+“Understanding Deep Learning:~DNN, L.~C., RNN \'es R-CNN”, .
+\newblock Medium.
+\newblock 2018.
+\newblock URL \url{https://medium.com/@sprhlabs/understanding-deep-learning-dnn-rnn-lstm-cnn-and-r-cnn-6602ed94dbff}.
+
+\end{thebibliography}

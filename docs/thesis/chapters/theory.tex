@@ -1,0 +1,126 @@
+\chapter{Háttér és elméleti alapok}
+\section{Szimbolikus zene generálás}
+
+Továbbá, a tanult értékelők - az emberi értékelések előrejelzésére kiképzett idegi „bírák" - a szubjektív tesztek automatikus helyettesítőit kínálják, bár fennáll a veszélye, hogy öröklik az annotátorok torzításait. A robusztus, értelmezhető metrikák keresése továbbra is aktív, azzal a céllal, hogy megbízhatóan irányítsák a modellfejlesztést és a benchmarkingot a különböző zenei műfajokban
+
+\section{A Zha rendszer architektúrális alapjai}
+\subsection{Mikroszolgáltatás-alapú tervezés}
+A Zha backend egy FastAPI-alapú mikroszolgáltatás-architektúrát követ, amely három fő komponenst integrál: REST API végpontokat, AI modelleket és segédeszközöket. Az architektúra moduláris felépítése lehetővé teszi az egyes komponensek független fejlesztését és skálázását.
+
+\textbf{API réteg}: A FastAPI keretrendszer automatikus OpenAPI dokumentációt és típusbiztonságot biztosít. A CORS middleware engedélyezi a cross-origin kéréseket a frontend alkalmazásból:
+\begin{lstlisting}[language=Python]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+\end{lstlisting}
+
+\textbf{Modell kezelés}: A rendszer dinamikusan detektálja és tölti be a rendelkezésre álló modelleket:
+\begin{lstlisting}[language=Python]
+models_available = {
+    "transformer": False,
+    "vae": False,
+    "markov": False
+}
+\end{lstlisting}
+
+\subsection{Többmodelles generálási stratégia}
+A Zha rendszer három különböző generatív modellt kombinál:
+
+\begin{enumerate}
+\item \textbf{Markov-lánc}: Zeneelméleti tudással kiegészített sztochasztikus modell
+\item \textbf{VAE}: Latens tér-alapú kreatív variációk generálására
+\item \textbf{Transformer}: Hosszú távú koherencia és szerkezeti tudatosság biztosítására
+\end{enumerate}
+
+\textbf{Kombinált generálás}: A ``/generate/combined'' végpont összes három modellt használja:
+\begin{enumerate}
+\item Hangnem és skála elemzés a bemeneti MIDI-ből
+\item Akkordprogresszió generálás Markov modellel
+\item Alapvető dallam Markov modellel akkord-tudatossággal
+\item Kreatív variációk VAE-vel skála-szűréssel
+\item Szerkezeti koherencia Transformerrel
+\item Súlyozott kombinálás skála-alapú szűréssel
+\end{enumerate}
+
+\subsection{Adatfeldolgozási pipeline}
+\textbf{MIDI parsing}: A rendszer Pretty-MIDI könyvtárat használ robusztus MIDI elemzéshez:
+\begin{lstlisting}[language=Python]
+def parse_midi(midi_path):
+    midi_data = pretty_midi.PrettyMIDI(midi_path)
+    feature = np.zeros(128, dtype=np.float32)
+    
+    for instrument in midi_data.instruments:
+        for note in instrument.notes:
+            feature[note.pitch] += note.velocity / 127.0
+    
+    if np.sum(feature) > 0:
+        feature = feature / np.sum(feature)
+    return feature
+\end{lstlisting}
+
+\textbf{Jellemzővektor reprezentáció}: A MIDI fájlok 128-dimenziós hangmagasság hisztogrammá konvertálódnak, amely tömör reprezentációt biztosít a harmonikus tartalomról.
+
+\textbf{Zeneelméleti integráció}: A Music21 könyvtár biztosítja a zeneelméleti funkciókat:
+\begin{itemize}
+\item Hangnem felismerés
+\item Skála generálás
+\item Akkord elemzés
+\item Római számjelölés kezelés
+\end{itemize}
+A zenei információk szimbolikus formában történő reprezentációja alapvető fontosságú a modern
+mesterséges intelligencia által vezérelt zeneszerzői rendszerek számára. A szimbolikus reprezentációk
+absztrahálják a nyers hanghullámformákat, és helyette diszkrét zenei eseményeket - például a hangok
+kezdetét, időtartamát, sebességét és a vezérlésváltásokat - tartalmaznak, amelyeket statisztikai és neurális
+modellekkel lehet manipulálni. Három uralkodó paradigma alakult ki: MIDI-események, piano-roll mátrixok és tokenizált szekvenciák.
+
+\subsection{MIDI események}
+A MIDI (Musical Instrument Digital Interface) szabvány a teljesítményadatokat időbélyegzővel ellátott
+események folyamaként kódolja, beleértve a \texttt{NOTE\_ON}, \texttt{NOTE\_OFF}, \texttt{CONTROL\_CHANGE} és így tovább.  Minden esemény paramétereket hordoz - hangmagasság (0-127), sebesség (1-127), csatorna és időbélyeg (timestamp), amelyek pontosan leírják az előadás árnyalatait. Mivel a MIDI széles körben támogatott és kompakt, egyaránt szolgál a generatív rendszerek bemeneteként és a lejátszás kimeneti formátumaként. A MIDI nyers eseményáramlása azonban kihívást jelent: az események tetszőleges időbélyegekkel fordulnak elő, így a modelleknek szabálytalan időintervallumokat kell kezelniük; a dinamika (a sebességen keresztül kódolt) durva szemcséjű, ami megnehezíti a kifejezőképesség modellezését :contentReferen- ce[oaicite:1]index=1. Továbbá, a többszólamúság ábrázolása több hang folyam külön csatornán történő átlapolását vagy egyetlen eseménylistába való összevonását igényli, ami összezavarhatja a szekvencia-alapú tanulókat.
+
+\subsection{Piano-Roll ábrázolások}
+Alternatív megoldás a zongoratekercs, egy időzített zongorarács, amelyben a sorok a hangmagasságot, az oszlopok pedig rögzített időlépéseket (pl. tizenhatodok) jelölik. Egy bináris (vagy többszintű) mátrix jelzi, hogy az egyes időszeleteknél mely hangok szólalnak meg. A piano-roll-ok szabályos, rácsalapú struktúrát adnak, amely alkalmas a konvolúciós vagy rekurrens neurális hálózatok számára. Ezek természetesen polifóniát kódolnak - oszloponként több hangjegyet -, de a hosszabb szekvenciák esetében potenciálisan nagy, ritkás mátrixok árán. A rögzített időlépésekre történő kvantálás időzítési hibákat okoz (a swing és a kifejező rubato elveszik), és a dinamikát további csatornákra vagy rétegekre kell diszkretizálni, ami tovább növeli a dimenzionalitást.
+
+\subsection{Tokenizált szekvencia-reprezentációk}
+Az eseményfolyam és a zongoratekercsek erősségeinek áthidalására számos rendszer az NLP által inspirált tokenizált szekvencia megközelítést alkalmazza.  Minden zenei esemény (pl. \ \texttt{NOTE\_ON\_60}, \texttt{TIME\_SHIFT\_4}, \texttt{VELOCITY\_80}) egy token lesz egy több száz szimbólumból álló szókincsben.  
+Ez a „REMI”-stílusú kódolás egyetlen lineáris szekvenciában rögzíti a hangmagasságot, az időtartamot és a dinamikát, lehetővé téve a Transformer és a nyelvi modell architektúrák közvetlen alkalmazását.  A megfelelő \texttt{TIME\_SHIFT} vagy \texttt{DURATION} tokenek kiválasztásával egyensúlyt teremthetünk az időbeli felbontás és a szekvencia hossza között.  
+A tokenizált szekvenciák úgy kezelik a többszólamúságot, hogy az egyidejű hangokat nulla időtartamú vagy „akkord” tokenekkel váltogatják, de ez kombinatorikus tokenrobbanáshoz vezethet, ha túl sok egyidejű hang van jelen.
+
+\subsection{Kihívások: Dinamika, többszólamúság és időzítés}
+A szimbolikus formátumok rugalmassága ellenére három, egymással összefüggő kihívás továbbra is fennáll:
+
+\paragraph{Dynamika kódolása} A kifejező dinamika megragadásához a sebesség vagy a folyamatos hangerő-változások ábrázolása szükséges.  A MIDI 128 szintű sebességét gyakran kevesebb kategóriára bontják a szókincs méretének csökkentése érdekében, de ez feláldozza az árnyalatokat.  Egyes munkák külön „sebesség” tokeneket vagy folyamatos beágyazásokat használnak, ezek diszkrét generatív modellekbe való integrálása azonban továbbra sem triviális.
+
+\paragraph{Többszólamúság modellezése} A valódi polifónia - több egyidejű hangjegy - többsávos ábrázolást vagy egymásba ágyazott jelfolyamokat igényel.  A többsávos megközelítések megőrzik a hangok függetlenségét, de a heterogén sávhosszúságok miatt bonyolítják a szekvencia-modellezést.  Az egyfolyamú kódolásoknak az egyidejű eseményeket speciális tokenekkel vagy nulla idejű eltolásokkal kell jelezniük, ami összezavarhatja a modelleket és rosszul összehangolt kimenetekhez vezethet.
+
+\paragraph{Időzítés és kifejezőerő} Az emberi előadások kifejező időzítést (rubato, swing) mutatnak, amit a fix rácsos kvantálás eltöröl.  Bár egyes rendszerek lehetővé teszik a változó hosszúságú \texttt{TIME\_DELTA} tokenek használatát a mikro-ütemezés visszaadása érdekében, ez növeli a szekvencia komplexitását és a modell nehézségét. Ezenkívül a szimbolikus pontszámok és a teljesítmény árnyalatainak összehangolása kifinomult összehangolási algoritmusokat igényel, amelyek gyakran meghaladják a végponttól végpontig generáló modellek hatókörét.
+
+Összességében a szimbolikus zenei reprezentáció gondos tervezési döntéseket igényel, hogy egyensúlyt teremtsen a kifejezőképesség, a modell követhetősége és az adatok ritkasága között.  A terület tovább fejlődik a gazdagabb token-grammatikák, hierarchikus kódolások és gráf-alapú reprezentációk felé, amelyek több szinten ígérik a zenei struktúra megragadását.
+
+\newpage
+\section{Értékelési mérőszámok}
+A generált zene szigorú értékelése elengedhetetlen a modell minőségének, a stílushűségnek és a hallgatói elégedettségnek a felméréséhez.  A mérőszámokat \emph{objektív statisztikai mérőszámok} - mint például a perplexitás, a hangmagasság-entrópia és a groove-konzisztencia - és \emph{szubjektív emberi hallgatási tesztek} kategóriákba soroljuk.  
+
+\subsection{Perplexitás}
+A nyelvi modellezésből származó perplexitás a modell bizonytalanságát méri, amikor egy szekvencia következő jelét jósolja meg.  Formálisan, egy $N$ hosszúságú, $P(s_t)$ tokenvalószínűségű tesztkészlet esetén a perplexitás $\exp\bigl(-\frac{1}{N}\sum_t\log P(s_t)\bigr)$.  
+A szimbolikus zenében az alacsonyabb perplexitás a képzési eloszlásokkal való szorosabb statisztikai egyezést jelzi, de nem feltétlenül korrelál a zeneiséggel vagy a kreativitással.  A modellek túlilleszkedhetnek és alacsony perplexitást érhetnek el, miközben mechanikusan ismétlődő kimeneteket produkálnak.  Mindazonáltal a perplexitás a szekvencia-modellezés teljesítményének hasznos \emph{alapdiagnosztikája}.
+
+\subsection{Hangmagasság Entropiája}
+A hangmagasság-entrópia a generált kimenet hangmagasságainak változatosságát számszerűsíti.  Ha $p_i$ a $i$ hangmagasság empirikus gyakorisága, akkor az entrópia $-\sum_i p_i\log p_i$.  
+A magas entrópia gazdag dallami változatosságra utal, míg a rendkívül magas értékek véletlenszerű zajra utalhatnak.  A generált minták hangmagasság-entrópiájának és a gyakorló korpusz entrópiájának összehasonlítása alul- vagy túldiverzifikáltságot mutat.  Az entrópia kiszámítható csúszóablakokon keresztül, hogy értékelni lehessen a lokális és a globális diverzitást.  A hangmagasság-entrópia önmagában azonban figyelmen kívül hagyja a szekvenciális struktúrát és a harmonikus kontextust.
+
+\subsection{Groove konzisztencia}
+A Groove konzisztencia azt méri, hogy a generált ritmus mennyire igazodik az emberhez hasonló időbeli mintákhoz és mikro-időzítési eltérésekhez.  Az olyan mérőszámok, mint a \emph{inter-onset-intervallum (IOI) variancia} és \emph{szinkópiaindexek} értékelik a szekvenciák szabályosságát és kifejező időzítését.  
+Például az IOI-k magas szórása szabálytalan időzítést jelezhet, míg az alacsony variancia túlságosan merev, kvantált kimenetekre utalhat.  Egyes keretrendszerek a hitelesség értékeléséhez kiszámítják a generált barázdajellemzők (pl. \ swing ratio) korrelációját a referencia adatkészletekben található jellemzőkkel.
+
+\subsection{Emberi hallgatási tesztek}
+A kvantitatív mérőszámok fejlődése ellenére a zenei minőség végső döntőbírája továbbra is az emberi érzékelés marad.  A hallgatói tesztek - az A/B összehasonlításoktól a MUSHRA-stílusú értékelő skálákig - a koherencia, az érzelmi hatás és a kreativitás szubjektív értékelését rögzítik.  
+A standard protokollok valós és generált klipek vakon történő bemutatását foglalják magukban, a résztvevők pedig olyan attribútumokat értékelnek, mint a \emph{muzikalitás}, \emph{újdonság} és \emph{élvezet}.  Az eredményeket statisztikai szignifikancia tesztekkel (pl. \ ANOVA) elemzik annak megállapítására, hogy a modellek az emberi kompozícióktól megkülönböztethetetlen kimeneteket produkálnak-e.  
+A humán vizsgálatok erőforrás-igényesek és torzításoktól szenvedhetnek (résztvevők fáradtsága, ismertségi hatások), de nélkülözhetetlen validációt biztosítanak, különösen akkor, ha objektív mérésekkel kombinálják őket egy hibrid értékelési keretrendszerben.
+
+\subsection{Összetett és új mérőszámok}
+A kutatók egyre inkább a többféle mérőszámot tartalmazó értékelőkészletek mellett érvelnek, amelyek kombinálják a perplexitást, az entrópiát, a barázdát és az emberi pontszámokat.  A legújabb munkák \emph{style transfer distance}, dallamkontúr-hasonlóság és akkordmenet-illesztési mértékeket javasolnak a magasabb szintű zenei tulajdonságok megragadására.
+Továbbá, a tanult értékelők - az emberi értékelések előrejelzésére kiképzett idegi „bírák” - a szubjektív tesztek automatikus helyettesítőit kínálják, bár fennáll a veszélye, hogy öröklik az annotátorok torzításait. A robusztus, értelmezhető metrikák keresése továbbra is aktív, azzal a céllal, hogy megbízhatóan irányítsák a modellfejlesztést és a benchmarkingot a különböző zenei műfajokban.

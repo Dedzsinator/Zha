@@ -1,0 +1,67 @@
+This is BibTeX, Version 0.99d (TeX Live 2026/dev/Arch Linux)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+A level-1 auxiliary file: chapters/abstract.aux
+A level-1 auxiliary file: chapters/intro.aux
+A level-1 auxiliary file: chapters/theory.aux
+A level-1 auxiliary file: chapters/markov.aux
+A level-1 auxiliary file: chapters/rnn.aux
+A level-1 auxiliary file: chapters/vae.aux
+A level-1 auxiliary file: chapters/transformer.aux
+A level-1 auxiliary file: chapters/train.aux
+A level-1 auxiliary file: chapters/zha.aux
+A level-1 auxiliary file: chapters/appendix.aux
+The style file: abbrvnat_hu.bst
+Database file #1: dolgozat.bib
+Too many commas in name 1 of "“Understanding Deep Learning: DNN, RNN, LSTM, CNN and R-CNN”" for entry medium_deep_arch
+while executing---line 1343 of file abbrvnat_hu.bst
+Too many commas in name 1 of "“Understanding Deep Learning: DNN, RNN, LSTM, CNN and R-CNN”" for entry medium_deep_arch
+while executing---line 1343 of file abbrvnat_hu.bst
+Warning--empty title in mdpi_comprehensive
+Too many commas in name 1 of "“Understanding Deep Learning: DNN, RNN, LSTM, CNN and R-CNN”" for entry medium_deep_arch
+while executing---line 1425 of file abbrvnat_hu.bst
+Too many commas in name 1 of "“Understanding Deep Learning: DNN, RNN, LSTM, CNN and R-CNN”" for entry medium_deep_arch
+while executing---line 1425 of file abbrvnat_hu.bst
+Warning--empty journal in medium_deep_arch
+You've used 42 entries,
+            2767 wiz_defined-function locations,
+            845 strings with 14168 characters,
+and the built_in function-call counts, 22186 in all, are:
+= -- 2000
+> -- 1534
+< -- 31
++ -- 520
+- -- 477
+* -- 1756
+:= -- 3486
+add.period$ -- 165
+call.type$ -- 42
+change.case$ -- 241
+chr.to.int$ -- 41
+cite$ -- 86
+duplicate$ -- 927
+empty$ -- 1586
+format.name$ -- 532
+if$ -- 4681
+int.to.chr$ -- 2
+int.to.str$ -- 1
+missing$ -- 39
+newline$ -- 255
+num.names$ -- 168
+pop$ -- 571
+preamble$ -- 1
+purify$ -- 200
+quote$ -- 0
+skip$ -- 780
+stack$ -- 0
+substring$ -- 647
+swap$ -- 161
+text.length$ -- 13
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 462
+warning$ -- 2
+while$ -- 173
+width$ -- 0
+write$ -- 606
+(There were 4 error messages)

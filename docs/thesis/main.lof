@@ -1,0 +1,24 @@
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \contentsline {figure}{\numberline {5.1.}{\ignorespaces Átparaméterezési trükk a VAE képzésben}}{22}{figure.caption.11}%
+\select@language {magyar} \contentsline {figure}{\numberline {5.2.}{\ignorespaces ResidualBlock architektúra a Zha VAE-ben}}{23}{figure.caption.12}%
+\select@language {magyar} \contentsline {figure}{\numberline {5.3.}{\ignorespaces Temperature kontrollos sampling hatása a generált zenére}}{24}{figure.caption.13}%
+\select@language {magyar} \contentsline {figure}{\numberline {5.4.}{\ignorespaces Mixed precision training a VAE képzésben}}{25}{figure.caption.14}%
+\select@language {magyar} \contentsline {figure}{\numberline {5.5.}{\ignorespaces Latent space interpoláció két zenei stílus között}}{26}{figure.caption.15}%
+\select@language {magyar} \contentsline {figure}{\numberline {5.6.}{\ignorespaces VAE ONNX export és deployment pipeline}}{27}{figure.caption.16}%
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \contentsline {figure}{\numberline {6.1.}{\ignorespaces Zha Transformer architektúra zenei generáláshoz}}{34}{figure.caption.17}%
+\select@language {magyar} \contentsline {figure}{\numberline {6.2.}{\ignorespaces Memória-alapú strukturált generálás}}{35}{figure.caption.18}%
+\select@language {magyar} \contentsline {figure}{\numberline {6.3.}{\ignorespaces Strukturált zenei generálási folyamat}}{36}{figure.caption.19}%
+\select@language {magyar} \contentsline {figure}{\numberline {6.4.}{\ignorespaces Különböző sampling stratégiák összehasonlítása}}{37}{figure.caption.20}%
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \contentsline {figure}{\numberline {7.1.}{\ignorespaces Bayesian hyperparameter optimization folyamat}}{41}{figure.caption.40}%
+\select@language {magyar} \contentsline {figure}{\numberline {7.2.}{\ignorespaces Pareto-front a multi-objective optimalizációban}}{42}{figure.caption.41}%
+\select@language {magyar} \contentsline {figure}{\numberline {7.3.}{\ignorespaces Valós idejű képzési metrika monitoring dashboard}}{45}{figure.caption.43}%
+\select@language {magyar} \contentsline {figure}{\numberline {7.4.}{\ignorespaces Képzési hibakeresési eszközök és anomália detektálás}}{46}{figure.caption.44}%
+\select@language {magyar} \addvspace {10\p@ }
+\select@language {magyar} \contentsline {figure}{\numberline {8.1.}{\ignorespaces End‐to‐End Zha Pipeline: Markov → VAE → Transformer → MIDI}}{47}{figure.caption.49}%
+\select@language {magyar} \addvspace {10\p@ }

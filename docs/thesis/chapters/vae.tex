@@ -1,0 +1,286 @@
+\chapter{Variációs autoenkóderek zene generáláshoz}
+\label{chap:vae}
+
+\section{Elméleti Alapok}
+\subsection{Látens változó modellek}
+A VAE alapgondolata, hogy a megfigyelt zenei adatok (pl. MIDI sorozatok) mögött rejtett, alacsony dimenziós jellemzők (látens változók) állnak. Ezek a jellemzők leírják a zene esszenciális tulajdonságait (pl. dallamvonal, ritmusképlet, hangnem). A generatív folyamat formálisan:
+
+\[
+p_\theta(\mathbf{x}) = \int p_\theta(\mathbf{x}|\mathbf{z})p(\mathbf{z})d\mathbf{z}
+\]
+
+ahol:
+\begin{itemize}
+    \item $p(\mathbf{z})$: A látens változó előzetes eloszlása (általában standard normális eloszlás)
+    \item $p_\theta(\mathbf{x}|\mathbf{z})$: Generatív modell (dekóder), ami a látens változóból rekonstruálja a bemenetet
+\end{itemize}
+
+A modell célja a megfigyelt adatok $\mathbf{x}$ valószínűségének maximalizálása. A képlet mögötti intuíció: a zene generálása úgy történik, hogy először mintavételezünk a látens térből ($\mathbf{z}$), majd ebből a dekóder generálja a zenei sorozatot.
+
+\subsection{Variációs következtetés és ELBO}
+A valódi utólagos eloszlás $p_\theta(\mathbf{z}|\mathbf{x})$ számításigényes, ezért egy $q_\phi(\mathbf{z}|\mathbf{x})$ variációs eloszlással közelítjük (kódoló). A bizonyíték alsó határa (ELBO) levezetése a Jensen-egyenlőtlenségből származik:
+
+\[
+\log p_\theta(\mathbf{x}) \geq \underbrace{\mathbb{E}_{q_\phi}[\log p_\theta(\mathbf{x}|\mathbf{z})]}_{\text{Rekonstrukciós veszteség}} - \underbrace{D_{\text{KL}}(q_\phi(\mathbf{z}|\mathbf{x}) \parallel p(\mathbf{z}))}_{\text{Regularizációs tag}}
+\]
+
+\begin{itemize}
+    \item \textbf{Rekonstrukciós veszteség}: Méri, hogy a dekóder mennyire képes pontosan rekonstruálni a bemenetet a látens változóból
+    \item \textbf{KL-divergencia}: Méri a kódoló által tanult eloszlás és az előzetes eloszlás távolságát, elősegítve a jól strukturált látens teret
+\end{itemize}
+
+A KL-divergencia szerepe kulcsfontosságú: ha túl kicsi, a modell nem tanul hasznos reprezentációt; ha túl nagy, a rekonstrukció pontatlanná válik. Az optimális egyensúly megtalálása a VAE képzés legnagyobb kihívása.
+
+\section{Zene-specifikus Architektúra}
+\subsection{Kódoló tervezés}
+Zenei szekvenciák feldolgozására a kétirányú LSTM optimális, mert képes figyelembe venni a jövőbeli és múltbeli kontextust is:
+
+\[
+\begin{aligned}
+\overrightarrow{\mathbf{h}}_t &= \text{LSTM}(\mathbf{x}_t, \overrightarrow{\mathbf{h}}_{t-1}) \quad \text{(előrefelé haladó állapot)} \\
+\overleftarrow{\mathbf{h}}_t &= \text{LSTM}(\mathbf{x}_t, \overleftarrow{\mathbf{h}}_{t+1}) \quad \text{(hátrafelé haladó állapot)} \\
+[\boldsymbol{\mu}, \boldsymbol{\sigma}] &= \text{MLP}([\overrightarrow{\mathbf{h}}_T; \overleftarrow{\mathbf{h}}_1]) \quad \text{(látens paraméterek)}
+\end{aligned}
+\]
+
+Az utolsó lépésben az MLP (többrétegű perceptron) állítja elő a látens eloszlás paramétereit. Ez az architektúra különösen hatékony dallamok és akkordmenetek esetén.
+
+\subsection{Dekódoló architektúrák}
+\begin{itemize}
+    \item \textbf{Autoregresszív dekóder}: Sorozatot generál lépésről lépésre:
+    \[
+    p_\theta(x_t|\mathbf{z}, x_{<t}) = \text{LSTM}(\mathbf{z}, x_{t-1}, \mathbf{h}_{t-1})
+    \]
+    \item \textbf{Hierarchikus dekóder (MusicVAE)}: Kétszintű reprezentáció \cite{roberts2018hierarchical}:
+    \begin{align*}
+        \mathbf{z}_{\text{master}} & \sim \mathcal{N}(0, \mathbf{I}) \quad \text{(globális szerkezet)} \\
+        \mathbf{z}_{\text{note}} & \sim p(\mathbf{z}_{\text{note}}|\mathbf{z}_{\text{master}}) \quad \text{(egyedi hangjegyek)}
+    \end{align*}
+\end{itemize}
+
+A hierarchikus megközelítés lehetővé teszi hosszabb távú szerkezetek modellezését, mint például versszak-refrén átmenetek.
+
+\section{Matematikai alapelvek}
+\subsection{Átparaméterezési trükk}
+A kihívás: a mintavételezés nem differenciálható művelet, ami megakadályozná a gradiensszámítást. Megoldásként a sztochasztikus változót determinisztikus és véletlen komponensekre bontjuk \cite{kingma2014auto}:
+
+\[
+\mathbf{z} = \underbrace{\boldsymbol{\mu}}_{\text{differenciálható}} + \boldsymbol{\sigma} \odot \underbrace{\boldsymbol{\epsilon}}_{\boldsymbol{\epsilon} \sim \mathcal{N}(0, \mathbf{I})}
+\]
+
+Ez lehetővé teszi, hogy a gradiens a $\boldsymbol{\mu}$ és $\boldsymbol{\sigma}$ paramétereken keresztül áramoljon vissza a kódolóba, miközben a véletlenszerűséget a $\boldsymbol{\epsilon}$ mintavételezés biztosítja.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/reparameterization_trick.png}
+\caption{Átparaméterezési trükk a VAE képzésben}
+\label{fig:reparam}
+\end{figure}
+
+\subsection{Beta-VAE és regularizáció}
+A standard VAE gyakran "posterior collapse" problémával küzd, ahol a KL term túl gyorsan nullához konvergál. A Beta-VAE megoldás \cite{brunner2018midivae}:
+
+\[
+\mathcal{L}_{\beta} = \mathbb{E}_{q_\phi}[\log p_\theta(\mathbf{x}|\mathbf{z})] - \beta \cdot D_{\text{KL}}(q_\phi(\mathbf{z}|\mathbf{x}) \parallel p(\mathbf{z}))
+\]
+
+ahol $\beta > 1$ erősebb regularizációt eredményez, elősegítve a disentangled reprezentációkat.
+
+\subsection{KL-divergencia analízis}
+Gauss eloszlás esetén a KL-divergencia zárt alakban kifejezhető:
+
+\[
+D_{\text{KL}} = -\frac{1}{2} \sum_{j=1}^J \left(1 + \log\sigma_j^2 - \mu_j^2 - \sigma_j^2\right)
+\]
+
+ahol $J$ a látens tér dimenziója. A képlet szemléletes jelentése: 
+\begin{itemize}
+    \item $\mu_j^2$ minimalizálása a látens átlag nullára tolását eredményezi
+    \item $\log\sigma_j^2 - \sigma_j^2$ minimalizálása a szórás egységnyi érték felé mozdítja
+\end{itemize}
+
+\section{Kihívások a zenegenerációban}
+\subsection{Posterior collapse}
+A gyakorlatban előfordul, hogy a KL-divergencia dominál, és a kódoló minden bemenethez hasonló látens reprezentációt hoz létre. Ennek két fő oka:
+\begin{enumerate}
+    \item A dekóder elég erős ahhoz, hogy a látens változó nélkül is jól rekonstruáljon
+    \item A látens tér dimenziója túl nagy a feladathoz képest
+\end{enumerate}
+
+Megoldási stratégiák:
+\begin{itemize}
+    \item \textbf{KL-lágyítás}: $\beta$ súly fokozatos növelése
+    \[
+    \mathcal{L} = \mathbb{E}_{q}[\log p(\mathbf{x}|\mathbf{z})] - \beta_t D_{\text{KL}}
+    \]
+    \item \textbf{Szabad bitek}: KL-költség dimenziónkénti korlátozása
+\end{itemize}
+
+\subsection{Diszkrét adatok kezelése}
+A zenei tokenek (hangmagasság, időtartam) diszkrét jellege problémát okoz, mert a VAE alapvetően folytonos eloszlásokat feltételez. Hatékony megoldások:
+
+\begin{itemize}
+    \item \textbf{Gumbel-Softmax}: Folytonos relaxáció diszkrét eloszlásokra
+    \[
+    y_i = \frac{\exp((\log\pi_i + g_i)/\tau)}{\sum_j \exp((\log\pi_j + g_j)/\tau)}, \quad g_i \sim \text{Gumbel}(0,1)
+    \]
+    \item \textbf{VQ-VAE}: Diszkrét kódtár bevezetése
+    \[
+    \mathbf{z}_q = \arg\min_{\mathbf{e}_k \in \mathcal{C}} \|\mathbf{z}_e - \mathbf{e}_k\|_2
+    \]
+\end{itemize}
+
+\section{Speciális VAE architektúrák}
+\subsection{Hierarchikus VAE}
+Hosszabb zenei darabok generálásához több szintű reprezentációt vezetünk be:
+
+\[
+p(\mathbf{z}) = p(\mathbf{z}_L) \prod_{l=1}^{L-1} p(\mathbf{z}_l|\mathbf{z}_{l+1}), \quad q(\mathbf{z}|\mathbf{x}) = q(\mathbf{z}_1|\mathbf{x}) \prod_{l=2}^L q(\mathbf{z}_l|\mathbf{z}_{l-1})
+\]
+
+\begin{itemize}
+    \item Felső szintek: Globális szerkezet (pl. A-B-A forma)
+    \item Alsó szintek: Helyi jellemzők (pl. egyedi hangjegyek)
+\end{itemize}
+
+\subsection{Transformer-VAE}
+Hosszú távú függőségek kezelésére:
+\[
+\mathbf{H} = \text{MultiHeadAttention}(\mathbf{X}), \quad \boldsymbol{\mu}, \boldsymbol{\sigma} = \text{MLP}(\mathbf{H}_{\text{[CLS]}})
+\]
+
+Az önfigyelem mechanizmus lehetővé teszi, hogy bármely két időpont közötti függőséget közvetlenül modellezni lehessen, nem csak szomszédos elemeket.
+
+\section{Korlátozások és jövőbeli irányok}
+\subsection{Fő kihívások}
+\begin{itemize}
+    \item \textbf{Hosszú távú koherencia}: 16 ütemen túl gyakran elveszik a szerkezeti egység
+    \item \textbf{Polifónia}: Egyidejű hangszínek harmonikus viszonyának modellezése
+    \item \textbf{Dinamikus tartomány}: Hangerő-gradációk természetes modellezése
+\end{itemize}
+
+\section{Zha VAE implementációs részletek}
+
+\subsection{ResidualBlock architektúra}
+A Zha VAE speciális ResidualBlock architektúrát alkalmaz a gradiens áramlás javítására \cite{brunner2018midivae}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.7\textwidth]{images/residual_block_vae.png}
+\caption{ResidualBlock architektúra a Zha VAE-ben}
+\label{fig:residual_block}
+\end{figure}
+
+A ResidualBlock algoritmus komponensei:
+\begin{enumerate}
+\item \textbf{Layer Normalization}: Stabil képzés biztosítása
+\item \textbf{SiLU aktiváció}: Smooth, non-monotonic activation function
+\item \textbf{Skip connections}: Gradiens áramlás javítása
+\item \textbf{Dropout regularizáció}: Overfitting csökkentése
+\end{enumerate}
+
+A ResidualBlock matematikai formája:
+\[
+h_{out} = h_{in} + \text{SiLU}(\text{LayerNorm}(\text{Linear}(h_{in})))
+\]
+
+\subsection{Temperature-controlled sampling}
+A Zha rendszer kifinomult temperature sampling mechanizmust alkalmaz a generálás során:
+
+\[
+\mathbf{z}_{\text{sampled}} = \boldsymbol{\mu} + \frac{\boldsymbol{\sigma}}{\text{temperature}} \odot \boldsymbol{\epsilon}
+\]
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/temperature_sampling.png}
+\caption{Temperature kontrollos sampling hatása a generált zenére}
+\label{fig:temperature}
+\end{figure}
+
+A temperature paraméter hatásai:
+\begin{itemize}
+\item \textbf{Alacsony temperature (< 1.0)}: Konzervatívabb, előre láthatóbb generálás
+\item \textbf{Magas temperature (> 1.0)}: Kreatívabb, változatosabb output
+\item \textbf{Adaptive temperature}: Dinamikus beállítás a kontextus alapján
+\end{itemize}
+
+\subsection{Consistency loss mechanizmus}
+A Zha VAE egy további consistency loss termet alkalmaz a stabil rekonstrukció érdekében:
+
+\[
+\mathcal{L}_{\text{consistency}} = \|\text{Encoder}(\text{Decoder}(\mathbf{z})) - \mathbf{z}\|_2^2
+\]
+
+Ez biztosítja, hogy a kódoló-dekóder pár ciklikusan konzisztens maradjon.
+
+\subsection{Mixed precision training optimalizáció}
+A VAE képzés során automatikus mixed precision technológiát alkalmaz \cite{torch2023}:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/mixed_precision_vae.png}
+\caption{Mixed precision training a VAE képzésben}
+\label{fig:mixed_precision}
+\end{figure}
+
+A mixed precision algoritmus előnyei:
+\begin{enumerate}
+\item \textbf{Memória megtakarítás}: ~50\% GPU memória csökkentés
+\item \textbf{Sebesség növelés}: 1.5-2x gyorsabb képzés moderne GPU-kon
+\item \textbf{Numerikus stabilitás}: Loss scaling a gradient underflow ellen
+\end{enumerate}
+
+\subsection{Latent space interpoláció}
+A VAE latent terében történő interpoláció lehetővé teszi smooth zenei átmeneteket:
+
+\[
+\mathbf{z}_{\text{interp}}(t) = (1-t) \cdot \mathbf{z}_1 + t \cdot \mathbf{z}_2, \quad t \in [0,1]
+\]
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\textwidth]{images/latent_interpolation.png}
+\caption{Latent space interpoláció két zenei stílus között}
+\label{fig:interpolation}
+\end{figure}
+
+Az interpolációs algoritmus lépései:
+\begin{enumerate}
+\item Két zenei minta encoding-ja a latent térbe
+\item Lineáris interpoláció a latent reprezentációk között
+\item Interpolált pontok dekódolása zenei szekvenciákká
+\item Smooth átmenet generálása a két stílus között
+\end{enumerate}
+
+\subsection{Beta-scheduling stratégia}
+A Zha implementáció kifinomult beta-scheduling algoritmont alkalmaz:
+
+\[
+\beta(t) = \begin{cases}
+0 & \text{ha } t < t_{\text{warmup}} \\
+\beta_{\text{max}} \cdot \frac{t - t_{\text{warmup}}}{t_{\text{total}} - t_{\text{warmup}}} & \text{ha } t_{\text{warmup}} \leq t \leq t_{\text{total}} \\
+\beta_{\text{max}} & \text{ha } t > t_{\text{total}}
+\end{cases}
+\]
+
+Ez lehetővé teszi a modell számára, hogy először a rekonstrukciós képességeket tanuljon meg, majd fokozatosan beépítse a regularizációt.
+
+\subsection{ONNX export és deployment optimalizáció}
+A produkciós használatra a modell ONNX formátumba exportálható \cite{torch2023}:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/onnx_pipeline.png}
+\caption{VAE ONNX export és deployment pipeline}
+\label{fig:onnx}
+\end{figure}
+
+Az ONNX export algoritmus:
+\begin{enumerate}
+\item Modell előkészítése inference módba
+\item Dummy input generálás a graph tracing-hez
+\item Statikus graph export ONNX formátumba
+\item Optimalizáció és quantization opcionalisan
+\item Cross-platform deployment támogatás
+\end{enumerate}

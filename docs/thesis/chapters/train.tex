@@ -1,0 +1,313 @@
+\chapter{Képzési és optimalizálási technikák}
+\label{chap:képzés}
+
+\section{Modellspecifikus képzési paradigmák}
+
+\subsection{Markov-láncok}
+\subsubsection{Paraméterbecslés}
+A $\mathbf{P}$ átmeneti mátrix a maximális valószínűség becslésével tanulható meg:
+\[
+p_{ij} = \frac{N_{ij}}{\sum_{k} N_{ik}} \quad \text{where } N_{ij} = \text{Count}(s_i \rightarrow s_j)
+\]
+A Zha Laplace-simítást ($\lambda=0,1$) valósít meg a nem látott átmenetek kezelésére:
+\[
+\hat{p}_{ij} = \frac{N_{ij} + \lambda}{\sum_{k} (N_{ik} + \lambda)}
+\]
+
+\subsection{Gyakorlati megfontolások}
+\begin{itemize}
+    \item \textbf{Memóriahatékonyság}: Ritka mátrixtárhely magasrendű láncokhoz
+    \item \textbf{Rendelés kiválasztása}: Akaike információs kritérium (AIC) a modell kiválasztásához:
+    \[
+    \text{AIC} = 2k - 2\ln(\hat{L}) \quad (k = \text{parameters}, \hat{L} = \text{likelihood})
+    \]
+\end{itemize}
+
+\subsection{Változatos automatikus kódolók}
+\subsubsection{Veszteség összetevői}
+Az ELBO Zha-i vesztesége a következőket tartalmazza:
+\[
+\mathcal{L} = \underbrace{\|\mathbf{x} - \text{Decoder}(\mathbf{z})\|_2^2}_{\text{Reconstruction}} + \beta \underbrace{D_{\text{KL}}(\mathcal{N}(\mu^l)\sigma \mathcal{N}(0,\mathbf{I}))}_{\text{Regularization}}
+\]
+$\beta$ 0-ról 1-re lágyítva 10 000 lépéssel.
+
+\subsubsection{Tanítási algorithmus}
+\begin{algoritm}
+\SetAlgoLined
+A kódoló/dekódoló paraméterek inicializálása $\theta, \phi$\;
+\For{epoch = 1 \KwTo N}{
+    \For{batch $\mathbf{X} \in \mathcal{D}$}{
+        $\boldsymbol{\mu}, \boldsymbol{\sigma} \leftarrow \text{Encoder}_\phi(\mathbf{X})$\;
+        $\mathbf{z} \leftarrow \boldsymbol{\mu} + \boldsymbol{\sigma} \odot \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(0,\mathbf{I})$\;
+        $\mathbf{\hat{X}} \leftarrow \text{Decoder}_\theta(\mathbf{z})$\;
+        Update $\theta, \phi$ using $\nabla_\theta\mathcal{L}, \nabla_\phi\mathcal{L}$\;
+    }
+}
+\caption{VAE tanítás Zha-ban}
+\end{algoritm}
+
+\subsection{Transformers}
+\subsubsection{Autoregresszív képzés}
+Zha tanári kényszert alkalmaz keresztentrópia veszteséggel:
+\[
+\mathcal{L} = -\sum_{t=1}^T \log p(x_t | x_{<t})
+\]
+címkesimítással ($\epsilon=0,1$) a túlzott magabiztosság elkerülése érdekében.
+
+\subsection{Optimalizálási Stratégia}
+\begin{itemize}
+    \item AdamW optimalizáló ($\beta_1=0,9, \beta_2=0,98, \epsilon=10^{-9}$)
+    \item Háromszög alakú tanulási ütemterv:
+    \[
+    \eta_t = \eta_{\text{min}} + (\eta_{\text{max}} - \eta_{\text{min}}) \cdot \text{min}(1, t/t_{\text{warmup}})
+    \]
+    \item Gradiens vágás 1.0-nál
+\end{itemize}
+
+\section{Megosztott optimalizálási kihívások}
+
+\subsection{Képzési stabilitás}
+\begin{itemize}
+    \item \textbf{Markov}: A numerikus alulcsordulás elkerülve log-valószínűségekkel
+    \item \textbf{VAE}: KL divergencia figyelése az összeomlás észleléséhez
+    \item \textbf{Transformer}: Figyelem súlyának megjelenítése a fejelemzéshez
+\end{itemize}
+
+\section{Zha képzési rendszere}
+
+\subsection{Egységes képzési infrastruktúra}
+A Zha rendszer moduláris képzési infrastruktúrát alkalmaz, amely egységes interfészt biztosít mindhárom modell típus számára. Az infrastruktúra magját a közös képzési utilities képezik, amelyek automatikus mixed precision támogatást, gradiens akkumulációt és adaptív learning rate scheduling-et biztosítanak. A rendszer intelligens eszköz detektálást alkalmaz, amely automatikusan kiválasztja a CUDA GPU-t, ha elérhető, vagy CPU fallback-et használ. Az adatbetöltés során pin memory és non-blocking transfer optimalizációkat alkalmaz a GPU memória sávszélesség maximális kihasználása érdekében.
+
+A képzési folyamat során a rendszer valós idejű metrika követést biztosít progress bar-okkal és részletes logging-gal. Az early stopping mechanizmus dinamikus patience értékekkel dolgozik, amely megakadályozza a túltanulást és optimalizálja a képzési időt. A checkpointing rendszer automatikusan ment minden 10. epoch után, valamint a képzés végén, biztosítva a modell állapotok megőrzését és a képzés folytathatóságát váratlan megszakítás esetén.
+
+\subsection{Gyakorlati implementáció részletei}
+A Zha backend egy kifinomult képzési infrastruktúrát valósít meg, amely több fejlett technikát kombinál a hatékony modell tanítás érdekében. A rendszer alapvetően háromféle modell architektúrát támogat, mindegyik saját optimalizált képzési stratégiával \cite{zhang2020deep}.
+
+\subsubsection{Memóriahatékony adatkezelés}
+Az adatbetöltési folyamat LRU (Least Recently Used) gyorsítótárazást alkalmaz a MIDI fájlok hatékony kezeléséhez. A MIDIDataset osztály intelligens cache-elést valósít meg, amely 500 elemig képes tárolni a memóriában a feldolgozott MIDI reprezentációkat. Ez a megközelítés jelentősen csökkenti az I/O műveleteket és javítja a képzési teljesítményt nagy adatkészletek esetén. A cache működése során az algoritmus folyamatosan követi az elérési sorrendet, és amikor a cache kapacitás megtelik, a legrégebben használt elemeket távolítja el \cite{briot2017deep}.
+
+A MIDI feldolgozás során a rendszer automatikus hibakezelést alkalmaz, amely ellenálló a sérült vagy nem szabványos MIDI fájlokkal szemben. A music21 könyvtár segítségével a rendszer pitch histogram-okat készít minden MIDI fájlból, normalizálva azokat valószínűségi eloszlássá. Ez a reprezentáció lehetővé teszi a különböző hosszúságú és összetettségű zenei darabok egységes kezelését.
+
+\subsubsection{Automatikus mixed precision optimalizáció}
+A VAE és Transformer modellek automatikus mixed precision (AMP) technikát használnak, amely FP16 és FP32 aritmetikát kombinál a memóriahasználat optimalizálása és a képzési sebesség növelése érdekében. A mixed precision képzés során a forward pass FP16 precizitással történik, míg a loss számítás FP32-ben történik a numerikus stabilitás biztosítása érdekében. A gradient scaling mechanizmus megakadályozza a alulcsordulást a kisebb precizitású számítások során, automatikus scale faktort alkalmazva \cite{vaswani2017attention}.
+
+A rendszer intelligensen kezeli a different precision-öket különböző műveletek során. A modell súlyok frissítése mindig FP32 precizitással történik, biztosítva a képzés stabilitását, míg az aktivációk és gradiensek FP16-ban tárolódnak a memória megtakarítás érdekében. Ez a hibrid megközelítés lehetővé teszi a GPU memória hatékony kihasználását anélkül, hogy feláldoznánk a numerikus pontosságot.
+
+\subsubsection{Gradiens akkumuláció és clipping mechanizmus}
+Nagy batch méretek szimulálásához a rendszer gradiens akkumulációt alkalmaz, amely lehetővé teszi nagy effektív batch méret elérését korlátozott GPU memória esetén is. Az algoritmus több kisebb batch-en keresztül akkumulálja a gradienseket, majd egyetlen optimalizációs lépésben alkalmazza őket. A gradiens clipping mechanizmus (maximum norm 1.0 VAE-nél, 0.5 Transformer-nél) megakadályozza a robbanó gradiensek problémáját, amely különösen fontos szekvenciális modellekben.
+
+A gradiens akkumuláció során a rendszer gondoskodik a learning rate helyes normalizálásáról, elosztva a loss értéket az akkumulációs lépések számával. Ez biztosítja, hogy az effektív learning rate konzisztens maradjon a különböző akkumulációs beállítások mellett. A scheduler-ek frissítése is pontosan szinkronizálva van az akkumulációs ciklusokkal.
+
+\subsubsection{Dinamikus learning rate scheduling}
+A Zha rendszer adaptív learning rate scheduling-et alkalmaz különböző modellek számára. A VAE modell cosine annealing scheduler-t használ, amely fokozatos csökkentést biztosít a képzés során, minimum learning rate-tel a teljes összeomlás elkerülésére. A Transformer modell One Cycle LR scheduler-t alkalmaz, amely egy warmup fázist követően cosine annealing-et használ, optimalizálva a konvergencia sebességét és stabilitását.
+
+A learning rate scheduling-ben figyelembe veszi a gradiens akkumulációs lépéseket is, biztosítva a helyes időzítést a paraméter frissítésekhez. A warmup fázis különösen fontos a Transformer modellekben, ahol a nagy embedding dimenziók miatt kezdetben instabil lehet a képzés. A scheduler wrapper osztály lehetővé teszi batch-szintű vagy epoch-szintű frissítést, adaptálva a konkrét modell igényeihez.
+
+\subsection{Modellspecifikus képzési stratégiák}
+
+\subsubsection{Transformer architektúra és képzési optimalizációk}
+A Transformer modell képzése során számos speciális optimalizációt alkalmaz, amelyek kifejezetten a zenei szekvenciák hosszú távú függőségeinek modellezését támogatják. A modell 8 encoder réteget használ, mindegyik 8 attention head-del és 2048 dimenziós feedforward hálózattal. A pozíciós encoding sinusoidal mintázatot követ, amely lehetővé teszi a modell számára a zenei idő megértését akár 2048 hosszú szekvenciákig \cite{huang2018music}.
+
+A képzési folyamat során a rendszer memóriahatékony attention mechanizmust alkalmaz, amely dinamikusan kezeli a kontextusméretet. A memória rendszer két komponensből áll: globális memória a jelenlegi generálási kontextus számára, és section_memories a strukturált zenei szakaszok (vers, refrén, híd) külön kezelésére. Ez lehetővé teszi a modell számára, hogy megtanulja a zenei formák ismétlődő struktúráit.
+
+Az output projekció visszatéríti az embedding dimenziót az eredeti input dimenzióra (128 MIDI note), míg a dropout regularizáció (0.1) megakadályozza a túltanulást. A One Cycle LR scheduler aggresszív warmup-ot alkalmaz a kezdeti 10\%-ban, majd cosine annealing-et a maradék 90\%-ban, 25-szörös div_factor-ral és 10000-szeres final_div_factor-ral.
+
+\subsubsection{VAE képzés speciális technikái}
+A VAE modell képzése komplex kihívásokat jelent a KL divergencia és rekonstrukciós veszteség egyensúlyának megtalálásában. A rendszer beta-VAE megközelítést alkalmaz, ahol a beta paraméter (alapértelmezetten 0.5) súlyozza a KL divergencia tagot az ELBO függvényben. Ez az alacsonyabb beta érték kreatívabb kimeneteket tesz lehetővé, mivel kevésbé korlátozza a latens tér változatosságát \cite{kingma2014auto, brunner2018midivae}.
+
+A modell ResidualBlock-okat tartalmaz normalizációval a jobb gradient flow biztosítására. Az encoder 512-256-128 dimenziós fokozatos csökkentést alkalmaz, míg a decoder fordított úton halad. A Kaiming normal inicializáció biztosítja a kezdeti súlyok megfelelő skálázását ReLU aktivációkhoz. A reparameterizációs trükk során temperature paraméter (0.8-1.0) kontrollálja a sampling véletlenszerűségét generálás során.
+
+A konzisztencia veszteség egy további regularizációs tag, amely a szomszédos hangjegyek közötti nagy ugrásokat bünteti, simább zenei átmeneteket eredményezve. Ez különösen fontos zenei alkalmazásokban, ahol a hirtelen pitch változások természetellenesnek hangozhatnak. A konzisztencia súly (0.2) ezen a smooth-ness és változatosság közötti egyensúlyt hangolja.
+
+\subsubsection{Markov-lánc fejlett képzési stratégiák}
+A Markov-lánc modell a legkomplexebb képzési folyamatot alkalmazza, kombinálva a hagyományos statisztikai tanulást Hidden Markov Model (HMM) kiterjesztésekkel és GPU gyorsítással. A rendszer támogatja a magasrendű átmeneteket akár 6. rendig, amely hosszabb zenei kontextusokat képes megragadni, mint a hagyományos első rendű láncok \cite{carvalho2019markov}.
+
+Az intervallum-alapú átmenetek külön tárolódnak, lehetővé téve a hangmagasság-különbségek alapján történő generálást. Ez megőrzi a melodikus kontúrokat különböző tonalitásokban is. A HMM komponens 16 rejtett állapotot alkalmaz, amelyek különböző zenei kontextusokat reprezentálnak (stabil, emelkedő, ereszkedő, átmeneti), és befolyásolják a hangjegy kiválasztási valószínűségeket.
+
+A zenei feature extraction magában foglalja a tónemnemi elemzést, akkord progressziókat, ritmikus mintázatokat és római számjegyes harmóniai elemzést. Ez az információ gazdagítja a generálási folyamatot, lehetővé téve zeneileg tudatos döntéseket. A GPU optimalizáció CuPy használatával jelentősen felgyorsítja a nagy átmeneti mátrixok számítását, különösen a magasrendű kontextusok esetében.
+
+\subsubsection{Korai leállítás és modell mentés stratégia}
+A rendszer kifinomult korai leállítási mechanizmust alkalmaz, amely dinamikus patience értékekkel dolgozik (10-15 epoch különböző modellekhez). Az EarlyStopping osztály folyamatosan monitorozza a validációs veszteséget, és minimális javulás hiányában (min_delta) megállítja a képzést. Ez megakadályozza a túltanulást és optimalizálja a számítási erőforrások felhasználását.
+
+A checkpointing rendszer többrétegű mentést alkalmaz. Minden 10. epoch után a teljes modell állapot mentésre kerül, beleértve az optimizer és scheduler állapotokat is. A végső modell többféle formátumban mentésre kerül: standard PyTorch (.pt), TorchScript JIT compiled verzió a gyorsabb inference-hez, és ONNX formátum a platform-független deployment számára. A backup mentések automatikusan generálódnak különböző paraméter konfigurációkkal.
+
+\subsubsection{Adaptív optimalizációs stratégiák}
+Az AdamW optimizer mindhárom modell típusban egységesen alkalmazásra kerül, weight decay (1e-4) regularizációval a túltanulás elkerülésére. Az adaptív momentum paraméterek (β₁=0.9, β₂=0.98) optimalizáltak zenei adatok képzésére, ahol a gradiens változékonyság jelentős lehet a szekvenciális természet miatt.
+
+A gradiens clipping adaptív módon alkalmazásra kerül: VAE modellekben 1.0 maximum norm, Transformer modellekben 0.5 a szigorúbb kontroll érdekében. Ez figyelembe veszi az különböző architektúrák eltérő gradient magnitude karakterisztikáit. A clipping érték dinamikusan hangoló lehet a képzés előrehaladtával, csökkentve a szigorúságot a konvergencia közelében.
+\subsection{Fejlett képzési technikák}
+
+\subsubsection{Strukturált zenei generálás támogatása}
+A Transformer modell speciális memória architektúrát alkalmaz a strukturált zenei generáláshoz. A section_memories dictionary külön kontextust tárol különböző zenei szakaszokhoz (vers, refrén, híd), lehetővé téve a koherens ismétlések és variációk generálását. A transition_smoothness paraméter (0.7) kontrollálja a szakaszok közötti átmenetek simaságát, az előző szakasz memóriájának részleges felhasználásával.
+
+A generate_with_structure metódus adaptív memória kezelést alkalmaz, ahol az ismert szakaszok memóriája betöltésre kerül, míg az új szakaszok fokozatosan építkeznek a korábbi kontextusra. Ez utánozza a valódi zeneszerzés folyamatát, ahol a témák visszatérnek és fejlődnek. A memória mérete dinamikusan korlátozva van (max 1024 token) a memóriahasználat optimalizálása érdekében.
+
+\subsubsection{Temperature és nucleus sampling a generálásban}
+A generálási folyamat során a rendszer kifinomult sampling stratégiákat alkalmaz a kreativitás és koherencia egyensúlyának megteremtéséhez. A temperature paraméter (alapértelmezetten 0.8) kontrollálja a sampling randomness-ét, alacsonyabb értékek konzervatívabb, magasabb értékek kreatívabb kimeneteket eredményeznek. 
+
+A top-k és top-p (nucleus) sampling kombinációja biztosítja a minőségi kimenetet. A top-k=5 korlátozza a választást a 5 legvalószínűbb tokenre, míg a top-p=0.92 csak azokat a tokeneket engedi meg, amelyek összesített valószínűsége nem haladja meg a 92%-ot. Ez megakadályozza a nagyon alacsony valószínűségű, zeneileg nem megfelelő tokenek kiválasztását.
+
+A VAE modellben a temperature a reparameterizációs folyamat során alkalmazásra kerül, befolyásolva a latens tér exploration mértékét. Az interpoláció funkció lehetővé teszi két input közötti smooth átmenetek generálását, amely hasznos kreatív alkalmazásokhoz.
+
+\subsubsection{GPU-accelerált Markov-lánc optimalizációk}
+A Markov-lánc modell speciális GPU optimalizációkat alkalmaz a CUDAOptimizer osztály révén, amely CuPy backend-et használ a numpy műveletek GPU-ra való átterheléséhez. Az átmeneti mátrixok GPU memóriában tárolódnak, jelentősen felgyorsítva a valószínűség számításokat nagyméretű állapottereknél.
+
+Az interval transitions sparse mátrix formátumban tárolódnak, optimalizálva a memóriahasználatot. Csak azok a hang-intervallum párok tárolódnak, amelyek a képzési adatokban megjelentek, drasztikusan csökkentve a memóriaigényt. A GPU batch processing lehetővé teszi párhuzamos valószínűség számításokat több potenciális következő hangjegy esetében.
+
+A HMM komponens kifinomult feature extraction-t alkalmaz, amely statisztikai jellemzőket számít a MIDI szekvenciákból (pitch mean/std, interval characteristics, melodic contours). A K-means clustering GPU-n történik a rejtett állapotok inicializálásához, biztosítva a zeneileg értelmes állapot reprezentációkat.
+
+\subsubsection{Dinamikus batch méretezés és memória menedzsment}
+A rendszer intelligens batch méretezést alkalmaz, amely adaptálódik az elérhető GPU memóriához és a modell komplexitásához. A Transformer modellben kisebb batch méretek (32-64) alkalmazásra kerülnek a memóriaigényes attention mechanizmus miatt, míg a VAE modell nagyobb batch méreteket (128) képes kezelni.
+
+A memória cleanup mechanizmus rendszeresen felszabadítja a nem használt GPU memóriát, különösen a MIDI feldolgozás során. A pin_memory=True beállítás gyorsítja az adattranszfert CPU-GPU között, míg a non_blocking=True lehetővé teszi az átfedő számítást és adatmozgatást.
+
+A Markov-lánc képzés során sequential processing alkalmazásra kerül nagy adatkészletek esetén, memória-biztonságos megközelítést biztosítva. A batch processing 25-50 elemenkénti csoportokban történik, rendszeres garbage collection-nel a memóriaszivárgás elkerülésére.
+
+\subsubsection{Hierarchikus feature extraction zenei kontextushoz}
+A rendszer többszintű feature extraction-t alkalmaz, amely különböző zenei aspektusokat ragad meg. A rhythmic pattern extraction időjelzések és beat strength alapján kategorizálja a ritmikus motívumokat. A harmonic progression analysis pedig accord sequence-eket és római számjegyes progressziókat azonosít különböző tónusnemekben.
+
+A melodic contour analysis a hangmagasság változások irányát és mértékét elemzi, míg a dynamic pattern extraction velocity információkat használ a zenei kifejezés modelljezésához. Ezek a features gazdagítják a generálási folyamatot, lehetővé téve a stílusspecifikus és kontextustudomatos zenei kimenetek előállítását.
+
+A phrase boundary detection automatikusan azonosítja a zenei mondatok végét és kezdetét, ami segít a strukturált kompozíciók generálásában. Ez különösen hasznos a Markov-lánc modellben, ahol a hosszabb zenei formák megértése kritikus a koherens zenei narratíva létrehozásához.
+
+\section{Hiperparaméter optimalizálás}
+
+\subsection{Bayesi keresés}
+Zha az Optunát használja a hiperparaméterek hangolására:
+\begin{itemize}
+    \item \textbf{VAE}: Látens dimenzió $\in \{16, 32, 64\}$, $\beta \in [0.1, 1.0]$
+    \item \textbf{Transformer}: rétegek $\in \{4,6,8\}$, fejek $\in \{4,8,12\}$
+\end{itemize}
+
+\subsection{Automatizált hiperparaméter keresés}
+A rendszer kifinomult hiperparaméter optimalizációt alkalmaz Bayesian optimization technikákkal \cite{optuna2019}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{images/hyperparameter_optimization.png}
+\caption{Bayesian hyperparameter optimization folyamat}
+\label{fig:hyperopt}
+\end{figure}
+
+A hiperparaméter optimalizációs algoritmus:
+\begin{enumerate}
+\item \textbf{Objective function definíció}: Validációs metrika minimalizálása
+\item \textbf{Search space meghatározás}: Paramétertartományok és típusok
+\item \textbf{Bayesian optimization}: TPE (Tree-structured Parzen Estimator) sampler
+\item \textbf{Trial evaluation}: Modell képzés és validáció minden kombinációra
+\item \textbf{Best parameters selection}: Optimális konfiguráció kiválasztása
+\end{enumerate}
+
+\subsection{Multi-objective optimalizáció}
+A rendszer több célfüggvényt is optimalizál egyszerre: modell pontosság, méret és inference sebesség \cite{optuna2019}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/pareto_optimization.png}
+\caption{Pareto-front a multi-objective optimalizációban}
+\label{fig:pareto}
+\end{figure}
+
+A multi-objective algoritmus komponensei:
+\begin{enumerate}
+\item \textbf{Multiple metrics}: Loss, model size, inference time
+\item \textbf{Pareto optimality}: Nem-dominált megoldások keresése
+\item \textbf{Trade-off analysis}: Különböző célok közötti kompromisszum
+\item \textbf{Solution ranking}: NSGA-II alapú ranking rendszer
+\end{enumerate}
+
+\subsection{Optimális konfigurációk}
+\begin{table}[h]
+\centering
+\begin{tabular}{llll}
+\toprule
+Paraméter & Markov & VAE & Transformer \\
+\midrule
+Batch méret & - & 64 & 32 \\
+Tanulási ráta & - & $10^{-3}$ & $10^{-4}$ \\
+Szekvencia hossz & 128 & 256 & 1024 \\
+Warmup lépések & - & 1000 & 4000 \\
+Gradiens clipping & - & 1.0 & 1.0 \\
+Mixed precision & - & Igen & Igen \\
+\bottomrule
+\end{tabular}
+\caption{Zha optimális hiperparaméterei}
+\label{tab:optimal_hyperparams}
+\end{table}
+
+\section{Képzési monitorozás és hibakeresés}
+
+\subsection{Valós idejű metrika követés}
+A rendszer részletes logging-ot és monitorozást biztosít többplatformos megközelítéssel \cite{zhang2020deep}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\textwidth]{images/training_monitoring.png}
+\caption{Valós idejű képzési metrika monitoring dashboard}
+\label{fig:monitoring}
+\end{figure}
+
+A monitoring rendszer komponensei:
+\begin{enumerate}
+\item \textbf{TensorBoard integration}: Valós idejű loss és metrika tracking
+\item \textbf{Weights \& Biases}: Cloud-based experiment tracking
+\item \textbf{Model weight histograms}: Súlyok eloszlásának vizualizációja
+\item \textbf{Gradient flow analysis}: Gradient áramlás monitorozása
+\end{enumerate}
+
+\subsection{Hibakeresési eszközök és anomália detektálás}
+Fejlett hibakeresési funkciók a képzési problémák azonosítására és megoldására.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{images/debugging_tools.png}
+\caption{Képzési hibakeresési eszközök és anomália detektálás}
+\label{fig:debugging}
+\end{figure}
+
+A hibakeresési algoritmus főbb funkciói:
+\begin{enumerate}
+\item \textbf{Gradient flow monitoring}: Eltűnő/robbanó gradiensek detektálása
+\item \textbf{Loss anomaly detection}: NaN, infinity, hirtelen változások észlelése
+\item \textbf{Learning rate adaptation}: Automatikus learning rate kiigazítás
+\item \textbf{Memory usage tracking}: GPU memória használat optimalizálás
+\end{enumerate}
+
+\subsection{Automatizált hiperparaméter optimalizáció}
+A rendszer kifinomult hiperparaméter optimalizációt alkalmaz Bayesian optimization technikákkal, amely intelligensen navigál a nagy paraméter terekben. A VAE modellnél a latent dimenzió (16-128), beta érték (0.1-1.0) és consistency weight (0.1-0.5) optimalizálásra kerül. A Transformer modellnél a layer count (4-8), attention heads (4-12), embedding dimension (256-1024) és dropout rate (0.05-0.2) paraméterek hangolhatók. A Markov-lánc modellnél az order (2-6), max_interval (8-24) és hidden states (8-32) számok optimalizálhatók \cite{optuna2019}.
+
+A Tree-structured Parzen Estimator (TPE) sampler alkalmazásra kerül, amely hatékonyan feltérképezi a paraméter teret korábbi próbálkozások alapján. A multi-objective optimalizáció egyidejűleg optimalizálja a modell pontosságot, generálási minőséget és inference sebességet, Pareto-optimális megoldásokat keresve. Az adaptive pruning mechanizmus korai leállítja az ígéretelen próbálkozásokat, felgyorsítva az optimalizációs folyamatot.
+
+\subsection{Képzési monitorozás és hibakeresés}
+
+\subsubsection{Valós idejű metrika követés és anomália detektálás}
+A rendszer részletes logging-ot és monitorozást biztosít progress bar-okkal és automatikus anomália detektálással. A TrainingDebugger automatikusan észleli a gradient flow problémákat, NaN/infinity értékeket a loss-ban, és hirtelen learning rate változásokat. A gradient norm monitoring folyamatos figyelemmel követi az eltűnő vagy robbanó gradiensek jeleit, automatikus figyelmeztetésekkel és javaslott korrekcióval.
+
+A loss history elemzés trend analízissel azonosítja a túltanulás kezdeti jeleit vagy a képzési instabilitást. A GPU memória használat monitoring figyelmeztet a memória kifogyás veszélyére, és javasolja a batch méret csökkentését vagy gradient accumulation növelését. A sample generation monitoring rendszeresen értékeli a generált zenei kimenetek entrópiáját és diverzitását.
+
+A model weight histogram tracking nyomon követi a súlyok eloszlásának változásait, segítve a konvergencia elemzését és a potential mode collapse detektálását VAE modellekben. Az attention weight visualization (Transformer modellekben) segít megérteni a modell figyelem mintázatait és azonosítani a potenciális attention head redundanciákat.
+
+\subsubsection{Automatikus hiba helyreállítás és fallback mechanizmusok}
+Robust hibakezelési rendszer biztosítja a képzés folytonosságát váratlan események esetén. Az automatic checkpoint recovery lehetővé teszi a képzés automatikus folytatását a legutóbbi sikeres checkpoint-ból. A graceful degradation mechanism automatikusan csökkenti a batch méretet vagy kapcsolja ki a mixed precision-t GPU memória hibák esetén.
+
+A dynamic learning rate adjustment automatikusan csökkenti a learning rate-et, ha túl nagy gradient normákat vagy instabil loss változásokat észlel. A emergency fallback mode egyszerűbb képzési stratégiára vált vissza kritikus hibák esetén, fenntartva a képzési folyamat alapvető funkcionalitását. A data corruption detection automatikusan kiszűri a sérült MIDI fájlokat a képzési folyamatból.
+
+\subsection{Teljesítmény optimalizáció és skálázhatóság}
+
+\subsubsection{Multi-GPU és distributed training támogatás}
+A rendszer natívan támogatja a multi-GPU képzést DataParallel és DistributedDataParallel stratégiákkal. A gradient synchronization biztosítja a konzisztens paraméter frissítéseket több GPU között, míg az automatic load balancing optimalizálja a munkamegosztást a GPU-k között. A NCCL backend használata minimalizálja a kommunikációs overhead-et nagy modellekben.
+
+Az efficient data loading multi-worker DataLoader-ekkel biztosítja a folyamatos adatáramlást, megelőzve a GPU idle időket. A persistent workers opció csökkenti a worker process restart overhead-et hosszú képzési munkamenetek során. A prefetch_factor beállítás optimalizálja a memória használatot és az adatbetöltési sebességet.
+
+\subsubsection{Deployment-ready modell export}
+A képzés befejezése után a rendszer automatikusan többféle formátumban exportálja a modelleket. A TorchScript JIT compilation lehetővé teszi a gyorsabb inference-t C++ környezetekben, míg az ONNX export platform-független deployment-et biztosít. A quantization support csökkenti a modell méretet és javítja az inference sebességet alacsonyabb precizitású környezetekben.
+
+A model optimization pipeline automatikusan alkalmaz operator fusion-t, constant folding-ot és memory layout optimalizációkat. Az inference profiling segít azonosítani a bottleneck-eket a deployment környezetben, javaslataokkal a további optimalizációkhoz. A compatibility testing biztosítja, hogy az exportált modellek helyesen működnek különböző runtime környezetekben.
+
+A TrainingDebugger algoritmus működése:
+\begin{enumerate}
+\item Minden batch után gradient normák ellenőrzése
+\item Loss history elemzése trendek és anomáliák keresésére  
+\item Automatikus figyelmeztetések túl kicsi/nagy gradiensekre
+\item Képzési statisztikák összegyűjtése és elemzése
+\end{enumerate}

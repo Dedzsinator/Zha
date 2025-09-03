@@ -6,3 +6,7 @@ mido==1.2.10
 pretty_midi==0.2.10
 transformers==4.31.0
 beautifulsoup4==4.12.2
+psutil==5.0.0
+scikit-learn>=1.2.2
+hmmlearn>=0.2.8
+music21>=8.1.0

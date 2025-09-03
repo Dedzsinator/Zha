@@ -1,0 +1,184 @@
+\documentclass[final,12pt]{ubb_dolgozat}
+\usepackage{amsmath, amssymb, graphicx, subcaption, definitions,hyperref}
+
+% milyen nyelveken akarunk forráskódot megjeleníteni
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{example}{Example}
+\newtheorem{lemma}{Lemma}
+\lstloadlanguages{Python}
+% más lehetőségek:
+% C, Matlab, Mathematica, Octave, Pascal, Perl, Python
+% SCilab, SQL, Haskell, Lisp, Lua, make, ML, PHP, Prolog
+%
+% a teljes lista a LISTINGS csomagban.
+
+
+% ezt be lehet tenni MINDEGYIK megjelenítendő kód elé opcióként
+\lstset{language=Python}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%!!          EZT KELL VÁLTOZTATNI       !!%%%%
+%%     A DOLGOZAT CÍMOLDALÁNAK ELEMEI        %%
+
+% Az alábbi sorokat ki kell tölteni!!
+
+% mikor védünk
+\submityear{2024}
+
+% dolgozattípus
+\doctypeHU{Szakdolgozat}
+% \doctypeHU{Magiszteri dolgozat}
+\doctypeEN{Diploma Thesis}
+% \doctypeEN{Master's Thesis}
+\doctypeRO{Lucrare de licență}
+% \doctypeRO{Lucrare de disertație}
+
+% szak, tanulmányi program
+\specHU{Informatika}
+% \specHU{Vállalati Szoftvertervezés és Fejlesztés}
+\specEN{Computer Science}
+% \specEN{Enterprise Software Design and Development}
+\specRO{Informatică}
+% \specRO{Proiectarea \c{s}i Dezvoltarea Aplica\c{t}iilor Enterprise}
+
+% cím
+\titleHU{Szimbólikus zene generálása mélységi tanulással}
+\titleEN{Generating symbolic music with deep learning}
+\titleRO{Generarea de muzică simbolică cu învățare profundă}
+
+% szerző
+\authorHU{Dégi Nándor}
+\authorEN{Nándor Dégi}
+\authorRO{Nándor Dégi}
+
+% témavezető
+\tutorHU{dr. Csató Lehel,\\egyetemi adjunktus}
+\tutorEN{Lehel Csató, PhD.\\University lecturer}
+\tutorRO{Lector dr. Lehel Csató}
+% a hozzátartozás akkor szükség, ha NEM BBTE-s a tanár
+%{\large Babe\c{s}--Bolyai Tudományegyetem,\\
+% Matematika és Informatika Kar}% ha különbözik, akkor fel kell tûntetni
+
+ 
+%\includeonly{bevezet}
+
+\begin{document}
+\pagenumbering{gobble}
+
+\maketitle
+
+\begin{abstractEN}
+
+% a lenti részt értelemszerûen ki kell tölteni a dolgozat angol kivonatával.
+% A BEGIN ... END között CSAK A SAJÁT SZÖVEG kell, hogy legyen.
+% Az utolsó mondatot benne kell hagyni, mely által kijelentitek, hogy a munkátok SAJÁT.
+
+{
+
+	\vfill
+  
+  \center{
+  
+	
+	\vspace{0.5cm}
+	
+	{\Large
+ 
+       
+	
+	\vspace{0.5cm}
+  
+  }
+	
+	\vfill
+}
+\vspace*{.5cm}
+	{\Large
+This thesis investigates the application of deep learning methods in symbolic music generation, with particular focus on the integration of Markov chains, Variational Autoencoders (VAE), and Transformer models. The research centers on the Zha system, which applies a hybrid architecture to model the musical creative process.
+
+The thesis provides detailed analysis of the theoretical foundations and practical implementations of each model. We present the musicological integration of Markov chains, reparameterization techniques in VAEs, and memory-based generation strategies in Transformer models. Special attention is given to structured musical generation, ensuring long-term coherence, and computational efficiency.
+
+The Zha system's innovative approach is based on a multi-layered AI architecture that combines FastAPI microservices, advanced training infrastructure, and an interactive web interface. Empirical evaluation shows that the hybrid approach significantly improves the quality and diversity of generated music compared to traditional single-model approaches.
+
+This research contributes to the field of computational musical creativity by demonstrating the effective integration of different deep learning paradigms and solving complex modeling challenges of musical structure.
+	
+	\vspace{0.5cm}
+  
+  }
+
+This work is the result of my own activity. I have neither given nor received unauthorized assistance on this work.
+
+
+\end{abstractEN}
+
+%% 
+
+% a dolgozat tartalomjegyzéke -- ez automatikusan generálódik a STRUKTÚRA alapján.
+{ \baselineskip 3ex
+  \parskip 1ex
+  \tableofcontents
+  \clearpage
+  \listoffigures
+  \clearpage
+  \listoftables
+  \clearpage
+}
+
+
+% számozás kezdődik innen
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%         a dolgozat tartalma         %%%%%%%%%%%%
+
+% ajánlott külön file-okba írni az egyes fejezeteket,
+% ugyanis úgy jobban át lehet látni.
+
+% ABSTRACT
+\include{chapters/abstract}
+
+% CHAPTER 1: INTRODUCTION
+\include{chapters/intro}
+
+% CHAPTER 2: BACKGROUND AND THEORY
+\include{chapters/theory}
+
+% CHAPTER 3: LITERATURE REVIEW
+% \include{chapters/literature}
+
+% CHAPTER 4: MARKOV CHAINS
+\include{chapters/markov}
+
+% CHAPTER 5: FEEDFORWARD AND RECURRENT ARCHITECTURES
+\include{chapters/rnn}
+
+% CHAPTER 6: VARIATIONAL AUTOENCODERS
+\include{chapters/vae}
+
+% CHAPTER 7: TRANSFORMERS AND ATTENTION
+\include{chapters/transformer}
+
+% CHAPTER 8: TRAINING TECHNIQUES
+\include{chapters/train}
+
+% CHAPTER 9: ZHA SYSTEM DESIGN
+\include{chapters/zha}
+
+% APPENDIX
+\include{chapters/appendix}
+
+\appendix
+
+{ \renewcommand{\baselinestretch}{0.8}
+  \normalsize 
+  \setlength{\itemsep}{-2.4mm}
+  \setlength{\bibspacing}{0.67\baselineskip}
+  \bibliographystyle{abbrvnat_hu}
+  \bibliography{dolgozat}
+  \nocite{*}
+}
+
+\end{document}

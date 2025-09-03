@@ -1,0 +1,339 @@
+\chapter{Matematikai Levezetések}
+\section{Variációs Következtetés és az ELBO Levezetése}
+
+Tekintsünk egy generatív modellt $p(x, z) = p(x \mid z)p(z)$, ahol:
+\begin{itemize}
+    \item $x$ a megfigyelt adatok
+    \item $z$ a látens változó
+\end{itemize}
+
+A marginális likelihood (evidencia) a következő:
+\begin{equation}
+\log p(x) = \log \int p(x, z) \, dz
+\end{equation}
+
+Mivel ez az integrál gyakran kiszámíthatatlan, egy közelítő posterior eloszlást $q(z \mid x)$ vezetünk be, és Jensen-egyenlőtlenség segítségével alsó korlátot származtatunk.
+
+\subsection{ELBO Levezetése}
+
+\begin{align}
+\log p(x) &= \log \int q(z \mid x) \frac{p(x, z)}{q(z \mid x)} \, dz \\
+&\geq \int q(z \mid x) \log \frac{p(x, z)}{q(z \mid x)} \, dz = \mathcal{L}(q)
+\end{align}
+
+Ez az \textbf{Evidencia Alsó Korlát (ELBO)}:
+\begin{equation}
+\mathcal{L}(q) = \mathbb{E}_{q(z \mid x)}[\log p(x \mid z)] - \text{KL}(q(z \mid x) \, \| \, p(z))
+\end{equation}
+
+\begin{itemize}
+    \item Az első tag a \textbf{várható log-likelihood} (rekonstrukciós tag).
+    \item A második tag a \textbf{Kullback–Leibler divergencia} a közelítő posterior és a prior között.
+\end{itemize}
+
+\subsection{Interpretáció}
+
+Az ELBO optimalizálása közvetetten maximalizálja az adat likelihood-ot $\log p(x)$ azáltal, hogy:
+\begin{enumerate}
+    \item Közelíti $q(z \mid x)$-et $p(z \mid x)$-hez.
+    \item Ösztönzi a generatív modellt $p(x \mid z)$, hogy jól magyarázza az adatokat.
+\end{enumerate}
+
+\section{ELBO Gradiens Becslése}
+
+Az ELBO-t használó modell tanításához szükségünk van a gradiensére a modell $\theta$ és a variációs eloszlás $\phi$ paraméterei szerint.
+
+\subsection{Reparametrizációs Technika}
+
+Tegyük fel, hogy $z \sim q_\phi(z \mid x)$, ahol $z$ reparametrizálható mint $z = g_\phi(\epsilon, x)$ és $\epsilon \sim p(\epsilon)$ (pl. Gauss-zaj). Ez lehetővé teszi a gradiens várható értékbe való betolását:
+
+\begin{equation}
+\nabla_\phi \mathcal{L} \approx \nabla_\phi \mathbb{E}_{\epsilon \sim p(\epsilon)} \left[ \log p_\theta(x \mid g_\phi(\epsilon, x)) - \log q_\phi(g_\phi(\epsilon, x) \mid x) \right]
+\end{equation}
+
+\subsection{Monte Carlo Becslés}
+
+A várható értéket tipikusan Monte Carlo mintákkal közelítjük:
+\begin{equation}
+\mathcal{L} \approx \frac{1}{L} \sum_{l=1}^L \left[ \log p_\theta(x \mid z^{(l)}) - \log q_\phi(z^{(l)} \mid x) \right]
+\end{equation}
+ahol $z^{(l)} = g_\phi(\epsilon^{(l)}, x)$ és $\epsilon^{(l)} \sim p(\epsilon)$.
+
+\section{Gradiens Analízis RNN-ekben}
+
+A visszatérő neurális hálózatok szekvenciákat modelleznek egy rejtett állapot $h_t$ fenntartásával, amit minden időlépésben frissítenek:
+\begin{equation}
+h_t = \tanh(W_h h_{t-1} + W_x x_t + b)
+\end{equation}
+
+\subsection{Visszaterjesztés Időben (BPTT)}
+
+Az RNN-ek tanítása megköveteli a gradiensek kiszámítását minden időlépésen keresztül. A veszteség $\mathcal{L}$ gradiense $W_h$ szerint olyan tagokat tartalmaz, mint:
+\begin{equation}
+\frac{\partial \mathcal{L}}{\partial W_h} = \sum_{t} \frac{\partial \mathcal{L}}{\partial h_t} \cdot \frac{\partial h_t}{\partial W_h}
+\end{equation}
+
+A kulcsprobléma a $\frac{\partial h_t}{\partial h_{t-1}}$ kiszámításában rejlik, ami a következőhöz vezet:
+
+\begin{equation}
+\frac{\partial h_t}{\partial h_{t-k}} = \prod_{i=1}^{k} \frac{\partial h_{t-i+1}}{\partial h_{t-i}} = \prod_{i=1}^{k} W_h \cdot \text{diag}(1 - h_{t-i}^2)
+\end{equation}
+
+\subsection{Eltűnő és Robbanó Gradiensek}
+
+Ha $W_h$ legnagyobb szinguláris értéke:
+\begin{itemize}
+    \item Kisebb mint 1: a gradiensek exponenciálisan eltűnnek az időlépésekkel.
+    \item Nagyobb mint 1: a gradiensek exponenciálisan robbannak.
+\end{itemize}
+
+Ez okozza:
+\begin{itemize}
+    \item Nehézségeket a hosszú távú függőségek tanulásában.
+    \item Instabilitást a tanítás során.
+\end{itemize}
+
+\subsection{Megoldások}
+
+\begin{itemize}
+    \item \textbf{Gradiens vágás}: Megakadályozza a robbanó gradienseket a norma korlátozásával.
+    \item \textbf{LSTM/GRU}: Olyan architektúrák, amelyeket a gradiensek időbeli megőrzésére terveztek.
+    \item \textbf{Ortogonális inicializálás}: $W_h$ spektrális normáját 1 közelében tartja.
+    \item \textbf{Reziduális kapcsolatok}: Segítik a mély RNN-ek stabilizálását.
+\end{itemize}
+
+\section{ELBO Variációs RNN-ekben}
+
+A variációs RNN-ek az ELBO célfüggvényt kombinálják RNN struktúrákkal. Minden $t$ időlépésben egy látens változó $z_t$ modellezi a szekvencia variabilitását. Az ELBO a következővé válik:
+
+\begin{equation}
+\mathcal{L} = \sum_{t=1}^{T} \mathbb{E}_{q(z_t \mid x_{\leq t})}[\log p(x_t \mid z_t, h_{t-1})] - \text{KL}(q(z_t \mid x_{\leq t}) \, \| \, p(z_t \mid h_{t-1}))
+\end{equation}
+
+Ez gazdagabb modellezést tesz lehetővé a szekvencia bizonytalanságának és generatív dinamikájának tekintetében.
+
+\section{Beta-VAE Matematikai Keretrendszer}
+
+A Beta-VAE kibővíti a standard VAE-t egy $\beta$ hiperparaméter bevezetésével, amely a KL divergencia tag súlyát kontrollálja:
+
+\begin{equation}
+\mathcal{L}_{\beta} = \mathbb{E}_{q_\phi(z \mid x)}[\log p_\theta(x \mid z)] - \beta \cdot \text{KL}(q_\phi(z \mid x) \, \| \, p(z))
+\end{equation}
+
+\subsection{Beta Paraméter Analízis}
+
+A beta paraméter kontrollálja a rekonstrukciós minőség és a látens tér regularizáció közötti kompromisszumot:
+
+\begin{itemize}
+    \item $\beta < 1$: A rekonstrukciót hangsúlyozza, potenciálisan posterior kollapszushoz vezet
+    \item $\beta = 1$: Standard VAE formuláció
+    \item $\beta > 1$: Erősebb regularizáció, szétválasztott reprezentációkat ösztönöz
+\end{itemize}
+
+\subsection{Szétválasztási Elmélet}
+
+Szétválasztott reprezentációkhoz azt szeretnénk, hogy minden látens dimenzió $z_i$ egyetlen generatív faktort ragadjon meg. A beta súlyozás ezt a következőképpen ösztönzi:
+
+\begin{equation}
+\min_{\phi, \theta} \mathbb{E}_{p(x)}[-\mathcal{L}_{\beta}] = \min_{\phi, \theta} \mathbb{E}_{p(x)}[-\log p_\theta(x \mid z) + \beta \cdot \text{KL}(q_\phi(z \mid x) \, \| \, p(z))]
+\end{equation}
+
+A KL divergencia megnövelt büntetése arra kényszeríti a posteriort, hogy közel maradjon a priorhoz, megakadályozva az egyes dimenziók többszörös faktor kódolását.
+
+\subsection{Konzisztencia Veszteség a Zenei Folytonosságért}
+
+A zenei generáláshoz konzisztencia veszteséget vezetünk be, amely biztosítja a sima átmeneteket egymást követő zenei szegmensek között. Az implementáció hangjegy-különbségeket használ:
+
+\begin{equation}
+\mathcal{L}_{\text{konzisztencia}} = \mathbb{E}_{x} \left[ \text{átlag}(|x_{i+1} - x_i|) \right]
+\end{equation}
+
+ahol $x_i$ egymást követő hangjegyeket jelöl a rekonstrukcióban. A teljes veszteség:
+
+\begin{equation}
+\mathcal{L}_{\text{teljes}} = \mathcal{L}_{\beta} + \lambda_{\text{konz}} \mathcal{L}_{\text{konzisztencia}}
+\end{equation}
+
+\section{Transformer Architektúra Matematikája}
+
+\subsection{Pozicionális Kódolás Implementáció}
+
+Mivel a Transformerekből hiányzik az inherens szekvenciális rendezés, pozicionális kódolást adunk a bemeneti beágyazásokhoz:
+
+\begin{align}
+PE(pos, 2i) &= \sin\left(\frac{pos}{10000^{2i/d}}\right) \\
+PE(pos, 2i+1) &= \cos\left(\frac{pos}{10000^{2i/d}}\right)
+\end{align}
+
+\subsubsection{Matematikai Tulajdonságok}
+
+A szinuszoidális kódolás számos fontos tulajdonsággal rendelkezik:
+
+1. \textbf{Korlátosság}: $|PE(pos, i)| \leq 1$ minden pozícióra és dimenzióra
+2. \textbf{Determinisztikusság}: Ugyanaz a pozíció mindig ugyanarra a kódolásra képeződik
+3. \textbf{Relatív Pozíció}: $PE(pos + k)$ kifejezhető $PE(pos)$ lineáris függvényeként
+
+\subsection{Memória Mechanizmus Zenei Struktúrához}
+
+A strukturált zenei generáláshoz az implementáció szekció memóriákat tartalmaz, amelyek összefűzhetők a kulcs-érték párokkal:
+
+\begin{equation}
+\text{kimenet} = \text{Attention}(Q, [K; M_s], [V; M_s])
+\end{equation}
+
+ahol $[K; M_s]$ a szekvencia dimenzió mentén történő összefűzést jelöli.
+
+\section{Magasabb Rendű Markov Láncok Elmélete}
+
+\subsection{Matematikai Alapok}
+
+Egy $k$-ad rendű Markov lánc teljesíti a Markov tulajdonságot:
+
+\begin{equation}
+P(X_t = x_t \mid X_{t-1} = x_{t-1}, \ldots, X_1 = x_1) = P(X_t = x_t \mid X_{t-1} = x_{t-1}, \ldots, X_{t-k} = x_{t-k})
+\end{equation}
+
+A zenei generálás szempontjából ez azt jelenti, hogy egy hang kiválasztási valószínűsége csak az előző $k$ hangtól függ, nem pedig a teljes előzménytől. A rendszer 2-6 közötti rendeket támogat, melyek átmeneti valószínűségi mátrixai:
+
+\begin{equation}
+P_{k}(x_{t-k+1}^{t-1} \rightarrow x_t) = P(X_t = x_t \mid X_{t-1} = x_{t-1}, \ldots, X_{t-k+1} = x_{t-k+1})
+\end{equation}
+
+\subsection{Állapottér Komplexitás}
+
+Egy $|S|$ méretű állapottér esetén a lehetséges $k$-ad rendű állapotok száma $|S|^k$, ami exponenciális növekedést eredményez. A probléma kezelésére ritka reprezentációk és hatékony tárolási algoritmusok alkalmazása szükséges.
+
+\subsection{Maximum Likelihood Becslés}
+
+Az átmeneti valószínűségek maximum likelihood módszerrel becsülhetők:
+
+\begin{equation}
+\hat{P}_{k}(s \rightarrow s') = \frac{N(s \rightarrow s')}{\sum_{s''} N(s \rightarrow s'')}
+\end{equation}
+
+ahol $N(s \rightarrow s')$ az $s$ állapotból $s'$ állapotba történő átmenetek számát jelöli.
+
+\section{Rejtett Markov Modell Integráció}
+
+\subsection{Elméleti Háttér}
+
+A rejtett Markov modell (HMM) kibővíti a hagyományos Markov láncokat egy látens állapotokból álló réteggel. Legyen $Z_t$ a rejtett állapot és $X_t$ a megfigyelt állapot a $t$ időpontban:
+
+\begin{equation}
+P(X_{1:T}, Z_{1:T}) = P(Z_1) \prod_{t=2}^{T} P(Z_t \mid Z_{t-1}) \prod_{t=1}^{T} P(X_t \mid Z_t)
+\end{equation}
+
+ahol:
+\begin{itemize}
+\item $P(Z_1)$ a kezdeti állapot eloszlás
+\item $P(Z_t \mid Z_{t-1})$ az átmeneti valószínűségek
+\item $P(X_t \mid Z_t)$ az emissziós valószínűségek
+\end{itemize}
+
+\subsection{Zenei Jellemzők Kinyerése HMM-hez}
+
+Minden zenei szekvencia számára jellemzővektorokat nyerünk ki:
+
+\begin{equation}
+\mathbf{f} = [\mu_{\text{hang}}, \sigma_{\text{hang}}, R_{\text{hang}}, \mu_{\text{ritmus}}, \mu_{\text{int}}, \sigma_{\text{int}}, r_{\text{kontúr}}]
+\end{equation}
+
+ahol:
+\begin{itemize}
+    \item $\mu_{\text{hang}}, \sigma_{\text{hang}}, R_{\text{hang}}$: hangmagasság átlag, szórás és tartomány
+    \item $\mu_{\text{ritmus}}$: átlagos időtartam
+    \item $\mu_{\text{int}}, \sigma_{\text{int}}$: intervallum átlag és szórás
+    \item $r_{\text{kontúr}}$: emelkedő/ereszkedő kontúr arány
+\end{itemize}
+
+\section{GPU Gyorsítás Matematikája}
+
+\subsection{Párhuzamos Mátrix Műveletek}
+
+A GPU alapú gyorsításhoz a rendszer CuPy könyvtárat használ. A mátrix műveletek, mint például az átmeneti valószínűségek frissítése, hatékonyan párhuzamosíthatók:
+
+\begin{equation}
+C_{ij} = \sum_{l=1}^k A_{il} B_{lj}
+\end{equation}
+
+Minden $C_{ij}$ elem függetlenül számítható, ami masszív párhuzamosítást tesz lehetővé.
+
+\subsection{Ritka Mátrix Műveletek}
+
+A Markov láncok ritka átmeneti mátrixai esetén a rendszer szótárak használatával csökkenti a memória komplexitást $O(n^2)$-ről $O(\text{nnz})$-re, ahol $\text{nnz}$ a nem nulla elemek száma.
+
+\section{Vegyes Pontosságú Tanítás Elmélete}
+
+\subsection{Automatikus Vegyes Pontosság Implementáció}
+
+A tanítási algoritmus PyTorch automatikus vegyes pontosságú GradScaler használatával operál:
+
+\begin{equation}
+\mathcal{L}_{\text{skálázott}} = S \cdot \mathcal{L}
+\end{equation}
+
+A gradiensek megfelelően skálázódnak, majd a paraméter frissítések előtt visszaskálázódnak:
+\begin{equation}
+\nabla_{\text{visszaskálázott}} = \frac{\nabla_{\text{skálázott}}}{S}
+\end{equation}
+
+\section{Gradiens Akkumuláció Matematikája}
+
+\subsection{Mini-batch Gradiens Becslés}
+
+A rendszer támogatja a gradiens akkumulációt nagyobb effektív batch méretek eléréséhez. Valódi batch méret $B$ esetén, amely $K$ mini-batchre oszlik $b = B/K$ mérettel:
+
+\begin{equation}
+\nabla\mathcal{L} = \frac{1}{B} \sum_{i=1}^B \nabla\mathcal{L}_i = \frac{1}{K} \sum_{k=1}^K \left(\frac{1}{b} \sum_{i \in \mathcal{B}_k} \nabla\mathcal{L}_i\right)
+\end{equation}
+
+ahol $\mathcal{B}_k$ a $k$-adik mini-batch.
+
+\section{Tanulási Ráta Ütemezés Elmélete}
+
+\subsection{Koszinusz Enyhítés}
+
+A VAE tanítás koszinusz enyhítési ütemezést alkalmaz:
+
+\begin{equation}
+\eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{T_{\text{akt}}}{T_{\max}} \pi\right)\right)
+\end{equation}
+
+\subsection{Egy Ciklusú Tanulási Ráta}
+
+A Transformer tanítás egy ciklusú politikát alkalmaz:
+
+\begin{equation}
+\eta_t = \begin{cases}
+\eta_{\min} + \frac{t}{t_{\text{melegítés}}}(\eta_{\max} - \eta_{\min}) & \text{ha } t \leq t_{\text{melegítés}} \\
+\eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{t - t_{\text{melegítés}}}{T - t_{\text{melegítés}}} \pi\right)\right) & \text{egyébként}
+\end{cases}
+\end{equation}
+
+\section{Zenei Jellemzők Kinyerésének Matematikája}
+
+\subsection{Intervallum Analízis}
+
+A rendszer egymást követő hangok közötti intervallumokat nyeri ki:
+
+\begin{equation}
+\text{intervallum}_i = \text{hang}_{i+1} - \text{hang}_i
+\end{equation}
+
+Az intervallumok $\pm \text{max\_intervallum}$ értékekre korlátozódnak és ritka formátumban tárolódnak.
+
+\subsection{Ritmikai Minták Kódolása}
+
+A ritmikai minták (időtartam, ütem_erősség) párokként kódolódnak:
+
+\begin{equation}
+\text{ütem\_erősség} = \begin{cases}
+2 & \text{ha erősség} \geq 0.9 \\
+1 & \text{ha } 0.4 \leq \text{erősség} < 0.9 \\
+0 & \text{egyébként}
+\end{cases}
+\end{equation}
+
+\subsection{Akkordprogresszió Analízis}
+
+A rendszer akkordprogressziókat nyeri ki és lehetőség szerint római számokká alakítja. Az akkord átmenetek megszámlálódnak és normalizálódnak valószínűségi eloszlások képzéséhez.

@@ -1,0 +1,40 @@
+\chapter{Feedforward és rekurrens neurális hálózatok}
+\section{Feedforward Networks (FNNs)}
+A feedforward neurális hálózatok (FNN) a mélytanulás alapvető építőkövét képezik, olyan neuronrétegekből állnak, amelyekben az információ egyirányúan áramlik a bemenetekről a kimenetekre, rekurrens kapcsolatok vagy ciklusok nélkül.  Minden rejtett rétegben a bemenetek lineáris transzformációját egy nemlineáris aktiválási függvény, például egy sigmoid vagy ReLU követi, ami lehetővé teszi a hálózat számára, hogy összetett, nemlineáris leképezéseket tanuljon a bemenetek és a kimenetek között. A kanonikus kétrétegű FNN a következőképpen írható le 
+\[
+y = \sigma\bigl(W_2\,\sigma(W_1 x + b_1) + b_2\bigr),
+\]
+ahol \(W_1, W_2\) súlymátrixok, \(b_1,b_2\) előfeszítési vektorok, és \(\sigma\) egy elemenkénti nemlinearitás. Az ilyen architektúrák kiválóan teljesítenek olyan rögzített méretű bemeneti feladatokban, mint a képosztályozás és a statikus függvények közelítése, amit az univerzális közelítési tétel támaszt alá, amely garantálja, hogy megfelelő szélességgel egy FNN bármilyen folytonos függvényt képes közelíteni egy kompakt tartományban.
+
+Matematikai erejük ellenére az FNN-ek nem rendelkeznek semmilyen inherens mechanizmussal a szekvenciális adatok időbeli függőségének vagy sorrendjének megragadására. Mivel minden bemeneti vektort függetlenül kezelnek, az FNN nem tud „emlékezni” az előző elemekre, amikor egy sorozatot feldolgoz; egy FNN számára az idősor egyszerűen egy nagy statikus vektor, és az időbeli összefüggésekre pusztán a rögzített kapcsolatokból kell következtetnie. Következésképpen egy FNN naiv alkalmazása olyan feladatokra, mint a beszédfelismerés, a nyelvi modellezés vagy a zenei generálás, vagy hatalmas bemeneti ablakokat igényel - ami bonyolultan nagy paraméterszámhoz vezet -, vagy kézzel késített jellemzőket, amelyek kódolják az időbeli kontextust. 
+
+Az FNN-ek ráadásul katasztrofális interferenciától szenvednek, ha egymás után több feladatra vagy egy hosszú szekvencia szegmenseire képzik őket.  Rekurrencia vagy gating nélkül az új minták tanulása felülírhatja a korábban megtanult súlyokat, ami a korábbi információk elvesztéséhez vezethet. A mélyebb feedforward stackekkel történő próbálkozások ennek kiküszöbölésére saját kihívásokat hoznak: a sok rétegen keresztül történő visszaterjedés során eltűnő gradiensek korlátozzák a tényleges mélységet, míg a maradék vagy autópálya-kapcsolatok enyhítik, de nem oldják meg teljesen az időbeli modellezés alapvető hiányát. A gyakorlatban az FNN-ek továbbra is értékesek maradnak a statikus mintafelismeréshez, de olyan architektúrákba kell őket bővíteni vagy beágyazni, amelyek kifejezetten szekvenciákat kezelnek, hogy olyan feladatokkal foglalkozhassanak, ahol a sorrend és a kontextus kiemelkedő fontosságú. 
+
+\section{Rekurrens hálók (RNNs)}
+A rekurrens neurális hálózatok (RNN) belső állapottal egészítik ki a feedforward architektúrákat, lehetővé téve számukra, hogy időben „kibontakozva” tetszőleges hosszúságú szekvenciákat dolgozzanak fel. Minden \(t\) időlépésnél a rejtett állapot \(h_t\) az aktuális bemenet \(x_t\) és az előző állapot \(h_{t-1}\) alapján frissül:
+\[
+h_t = \sigma\bigl(W_h h_{t-1} + W_x x_t + b\bigr),
+\]
+ahol \(W_h\) és \(W_x\) rekurrens és bemeneti súlymátrixok, \(b\) egy torzító vektor, és \(\sigma\) tipikusan egy tanh vagy ReLU aktiválás.  Ez a rekurzió memóriával ruházza fel a hálózatot, lehetővé téve, hogy az információ az időbeli lépéseken keresztül fennmaradjon, és lehetővé tegye az időbeli függőségek modellezését olyan feladatokban, mint a nyelvi modellezés, az idősor-előrejelzés és a zenei generálás.
+
+A vanília RNN-ek azonban az időbeli visszaterjedés (BPTT) során a jól ismert eltűnő és felrobbanó gradiens problémákkal találkoznak. Mivel a hiba gradiens sok időlépésen keresztül visszafelé terjed, az \(W_h\) és az \(\sigma\) deriváltjával való ismételt szorzás következtében a gradiens exponenciálisan zsugorodik vagy felrobban. Ha az \(W_h\) spektrális sugara kisebb, mint egy, a gradiensek eltűnnek, ami szinte lehetetlenné teszi a hosszú távú függőségek megismerését; ha meghaladja az egyet, a gradiensek felrobbannak, ami instabilitáshoz és numerikus túlcsorduláshoz vezet. Ez az alapvető korlátozás a vanília RNN-eket arra korlátozza, hogy csak rövid távú korrelációkat, jellemzően néhány tíz időlépés nagyságrendű összefüggéseket rögzítsenek. 
+
+Különböző enyhítési stratégiákat javasoltak, beleértve a gradiensek levágását a robbanó gradiensek megakadályozására és a gondos inicializálást (pl. ortogonális mátrixok) a sajátértékek mérséklésére.Mindazonáltal ezek a technikák inkább ad-hoc megoldásokat kínálnak, mint architekturális megoldásokat, és a hosszú szekvenciákon képzett RNN-ek még mindig küzdenek a hasznos gradiens jelek több száz lépésen keresztül történő terjedésével. Ennek eredményeképpen a vanília RNN-ek megalapozták a fejlettebb rekurrens egységek alapjait, de ma már ritkán használják őket közvetlenül nagyméretű szekvencia-modellezési feladatokban.
+
+\section{LSTM/GRU hálózatok}
+A hosszú rövidtávú memória (LSTM) és az irányított rekurrens egység (GRU) architektúrák az eltűnő gradiens problémájának leküzdésére kerültek bevezetésre olyan irányító mechanizmusok beépítésével, amelyek szabályozzák az információ és a gradiensek időbeli áramlását. Egy LSTM-cella a rejtett állapot \(h_t\) mellett egy külön memóriacellát \(c_t\) tart fenn, bemeneti, felejtési és kimeneti kapukkal, amelyek szabályozzák az információ írását, megtartását és olvasását:
+\[
+\begin{aligned}
+f_t &= \sigma(W_f[h_{t-1},x_t] + b_f),\\
+i_t &= \sigma(W_i[h_{t-1},x_t] + b_i),\\
+o_t &= \sigma(W_o[h_{t-1},x_t] + b_o),\\
+\tilde{c}_t &= \tanh(W_c[h_{t-1},x_t] + b_c),\\
+c_t &= f_t \odot c_{t-1} + i_t \odot \tilde{c}_t,\\
+h_t &= o_t \odot \tanh(c_t).
+\end{aligned}
+\]
+Ezek a kapuk lehetővé teszik a hálózat számára, hogy hosszú horizontokon keresztül megőrizze a gradienseket azáltal, hogy közel lineáris utakat hoz létre a gradiens áramlásához a sejt állapotán keresztül, hatékonyan enyhítve az eltűnő vagy robbanó viselkedést. A GRU egyszerűsíti ezt a kialakítást azáltal, hogy a bemeneti és a felejtési kapukat egy frissítési kapuvá egyesíti, és a cellás és rejtett állapotokat egyesíti, csökkentve a számítási komplexitást, miközben hasonló teljesítményt biztosít.
+
+A Zha projekt VAE komponensében LSTM-eket alkalmaznak a kódolóban és a dekódolóban is a zenei szekvenciák időbeli struktúrájának modellezésére. A kétirányú LSTM kódoló egy tokenizált dallamot olvas be előre és hátrafelé, megragadva a múlt és a jövő kontextusát, míg az autoregresszív LSTM dekódoló minden egyes következő eseményt a látens minta és a korábbi kimenetek függvényében generál. A Zha képzési szkriptjei KL-annealinget és gradiens-klippelést tartalmaznak, amelyek kifejezetten az LSTM dinamikára vannak hangolva, biztosítva a stabil konvergenciát és megakadályozva az utólagos összeomlást.
+
+Összességében az LSTM és a GRU hálózatok jelentik a szekvencia-modellezés uralkodó paradigmáját a természetes nyelvfeldolgozástól a szimbolikus zenei generálásig terjedő területeken.  Kapuzási struktúráik robusztus mechanizmusokat biztosítanak a több száz időlépésen átívelő függőségek megragadására, ami a modern variációs és figyelemalapú architektúrák nélkülözhetetlen összetevőivé teszi őket. 
