@@ -1419,7 +1419,14 @@ class MarkovChain:
         cleaned_key = self._validate_key(cleaned_key)
         
         try:
-            k = key.Key(cleaned_key)
+            # Parse the cleaned key
+            if ' ' in cleaned_key:
+                parts = cleaned_key.split(' ', 1)
+                tonic, mode = parts[0], parts[1]
+            else:
+                tonic, mode = cleaned_key, 'major'
+                
+            k = key.Key(tonic, mode)
             sc = k.getScale()
             
             progression = []
@@ -1865,6 +1872,7 @@ class MarkovChain:
             
         except Exception as e:
             logger.error(f"Error in generate_with_chords: {e}")
+            return None
 
     def _parse_chord_name(self, chord_name):
         """Convert chord name string to music21 chord object"""
@@ -1935,21 +1943,35 @@ class MarkovChain:
                 parts = key_str.split(' ', 1)
                 tonic, mode = parts[0], parts[1]
                 
-                # Normalize tonic name
-                tonic = tonic.capitalize()
+                # Normalize tonic name - handle accidentals properly
+                tonic = tonic.strip()
+                if len(tonic) > 1:
+                    # Handle flat/sharp notation
+                    if tonic.endswith('b') or tonic.endswith('#'):
+                        tonic = tonic[0].upper() + tonic[1:]  # Cb, C#, etc.
+                    else:
+                        tonic = tonic.capitalize()
+                else:
+                    tonic = tonic.upper()
                 
                 # Normalize mode name
-                mode = mode.lower()
+                mode = mode.strip().lower()
                 if mode not in ['major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'aeolian', 'locrian']:
                     mode = 'major'  # Default to major if invalid mode
                     
-                # Format properly for music21
-                from music21 import key
-                key_obj = key.Key(tonic, mode)
+                # Return the normalized key string
                 return f"{tonic} {mode}"
             else:
                 # Assume major if only tonic is provided
-                return f"{key_str} major"
+                tonic = key_str.strip()
+                if len(tonic) > 1:
+                    if tonic.endswith('b') or tonic.endswith('#'):
+                        tonic = tonic[0].upper() + tonic[1:]
+                    else:
+                        tonic = tonic.capitalize()
+                else:
+                    tonic = tonic.upper()
+                return f"{tonic} major"
                 
         except Exception as e:
             logger.warning(f"Failed to parse key '{key_context}': {e}, defaulting to C major")
@@ -1958,18 +1980,67 @@ class MarkovChain:
     def _validate_key(self, key_str):
         """Validate if a key string can be used with music21"""
         try:
-            k = key.Key(key_str)
+            # Parse the key string
+            if ' ' in key_str:
+                parts = key_str.split(' ', 1)
+                tonic, mode = parts[0], parts[1]
+            else:
+                tonic, mode = key_str, 'major'
+            
+            # Create the key object with separate tonic and mode
+            k = key.Key(tonic, mode)
             return key_str
         except Exception as e:
             logger.warning(f"Invalid key '{key_str}': {e}")
             return "C major"  # Safe fallback
+
+    def _get_scale_pitches(self, key_context):
+        """Get the MIDI pitches for the scale of the given key"""
+        if not key_context:
+            return None
+            
+        try:
+            # Clean and validate the key
+            cleaned_key = self._clean_key_context(key_context)
+            if ' ' in cleaned_key:
+                parts = cleaned_key.split(' ', 1)
+                tonic, mode = parts[0], parts[1]
+            else:
+                tonic, mode = cleaned_key, 'major'
+                
+            k = key.Key(tonic, mode)
+            scale_obj = k.getScale()
+            
+            # Get all scale pitches in multiple octaves (to cover common range)
+            scale_pitches = set()
+            for octave in range(3, 7):  # Octaves 3-6 (roughly C3-B6)
+                for scale_degree in scale_obj.pitches:
+                    midi_pitch = scale_degree.midi
+                    # Adjust to the current octave
+                    midi_pitch = (midi_pitch % 12) + (octave * 12)
+                    if 36 <= midi_pitch <= 96:  # Reasonable MIDI range
+                        scale_pitches.add(midi_pitch)
+                        
+            return list(scale_pitches) if scale_pitches else None
+            
+        except Exception as e:
+            logger.debug(f"Could not get scale pitches for key '{key_context}': {e}")
+            return None
 
     def _determine_start_note(self, key_context):
         """Determine appropriate start note for a key"""
         start_note = 60  # Default to middle C
         
         try:
-            k = key.Key(key_context)
+            # Clean and parse the key
+            cleaned_key = self._clean_key_context(key_context)
+            if ' ' in cleaned_key:
+                parts = cleaned_key.split(' ', 1)
+                tonic, mode = parts[0], parts[1]
+            else:
+                tonic, mode = cleaned_key, 'major'
+            
+            k = key.Key(tonic, mode)
             start_note = k.tonic.midi
             
             # Adjust to comfortable range
@@ -1978,8 +2049,8 @@ class MarkovChain:
             while start_note > 72:
                 start_note -= 12
                 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not determine start note for key '{key_context}': {e}")
             
         return start_note
     
@@ -2287,7 +2358,15 @@ class MarkovChain:
             return "C major"
         
         try:
-            k = key.Key(key_context)
+            # Clean and parse the key
+            cleaned_key = self._clean_key_context(key_context)
+            if ' ' in cleaned_key:
+                parts = cleaned_key.split(' ', 1)
+                tonic, mode = parts[0], parts[1]
+            else:
+                tonic, mode = cleaned_key, 'major'
+                
+            k = key.Key(tonic, mode)
             
             # Get relative and closely related keys
             related_keys = []
@@ -2319,5 +2398,6 @@ class MarkovChain:
             
             return random.choice(related_keys) if related_keys else key_context
             
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Could not get related key for '{key_context}': {e}")
             return key_context

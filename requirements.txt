@@ -3,6 +3,8 @@ torchaudio
 torchvision
 numpy
 music21
+midiutil
+mido
 fastapi
 uvicorn
 python-multipart

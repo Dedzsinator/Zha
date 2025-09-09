@@ -4,6 +4,7 @@ uvicorn==0.22.0
 numpy==1.24.3
 mido==1.2.10
 pretty_midi==0.2.10
+midiutil==1.2.1
 transformers==4.31.0
 beautifulsoup4==4.12.2
 psutil==5.0.0
