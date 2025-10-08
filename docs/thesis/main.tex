@@ -1,7 +1,17 @@
 \documentclass[final,12pt]{ubb_dolgozat}
 \usepackage{amsmath, amssymb, graphicx, subcaption, definitions,hyperref}
 
-% milyen nyelveken akarunk forráskódot megjeleníteni
+% milyen nyelveken akarunk forráskódot% CHAPTER 5: VARIATIONAL AUTOENCODERS
+\include{chapters/vae}
+
+% CHAPTER 6: TRANSFORMERS AND ATTENTION
+\include{chapters/transformer}
+
+% CHAPTER 7: TRAINING TECHNIQUES
+\include{chapters/train}
+
+% CHAPTER 8: ZHA SYSTEM DESIGN
+\include{chapters/zha}eni
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
 \newtheorem{example}{Example}
@@ -98,9 +108,11 @@
 	{\Large
 This thesis investigates the application of deep learning methods in symbolic music generation, with particular focus on the integration of Markov chains, Variational Autoencoders (VAE), and Transformer models. The research centers on the Zha system, which applies a hybrid architecture to model the musical creative process.
 
+This thesis investigates the application of deep learning methods in symbolic music generation, with particular focus on the integration of Markov chains, Variational Autoencoders (VAE), and Transformer models. The research centers on the Zha system, which applies a hybrid architecture to model the musical creative process.
+
 The thesis provides detailed analysis of the theoretical foundations and practical implementations of each model. We present the musicological integration of Markov chains, reparameterization techniques in VAEs, and memory-based generation strategies in Transformer models. Special attention is given to structured musical generation, ensuring long-term coherence, and computational efficiency.
 
-The Zha system's innovative approach is based on a multi-layered AI architecture that combines FastAPI microservices, advanced training infrastructure, and an interactive web interface. Empirical evaluation shows that the hybrid approach significantly improves the quality and diversity of generated music compared to traditional single-model approaches.
+The Zha system's innovative approach is based on a multi-layered AI architecture that combines advanced training infrastructure and sophisticated model integration mechanisms. Empirical evaluation shows that the hybrid approach significantly improves the quality and diversity of generated music compared to traditional single-model approaches.
 
 This research contributes to the field of computational musical creativity by demonstrating the effective integration of different deep learning paradigms and solving complex modeling challenges of musical structure.
 	
@@ -152,10 +164,7 @@ This work is the result of my own activity. I have neither given nor received un
 % CHAPTER 4: MARKOV CHAINS
 \include{chapters/markov}
 
-% CHAPTER 5: FEEDFORWARD AND RECURRENT ARCHITECTURES
-\include{chapters/rnn}
-
-% CHAPTER 6: VARIATIONAL AUTOENCODERS
+% CHAPTER 5: VARIATIONAL AUTOENCODERS
 \include{chapters/vae}
 
 % CHAPTER 7: TRANSFORMERS AND ATTENTION

@@ -1,76 +1,19 @@
 \chapter{Háttér és elméleti alapok}
 \section{Szimbolikus zene generálás}
 
-Továbbá, a tanult értékelők - az emberi értékelések előrejelzésére kiképzett idegi „bírák" - a szubjektív tesztek automatikus helyettesítőit kínálják, bár fennáll a veszélye, hogy öröklik az annotátorok torzításait. A robusztus, értelmezhető metrikák keresése továbbra is aktív, azzal a céllal, hogy megbízhatóan irányítsák a modellfejlesztést és a benchmarkingot a különböző zenei műfajokban
+Továbbá, a tanult értékelők - az emberi értékelések előrejelzésére kiképzett idegi „bírák" - a szubjektív tesztek automatikus helyettesítőit kínálják, bár fennáll a veszélye, hogy öröklik az annotátorok torzításait. A robusztus, értelmezhető metrikák keresése továbbra is aktív, azzal a céllal, hogy megbízhatóan irányítsák a modellfejlesztést és a benchmarkingot a különböző zenei műfajokban.
 
 \section{A Zha rendszer architektúrális alapjai}
-\subsection{Mikroszolgáltatás-alapú tervezés}
-A Zha backend egy FastAPI-alapú mikroszolgáltatás-architektúrát követ, amely három fő komponenst integrál: REST API végpontokat, AI modelleket és segédeszközöket. Az architektúra moduláris felépítése lehetővé teszi az egyes komponensek független fejlesztését és skálázását.
-
-\textbf{API réteg}: A FastAPI keretrendszer automatikus OpenAPI dokumentációt és típusbiztonságot biztosít. A CORS middleware engedélyezi a cross-origin kéréseket a frontend alkalmazásból:
-\begin{lstlisting}[language=Python]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-\end{lstlisting}
-
-\textbf{Modell kezelés}: A rendszer dinamikusan detektálja és tölti be a rendelkezésre álló modelleket:
-\begin{lstlisting}[language=Python]
-models_available = {
-    "transformer": False,
-    "vae": False,
-    "markov": False
-}
-\end{lstlisting}
 
 \subsection{Többmodelles generálási stratégia}
-A Zha rendszer három különböző generatív modellt kombinál:
+A Zha rendszer három különböző generatív modellt kombinál, amelyek együttműködése a zenei kreativitás különböző aspektusait fedi le. A Markov-lánc alapú komponens zeneelméleti tudással kiegészített sztochasztikus megközelítést alkalmaz, amely megragadja a rövid távú mintázatokat és harmóniai összefüggéseket. A Variational Autoencoder architektúra a latens tér-alapú reprezentációk révén kreatív variációk generálására képes, miközben megtartja a zenei koherenciát. A Transformer modell felelős a hosszú távú szerkezeti tudatosság és globális koherencia biztosításáért, amely különösen fontos a komplex zenei formák előállításánál.
 
-\begin{enumerate}
-\item \textbf{Markov-lánc}: Zeneelméleti tudással kiegészített sztochasztikus modell
-\item \textbf{VAE}: Latens tér-alapú kreatív variációk generálására
-\item \textbf{Transformer}: Hosszú távú koherencia és szerkezeti tudatosság biztosítására
-\end{enumerate}
-
-\textbf{Kombinált generálás}: A ``/generate/combined'' végpont összes három modellt használja:
-\begin{enumerate}
-\item Hangnem és skála elemzés a bemeneti MIDI-ből
-\item Akkordprogresszió generálás Markov modellel
-\item Alapvető dallam Markov modellel akkord-tudatossággal
-\item Kreatív variációk VAE-vel skála-szűréssel
-\item Szerkezeti koherencia Transformerrel
-\item Súlyozott kombinálás skála-alapú szűréssel
-\end{enumerate}
+A kombinált generálási folyamat során a rendszer először hangnem és skála elemzést végez a bemeneti MIDI anyagból. Ezt követően az akkordprogresszió generálás Markov modell segítségével történik, amely figyelembe veszi a harmóniai szabályokat és mintázatokat. Az alapvető dallam előállítása szintén a Markov komponens feladata, amely akkord-tudatos megközelítést alkalmaz. A VAE modell ezután kreatív variációkat hoz létre, amelyeket skála-alapú szűréssel finomítanak. Végül a Transformer biztosítja a szerkezeti koherenciát, és a rendszer súlyozott kombinálást hajt végre a különböző modellek kimenetein, megőrizve a zenei skála integritását.
 
 \subsection{Adatfeldolgozási pipeline}
-\textbf{MIDI parsing}: A rendszer Pretty-MIDI könyvtárat használ robusztus MIDI elemzéshez:
-\begin{lstlisting}[language=Python]
-def parse_midi(midi_path):
-    midi_data = pretty_midi.PrettyMIDI(midi_path)
-    feature = np.zeros(128, dtype=np.float32)
-    
-    for instrument in midi_data.instruments:
-        for note in instrument.notes:
-            feature[note.pitch] += note.velocity / 127.0
-    
-    if np.sum(feature) > 0:
-        feature = feature / np.sum(feature)
-    return feature
-\end{lstlisting}
+A MIDI fájlok feldolgozása során a rendszer robusztus parsing mechanizmust alkalmaz, amely az egyes hangszerek hangjegyeit elemzi és feldolgozza. A hangmagasság információk súlyozottan kerülnek rögzítésre, ahol a sebesség értékek normalizált formában reprezentálják a dinamikai viszonyokat. Ez a megközelítés 128-dimenziós hangmagasság hisztogrammá konvertálja a MIDI adatokat, amely tömör, ugyanakkor informatív reprezentációt biztosít a harmonikus tartalomról.
 
-\textbf{Jellemzővektor reprezentáció}: A MIDI fájlok 128-dimenziós hangmagasság hisztogrammá konvertálódnak, amely tömör reprezentációt biztosít a harmonikus tartalomról.
-
-\textbf{Zeneelméleti integráció}: A Music21 könyvtár biztosítja a zeneelméleti funkciókat:
-\begin{itemize}
-\item Hangnem felismerés
-\item Skála generálás
-\item Akkord elemzés
-\item Római számjelölés kezelés
-\end{itemize}
+A zeneelméleti integráció során a rendszer hangnem felismerési, skála generálási és akkord elemzési funkciókat alkalmaz. A római számjelölés kezelése lehetővé teszi a harmonikus progressziók formális reprezentációját és elemzését, amely alapvető fontosságú a zeneileg koherens kimenet előállításához.
 A zenei információk szimbolikus formában történő reprezentációja alapvető fontosságú a modern
 mesterséges intelligencia által vezérelt zeneszerzői rendszerek számára. A szimbolikus reprezentációk
 absztrahálják a nyers hanghullámformákat, és helyette diszkrét zenei eseményeket - például a hangok
