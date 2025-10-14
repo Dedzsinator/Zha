@@ -5,6 +5,7 @@ import warnings
 import sys
 import numpy as np
 import torch
+import psutil
 from music21 import converter, environment, note, chord
 from tqdm import tqdm
 import logging
@@ -17,6 +18,17 @@ logger = logging.getLogger(__name__)
 # Suppress Music21 warnings
 warnings.filterwarnings("ignore")
 environment.Environment().warn = False
+
+def log_memory_usage(stage=""):
+    """Log current memory usage"""
+    mem = psutil.virtual_memory()
+    logger.info(f"🧠 Memory {stage}: {mem.percent:.1f}% used ({mem.used/1e9:.2f}GB / {mem.total/1e9:.2f}GB available)")
+    
+    # Warning if memory is getting high
+    if mem.percent > 80:
+        logger.warning(f"⚠️ Memory usage high ({mem.percent:.1f}%)! Consider reducing batch size.")
+    
+    return mem.percent
 
 # CUDA GPU detection and optimization
 def detect_gpu_capabilities():
@@ -380,63 +392,80 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
         chunk_size = max(1, min(100, len(midi_files) // (cpu_count * 2)))
     
     logger.info(f"🔧 Processing with {cpu_count} CPU cores, chunk size: {chunk_size}")
+    log_memory_usage("before file processing")
     
-    # Process files sequentially to avoid memory issues
-    logger.info("⚡ Processing MIDI files sequentially (memory-safe)...")
-    scores = []
-    failed_count = 0
+    # **STREAMING APPROACH** - Process files in small batches to avoid memory overflow
+    logger.info("⚡ Streaming MIDI files in small batches (memory-efficient)...")
     
-    for file_path in tqdm(midi_files, desc="🎵 Processing MIDI", unit="files"):
-        try:
-            score = process_midi_file_enhanced(file_path)
-            if score is not None:
-                scores.append(score)
-            else:
-                failed_count += 1
-        except Exception as e:
-            failed_count += 1
-            logger.debug(f"Failed to process {file_path}: {e}")
-        
-        # Clean up memory every 50 files
-        if len(scores) % 50 == 0:
-            import gc
-            gc.collect()
-    
-    if not scores:
-        logger.error("❌ No valid scores were processed")
-        return None
-    
-    success_rate = len(scores) / len(midi_files) * 100
-    logger.info(f"✅ Successfully processed {len(scores)}/{len(midi_files)} files ({success_rate:.1f}% success rate)")
-    
-    # Convert scores to enhanced note sequences (memory-safe sequential processing)
-    logger.info("🎼 Converting scores to enhanced note sequences (sequential processing)...")
+    batch_size = 50  # Process 50 files at a time
     note_sequences = []
+    total_processed = 0
+    total_failed = 0
     
-    for i, score in enumerate(tqdm(scores, desc="🎵 Extracting sequences", unit="scores")):
-        try:
-            if enhanced_features:
-                sequence = extract_enhanced_note_sequence(score)
-            else:
-                sequence = extract_note_sequence_from_score(score)
-            
-            if sequence and len(sequence) >= 4:
-                note_sequences.append(sequence)
-                
-        except Exception as e:
-            logger.debug(f"Error extracting sequence from score {i}: {e}")
+    import gc
+    
+    for batch_start in range(0, len(midi_files), batch_size):
+        batch_end = min(batch_start + batch_size, len(midi_files))
+        batch_files = midi_files[batch_start:batch_end]
+        batch_num = batch_start // batch_size + 1
+        total_batches = (len(midi_files) - 1) // batch_size + 1
         
-        # Clean up memory every 25 sequences
-        if i % 25 == 0:
-            import gc
-            gc.collect()
+        logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch_files)} files)...")
+        
+        # Process this batch - extract sequences immediately and discard scores
+        batch_sequences = []
+        for file_path in tqdm(batch_files, desc=f"🎵 Batch {batch_num}", unit="files", leave=False):
+            try:
+                # Load score
+                score = process_midi_file_enhanced(file_path)
+                if score is None:
+                    total_failed += 1
+                    continue
+                
+                # Extract sequence immediately
+                if enhanced_features:
+                    sequence = extract_enhanced_note_sequence(score)
+                else:
+                    sequence = extract_note_sequence_from_score(score)
+                
+                # Delete score immediately to free memory
+                del score
+                
+                # Store sequence if valid
+                if sequence and len(sequence) >= 4:
+                    batch_sequences.append(sequence)
+                    total_processed += 1
+                else:
+                    total_failed += 1
+                    
+            except Exception as e:
+                total_failed += 1
+                logger.debug(f"Failed to process {file_path}: {e}")
+        
+        # Add batch sequences to total collection
+        note_sequences.extend(batch_sequences)
+        
+        # Aggressive memory cleanup after each batch
+        del batch_sequences
+        gc.collect()
+        
+        # Log memory usage every 5 batches
+        if batch_num % 5 == 0:
+            log_memory_usage(f"after batch {batch_num}/{total_batches}")
+        
+        # Log progress
+        logger.info(f"✓ Batch {batch_num} complete: {total_processed} sequences extracted so far")
     
     if not note_sequences:
         logger.error("❌ No valid note sequences could be extracted")
         return None
     
+    success_rate = total_processed / len(midi_files) * 100
+    logger.info(f"✅ Successfully processed {total_processed}/{len(midi_files)} files ({success_rate:.1f}% success rate)")
+    
     avg_length = sum(len(seq) for seq in note_sequences) / len(note_sequences)
     logger.info(f"🎯 Extracted {len(note_sequences)} sequences (avg length: {avg_length:.1f} notes)")
+    log_memory_usage("after sequence extraction")
     
     # Enhanced training with progress tracking
     logger.info("🧠 Training ENHANCED Markov model with HMM...")
@@ -449,6 +478,13 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
     # Train the enhanced model
     training_success = model.train(note_sequences, progress_callback=update_progress)
     progress_bar.close()
+    
+    # **CRITICAL: Free memory after training**
+    logger.info("🧹 Cleaning up memory...")
+    note_sequences.clear()
+    del note_sequences
+    gc.collect()
+    log_memory_usage("after training cleanup")
     
     if not training_success:
         logger.error("❌ Training failed")

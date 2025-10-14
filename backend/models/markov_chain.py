@@ -647,14 +647,17 @@ class MarkovChain:
         return features
         
     def train(self, midi_sequences, progress_callback=None):
-        """Enhanced training with HMM initialization and GPU acceleration"""
+        """Enhanced training with HMM initialization and GPU acceleration - memory efficient"""
         logger.info("Starting enhanced model training with HMM and GPU acceleration...")
         
-        # Initialize HMM first
+        # Sample sequences for HMM initialization (don't use all to save memory)
         logger.info("Initializing HMM structure...")
-        self._initialize_hmm(midi_sequences)
+        sample_size = min(1000, len(midi_sequences))
+        sampled_sequences = midi_sequences[:sample_size] if len(midi_sequences) > sample_size else midi_sequences
+        self._initialize_hmm(sampled_sequences)
+        del sampled_sequences  # Free memory
         
-        # Extract musical features with enhanced analysis
+        # Extract musical features from a subset only
         if len(midi_sequences) <= 500:
             try:
                 logger.info("Extracting enhanced musical features...")
@@ -670,21 +673,41 @@ class MarkovChain:
                     
                     # Enhanced processing for new features
                     self._process_enhanced_features(music_features)
+                    
+                del music_features  # Free memory
             except Exception as e:
                 logger.warning(f"Feature extraction issue: {e}. Using simplified training.")
         else:
             logger.info("Large dataset detected, using simplified feature extraction")
         
-        # Train core transition matrices with GPU acceleration
-        logger.info("Training enhanced note transitions...")
-        self._train_enhanced_note_transitions(midi_sequences, progress_callback)
+        # **BATCH TRAINING** - Process sequences in batches to avoid memory overflow
+        batch_size = 1000  # Process 1000 sequences at a time
+        total_batches = (len(midi_sequences) - 1) // batch_size + 1
         
-        logger.info("Training enhanced interval transitions...")
-        self._train_enhanced_interval_transitions(midi_sequences, progress_callback)
+        if total_batches > 1:
+            logger.info(f"Training in {total_batches} batches to optimize memory usage...")
         
-        # Train higher-order transitions (up to order 6)
-        logger.info("Training higher-order transitions...")
-        self._train_higher_order_transitions(midi_sequences, progress_callback)
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, len(midi_sequences))
+            batch = midi_sequences[start_idx:end_idx]
+            
+            if total_batches > 1:
+                logger.info(f"Training batch {batch_idx + 1}/{total_batches} ({len(batch)} sequences)...")
+            
+            # Train on this batch
+            self._train_enhanced_note_transitions(batch, progress_callback)
+            self._train_enhanced_interval_transitions(batch, progress_callback)
+            self._train_higher_order_transitions(batch, progress_callback)
+            
+            # Clean up batch memory
+            del batch
+            import gc
+            gc.collect()
+            
+            if progress_callback:
+                progress = (batch_idx + 1) / total_batches
+                progress_callback(progress)
         
         # Finalize GPU matrices
         if self.use_gpu:
