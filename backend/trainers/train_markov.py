@@ -6,6 +6,9 @@ import sys
 import numpy as np
 import torch
 import psutil
+import json
+import hashlib
+import threading
 from music21 import converter, environment, note, chord
 from tqdm import tqdm
 import logging
@@ -18,6 +21,73 @@ logger = logging.getLogger(__name__)
 # Suppress Music21 warnings
 warnings.filterwarnings("ignore")
 environment.Environment().warn = False
+
+# Global flag for skip functionality
+SKIP_REQUESTED = False
+SKIP_LOCK = threading.Lock()
+
+def keyboard_listener():
+    """Listen for 's' key press to skip remaining processing"""
+    global SKIP_REQUESTED
+    import sys
+    import tty
+    import termios
+    
+    try:
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            while True:
+                ch = sys.stdin.read(1)
+                if ch.lower() == 's':
+                    with SKIP_LOCK:
+                        SKIP_REQUESTED = True
+                    logger.info("\n⏭️  SKIP REQUESTED - Will finish current batch and start training...")
+                    break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    except Exception as e:
+        logger.debug(f"Keyboard listener error: {e}")
+
+def get_file_hash(filepath):
+    """Generate a hash for a file to track if it's been processed"""
+    # Use file path + modification time for quick hash
+    stat = os.stat(filepath)
+    hash_str = f"{filepath}_{stat.st_mtime}_{stat.st_size}"
+    return hashlib.md5(hash_str.encode()).hexdigest()
+
+def load_processed_cache(cache_file):
+    """Load the cache of already processed files"""
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Could not load cache: {e}")
+    return {}
+
+def save_processed_cache(cache_file, cache):
+    """Save the cache of processed files"""
+    try:
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, 'w') as f:
+            json.dump(cache, f)
+    except Exception as e:
+        logger.warning(f"Could not save cache: {e}")
+
+def is_file_processed(filepath, cache):
+    """Check if a file has already been processed"""
+    file_hash = get_file_hash(filepath)
+    return file_hash in cache
+
+def mark_file_processed(filepath, cache):
+    """Mark a file as processed in the cache"""
+    file_hash = get_file_hash(filepath)
+    cache[file_hash] = {
+        'filepath': filepath,
+        'processed_at': str(np.datetime64('now'))
+    }
 
 def log_memory_usage(stage=""):
     """Log current memory usage"""
@@ -336,6 +406,8 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
                        n_hidden_states=16, use_gpu=True, enhanced_features=True):
     """Enhanced Markov chain model training with HMM, GPU acceleration, and hyperoptimization"""
     
+    global SKIP_REQUESTED
+    
     # Detect GPU capabilities
     gpu_info = detect_gpu_capabilities()
     
@@ -381,34 +453,70 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
     
     logger.info(f"✅ Found {len(midi_files)} MIDI files")
     
-    # Optimize multiprocessing for GPU systems
+    # **PROCESSED FILES CACHE** - Skip already processed files
+    cache_file = os.path.join(output_dir, ".processed_cache.json")
+    processed_cache = load_processed_cache(cache_file)
+    
+    # Filter out already processed files
+    files_to_process = []
+    skipped_count = 0
+    for filepath in midi_files:
+        if is_file_processed(filepath, processed_cache):
+            skipped_count += 1
+        else:
+            files_to_process.append(filepath)
+    
+    if skipped_count > 0:
+        logger.info(f"⏭️  Skipping {skipped_count} already processed files")
+    
+    if not files_to_process:
+        logger.info("✅ All files already processed! Loading from cache...")
+        # TODO: Load sequences from disk if saved
+        logger.warning("⚠️ No cache loading implemented yet - reprocessing all files")
+        files_to_process = midi_files
+    else:
+        logger.info(f"🎵 Processing {len(files_to_process)} new/modified files")
+    
+    # Start keyboard listener in background
+    logger.info("⌨️  Press 's' at any time to skip remaining files and start training...")
+    listener_thread = threading.Thread(target=keyboard_listener, daemon=True)
+    listener_thread.start()
+    
+    # Optimize multiprocessing for GPU systems - INCREASED PERFORMANCE
     if gpu_info['cuda_available']:
         # Use fewer CPU processes to leave resources for GPU
         cpu_count = max(2, multiprocessing.cpu_count() // 2)
-        chunk_size = max(10, min(50, len(midi_files) // (cpu_count * 4)))
+        chunk_size = max(10, min(100, len(files_to_process) // (cpu_count * 4)))  # Increased from 50
     else:
         # Use more CPU processes when no GPU
         cpu_count = max(1, multiprocessing.cpu_count() - 1)
-        chunk_size = max(1, min(100, len(midi_files) // (cpu_count * 2)))
+        chunk_size = max(1, min(200, len(files_to_process) // (cpu_count * 2)))  # Increased from 100
     
     logger.info(f"🔧 Processing with {cpu_count} CPU cores, chunk size: {chunk_size}")
     log_memory_usage("before file processing")
     
-    # **STREAMING APPROACH** - Process files in small batches to avoid memory overflow
-    logger.info("⚡ Streaming MIDI files in small batches (memory-efficient)...")
+    # **STREAMING APPROACH** - Process files in batches with SKIP support
+    logger.info("⚡ Streaming MIDI files in batches (memory-efficient, press 's' to skip)...")
     
-    batch_size = 50  # Process 50 files at a time
+    batch_size = 100  # Increased from 50 for better performance
     note_sequences = []
     total_processed = 0
     total_failed = 0
     
     import gc
     
-    for batch_start in range(0, len(midi_files), batch_size):
-        batch_end = min(batch_start + batch_size, len(midi_files))
-        batch_files = midi_files[batch_start:batch_end]
+    for batch_start in range(0, len(files_to_process), batch_size):
+        # Check if skip was requested
+        with SKIP_LOCK:
+            if SKIP_REQUESTED:
+                logger.info(f"⏭️  Skip requested! Stopping after current batch...")
+                logger.info(f"📊 Processed {total_processed} files before skip")
+                break
+        
+        batch_end = min(batch_start + batch_size, len(files_to_process))
+        batch_files = files_to_process[batch_start:batch_end]
         batch_num = batch_start // batch_size + 1
-        total_batches = (len(midi_files) - 1) // batch_size + 1
+        total_batches = (len(files_to_process) - 1) // batch_size + 1
         
         logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch_files)} files)...")
         
@@ -435,6 +543,8 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
                 if sequence and len(sequence) >= 4:
                     batch_sequences.append(sequence)
                     total_processed += 1
+                    # Mark as processed in cache
+                    mark_file_processed(file_path, processed_cache)
                 else:
                     total_failed += 1
                     
@@ -444,6 +554,9 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
         
         # Add batch sequences to total collection
         note_sequences.extend(batch_sequences)
+        
+        # Save cache after each batch
+        save_processed_cache(cache_file, processed_cache)
         
         # Aggressive memory cleanup after each batch
         del batch_sequences
@@ -456,12 +569,16 @@ def train_markov_model(midi_dir="dataset/midi", order=3, max_interval=12, output
         # Log progress
         logger.info(f"✓ Batch {batch_num} complete: {total_processed} sequences extracted so far")
     
+    # Save final cache
+    save_processed_cache(cache_file, processed_cache)
+    logger.info(f"💾 Processed file cache saved to {cache_file}")
+    
     if not note_sequences:
         logger.error("❌ No valid note sequences could be extracted")
         return None
     
-    success_rate = total_processed / len(midi_files) * 100
-    logger.info(f"✅ Successfully processed {total_processed}/{len(midi_files)} files ({success_rate:.1f}% success rate)")
+    success_rate = total_processed / len(files_to_process) * 100 if files_to_process else 0
+    logger.info(f"✅ Successfully processed {total_processed}/{len(files_to_process)} files ({success_rate:.1f}% success rate)")
     
     avg_length = sum(len(seq) for seq in note_sequences) / len(note_sequences)
     logger.info(f"🎯 Extracted {len(note_sequences)} sequences (avg length: {avg_length:.1f} notes)")
