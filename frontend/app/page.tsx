@@ -264,11 +264,7 @@ export default function Home() {
                 <p className="text-gray-800 font-medium">
                   {generationResponse.message || "AI-generated music loaded successfully"}
                 </p>
-                {audioUrl && (
-                  <div className="mt-2">
-                    <audio src={audioUrl} controls className="w-full mt-2" />
-                  </div>
-                )}
+                {/* Audio player removed - MIDI playback handled by MidiPlayer component */}
               </div>
             )}
 

@@ -1,74 +1,207 @@
-\chapter{Matematikai Levezetések}
-\section{Variációs Következtetés és az ELBO Levezetése}
+\chapter{Igazolások}
+\label{chap:proofs}
 
-Tekintsünk egy generatív modellt $p(x, z) = p(x \mid z)p(z)$, ahol:
-\begin{itemize}
-    \item $x$ a megfigyelt adatok
-    \item $z$ a látens változó
-\end{itemize}
+\section{Markov láncok matemat ikai bizonyításai}
 
-A marginális likelihood (evidencia) a következő:
-\begin{equation}
-\log p(x) = \log \int p(x, z) \, dz
-\end{equation}
+\subsection{Tétel: Ergodicitás és stacionárius eloszlás létezése}
+\label{proof:ergodicity}
 
-Mivel ez az integrál gyakran kiszámíthatatlan, egy közelítő posterior eloszlást $q(z \mid x)$ vezetünk be, és Jensen-egyenlőtlenség segítségével alsó korlátot származtatunk.
+\begin{theorem}
+Legyen $\{X_t\}$ egy véges állapotterű Markov lánc átmeneti mátrixszal $\mathbf{P}$. Ha a lánc irreducibilis (minden állapot minden más állapotból elérhető) és aperiodikus (nem tartalmaz determinisztikus ciklusokat), akkor létezik egyetlen stacionárius eloszlás $\pi$ amelyre $\pi = \pi \mathbf{P}$.
+\end{theorem}
 
-\subsection{ELBO Levezetése}
+\begin{proof}
+Az irreducibilitás biztosítja, hogy minden állapot kommunikál minden mással. Az aperioditás garantálja, hogy $\lim_{n \to \infty} P^n_{ij}$ létezik minden $i, j$ párra. A Perron-Frobenius tétel szerint az átmeneti mátrix legnagyobb sajátértéke 1, és a hozzá tartozó baloldali sajátvektor (normalizálva) adja a stacionárius eloszlást. Az egyértelműség abból következik, hogy az irreducibilis és aperiodikus lánc ergodikus, ezért bármilyen kezdeti eloszlásból indulva a lánc a stacionárius eloszláshoz konvergál.
+\end{proof}
 
+\subsection{Tétel: Magasabb rendű Markov láncok ekvivalenciája}
+\label{proof:higher_order}
+
+\begin{theorem}
+Egy $n$-ed rendű Markov lánc ekvivalens egy első rendű Markov lánccal kiterjesztett állapottéren, ahol az új állapotok az eredeti $n$ állapot sorozatai.
+\end{theorem}
+
+\begin{proof}
+Legyen $\mathcal{S}' = \mathcal{S}^n$ az új állapottér, ahol minden állapot egy $(s_{t-n+1}, \ldots, s_t)$ sorozat. Definiáljuk az átmeneti valószínűségeket:
+\[
+P'((s_{t-n+1}, \ldots, s_t) \to (s_{t-n+2}, \ldots, s_{t+1})) = P(X_{t+1} = s_{t+1} \mid X_t = s_t, \ldots, X_{t-n+1} = s_{t-n+1})
+\]
+Ez a konstrukció egy első rendű Markov láncot ad $\mathcal{S}'$ állapottéren. Az állapottér mérete exponenciálisan nő: $|\mathcal{S}'| = |\mathcal{S}|^n$.
+\end{proof}
+
+\section{Hidden Markov Model algoritmusok}
+
+\subsection{Forward Algorithm bizonyítás}
+\label{proof:forward}
+
+\begin{theorem}[Forward Algoritmus]
+Az $\alpha_t(i) = P(O_1, \ldots, O_t, q_t = S_i \mid \lambda)$ forward valószínűségek hatékonyan számíthatók rekurzióval.
+\end{theorem}
+
+\begin{proof}
+Inicializálás ($t=1$):
+\[
+\alpha_1(i) = \pi_i b_i(O_1)
+\]
+ahol $\pi_i$ a kezdeti állapot valószínűség és $b_i(O_1)$ az emissziós valószínűség.
+
+Rekurziós lépés ($t > 1$):
+\[
+\alpha_t(j) = \left[\sum_{i=1}^N \alpha_{t-1}(i) a_{ij}\right] b_j(O_t)
+\]
+ahol $a_{ij}$ az átmeneti valószínűség $i$-ből $j$-be.
+
+A teljes szekvencia valószínűsége:
+\[
+P(O \mid \lambda) = \sum_{i=1}^N \alpha_T(i)
+\]
+
+A számítási komplexitás $O(N^2T)$, szemben a naiv $O(N^T)$ komplexitással.
+\end{proof}
+
+\subsection{Viterbi Algoritmus}
+\label{proof:viterbi}
+
+A Viterbi algoritmus megtalálja a legvalószínűbb rejtett állapot sorozatot dinamikus programozással. A részletes implementáció megtalálható a \texttt{backend/models/markov\_chain.py} fájlban.
+
+\section{Variációs autoenkóder bizonyításai}
+
+\subsection{ELBO levezetése}
+\label{proof:elbo}
+
+\begin{theorem}[Evidencia Alsó Korlát]
+A log-evidence alsó korlátja:
+\[
+\log p_\theta(x) \geq \mathbb{E}_{q_\phi(z|x)}[\log p_\theta(x|z)] - D_{KL}(q_\phi(z|x) \| p(z)) = \mathcal{L}(\theta, \phi; x)
+\end{theorem}
+
+\begin{proof}
+Jensen-egyenlőtlenséget alkalmazva:
 \begin{align}
-\log p(x) &= \log \int q(z \mid x) \frac{p(x, z)}{q(z \mid x)} \, dz \\
-&\geq \int q(z \mid x) \log \frac{p(x, z)}{q(z \mid x)} \, dz = \mathcal{L}(q)
+\log p_\theta(x) &= \log \int p_\theta(x, z) dz \\
+&= \log \int q_\phi(z|x) \frac{p_\theta(x, z)}{q_\phi(z|x)} dz \\
+&= \log \mathbb{E}_{q_\phi(z|x)}\left[\frac{p_\theta(x, z)}{q_\phi(z|x)}\right] \\
+&\geq \mathbb{E}_{q_\phi(z|x)}\left[\log \frac{p_\theta(x, z)}{q_\phi(z|x)}\right] \\
+&= \mathbb{E}_{q_\phi(z|x)}[\log p_\theta(x|z)] - D_{KL}(q_\phi(z|x) \| p(z))
+\end{align}
+Az egyenlőtlenség Jensen-egyenlőtlenségből következik, mivel $\log$ konkáv függvény.
+\end{proof}
+
+\subsection{Reparametrizációs trükk}
+\label{proof:reparameterization}
+
+\begin{theorem}
+Ha $z \sim q_\phi(z|x) = \mathcal{N}(\mu_\phi(x), \sigma^2_\phi(x))$, akkor $z = \mu_\phi(x) + \sigma_\phi(x) \odot \epsilon$ ahol $\epsilon \sim \mathcal{N}(0, I)$, és a gradiens:
+\[
+\nabla_\phi \mathbb{E}_{q_\phi}[f(z)] = \mathbb{E}_{\epsilon \sim \mathcal{N}(0,I)}[\nabla_\phi f(\mu_\phi(x) + \sigma_\phi(x) \odot \epsilon)]
+\end{theorem}
+
+\begin{proof}
+A reparametrizáció után:
+\begin{align}
+\mathbb{E}_{q_\phi(z|x)}[f(z)] &= \mathbb{E}_{\epsilon \sim \mathcal{N}(0,I)}[f(\mu_\phi(x) + \sigma_\phi(x) \odot \epsilon)] \\
+\nabla_\phi \mathbb{E}_{q_\phi}[f(z)] &= \nabla_\phi \mathbb{E}_{\epsilon}[f(g_\phi(\epsilon, x))] \\
+&= \mathbb{E}_{\epsilon}[\nabla_\phi f(g_\phi(\epsilon, x))]
+\end{align}
+ahol a gradiens és a várható érték felcserélhetők, mivel $\epsilon$ eloszlása nem függ $\phi$-től.
+\end{proof}
+
+\subsection{KL divergencia Gauss eloszlásokra}
+\label{proof:kl_gaussian}
+
+\begin{theorem}
+Két Gauss eloszlás között a KL divergencia zárt alakban:
+\[
+D_{KL}(\mathcal{N}(\mu, \sigma^2) \| \mathcal{N}(0, 1)) = -\frac{1}{2}\sum_{j=1}^J(1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2)
+\]
+\end{theorem}
+
+\begin{proof}
+A KL divergencia definíciója:
+\begin{align}
+D_{KL}(q \| p) &= \mathbb{E}_q[\log q(z) - \log p(z)] \\
+&= \mathbb{E}_q\left[\log \frac{1}{\sqrt{2\pi\sigma^2}} - \frac{(z-\mu)^2}{2\sigma^2}\right] - \mathbb{E}_q\left[\log \frac{1}{\sqrt{2\pi}} - \frac{z^2}{2}\right] \\
+&= -\frac{1}{2}\log(2\pi\sigma^2) - \frac{1}{2} + \frac{1}{2}\log(2\pi) + \frac{1}{2}(\mu^2 + \sigma^2) \\
+&= -\frac{1}{2}(1 + \log\sigma^2 - \mu^2 - \sigma^2)
+\end{align}
+Több dimenziós esetben dimenziónként összegezzük.
+\end{proof}
+
+\section{Transformer architektúra bizonyításai}
+
+\subsection{Scaled Dot-Product Attention variancia}
+\label{proof:attention_scaling}
+
+\begin{theorem}
+A skálázott dot-product attention $\frac{QK^T}{\sqrt{d_k}}$ biztosítja, hogy a logitok varianciája egység körül maradjon.
+\end{theorem}
+
+\begin{proof}
+Tegyük fel, hogy $q, k \sim \mathcal{N}(0, 1)$ független. Akkor:
+\[
+\text{Var}[q \cdot k] = \text{Var}\left[\sum_{i=1}^{d_k} q_i k_i\right] = d_k
+\]
+mivel független véletlen változók szorzatának varianciája összeadódik. A $\sqrt{d_k}$ skálázással:
+\[
+\text{Var}\left[\frac{q \cdot k}{\sqrt{d_k}}\right] = \frac{d_k}{d_k} = 1
+\]
+Ez megakadályozza, hogy a softmax szélsőséges értékeket kapjon nagy $d_k$ esetén.
+\end{proof}
+
+\subsection{Multi-Head Attention reprezentációs kapacitás}
+\label{proof:multihead}
+
+A multi-head attention $h$ párhuzamos attention head-et használ:
+\[
+\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h)W^O
+\]
+ahol minden $\text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$.
+
+A több head lehetővé teszi, hogy a modell különböző reprezentációs altérben figyelhessen meg mintázatokat egyidejűleg. A részletes implementáció PyTorch \texttt{nn.MultiheadAttention} modulját használja a \texttt{backend/models/transformer.py} fájlban.
+
+\section{GPU gyorsítás és optimalizálás}
+
+\subsection{Mátrix normalizálás GPU-n}
+\label{proof:gpu_normalization}
+
+A Zha implementáció PyTorch tensort használ GPU gyorsításra. Az átmeneti mátrix normalizálása:
+\[
+P_{ij}^{\text{norm}} = \frac{P_{ij}}{\sum_k P_{ik}}
+\]
+
+A PyTorch automatikus differenciálással és CUDA kernel optimalizációval jelentősen gyorsítja ezt a műveletet. A konkrét implementáció:
+\begin{verbatim}
+sums = matrix.sum(dim=axis, keepdim=True)
+sums = torch.where(sums == 0, torch.ones_like(sums), sums)
+return matrix / sums
+\end{verbatim}
+
+Ez biztosítja a numerikus stabilitást nulla osztás elkerülésével.
+
+\section{Gradiens flow Transformer modellben}
+\label{proof:gradient_flow}
+
+\subsection{Residual Connection hatása}
+
+A transformer architektúra minden réteget residual connection-nal köt össze:
+\[
+\text{output} = \text{LayerNorm}(x + \text{Sublayer}(x))
+\]
+
+Ez biztosítja, hogy a gradiens közvetlenül propagálódjon a korábbi rétegekhez:
+\begin{align}
+\frac{\partial \mathcal{L}}{\partial x} &= \frac{\partial \mathcal{L}}{\partial (\text{output})} \cdot \left(1 + \frac{\partial \text{Sublayer}(x)}{\partial x}\right)
 \end{align}
 
-Ez az \textbf{Evidencia Alsó Korlát (ELBO)}:
-\begin{equation}
-\mathcal{L}(q) = \mathbb{E}_{q(z \mid x)}[\log p(x \mid z)] - \text{KL}(q(z \mid x) \, \| \, p(z))
-\end{equation}
+Az $+1$ tag megakadályozza a gradiens eltűnését mély hálózatokban.
 
-\begin{itemize}
-    \item Az első tag a \textbf{várható log-likelihood} (rekonstrukciós tag).
-    \item A második tag a \textbf{Kullback–Leibler divergencia} a közelítő posterior és a prior között.
-\end{itemize}
+\subsection{Layer Normalization stabilitás}
 
-\subsection{Interpretáció}
-
-Az ELBO optimalizálása közvetetten maximalizálja az adat likelihood-ot $\log p(x)$ azáltal, hogy:
-\begin{enumerate}
-    \item Közelíti $q(z \mid x)$-et $p(z \mid x)$-hez.
-    \item Ösztönzi a generatív modellt $p(x \mid z)$, hogy jól magyarázza az adatokat.
-\end{enumerate}
-
-\section{ELBO Gradiens Becslése}
-
-Az ELBO-t használó modell tanításához szükségünk van a gradiensére a modell $\theta$ és a variációs eloszlás $\phi$ paraméterei szerint.
-
-\subsection{Reparametrizációs Technika}
-
-Tegyük fel, hogy $z \sim q_\phi(z \mid x)$, ahol $z$ reparametrizálható mint $z = g_\phi(\epsilon, x)$ és $\epsilon \sim p(\epsilon)$ (pl. Gauss-zaj). Ez lehetővé teszi a gradiens várható értékbe való betolását:
-
-\begin{equation}
-\nabla_\phi \mathcal{L} \approx \nabla_\phi \mathbb{E}_{\epsilon \sim p(\epsilon)} \left[ \log p_\theta(x \mid g_\phi(\epsilon, x)) - \log q_\phi(g_\phi(\epsilon, x) \mid x) \right]
-\end{equation}
-
-\subsection{Monte Carlo Becslés}
-
-A várható értéket tipikusan Monte Carlo mintákkal közelítjük:
-\begin{equation}
-\mathcal{L} \approx \frac{1}{L} \sum_{l=1}^L \left[ \log p_\theta(x \mid z^{(l)}) - \log q_\phi(z^{(l)} \mid x) \right]
-\end{equation}
-ahol $z^{(l)} = g_\phi(\epsilon^{(l)}, x)$ és $\epsilon^{(l)} \sim p(\epsilon)$.
-
-\section{Gradiens Analízis RNN-ekben}
-
-A visszatérő neurális hálózatok szekvenciákat modelleznek egy rejtett állapot $h_t$ fenntartásával, amit minden időlépésben frissítenek:
-\begin{equation}
-h_t = \tanh(W_h h_{t-1} + W_x x_t + b)
-\end{equation}
-
-\subsection{Visszaterjesztés Időben (BPTT)}
-
-Az RNN-ek tanítása megköveteli a gradiensek kiszámítását minden időlépésen keresztül. A veszteség $\mathcal{L}$ gradiense $W_h$ szerint olyan tagokat tartalmaz, mint:
+A Layer Normalization minden rétegben normalizálja az aktivációkat:
+\[
+\text{LayerNorm}(x) = \gamma \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta
+\]
+Ez korlátok között tartja az aktivációk skáláját, megakadályozva a gradiens explóziót vagy eltűnését.
 \begin{equation}
 \frac{\partial \mathcal{L}}{\partial W_h} = \sum_{t} \frac{\partial \mathcal{L}}{\partial h_t} \cdot \frac{\partial h_t}{\partial W_h}
 \end{equation}

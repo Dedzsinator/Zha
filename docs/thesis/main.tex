@@ -1,21 +1,51 @@
 \documentclass[final,12pt]{ubb_dolgozat}
-\usepackage{amsmath, amssymb, graphicx, subcaption, definitions,hyperref}
+\usepackage{amsmath, amssymb, graphicx, subcaption, hyperref}
+\usepackage{amsthm}
+\usepackage{listings}
 
-% milyen nyelveken akarunk forráskódot% CHAPTER 5: VARIATIONAL AUTOENCODERS
-\include{chapters/vae}
+% Simple algorithm environment using listings
+\lstnewenvironment{algoritmus}[1][]
+{
+    \lstset{
+        mathescape=true,
+        frame=tb,
+        numbers=left,
+        numberstyle=\tiny,
+        basicstyle=\small\ttfamily,
+        keywordstyle=\bfseries,
+        #1
+    }
+}
+{}
 
-% CHAPTER 6: TRANSFORMERS AND ATTENTION
-\include{chapters/transformer}
-
-% CHAPTER 7: TRAINING TECHNIQUES
-\include{chapters/train}
-
-% CHAPTER 8: ZHA SYSTEM DESIGN
-\include{chapters/zha}eni
+% Define theorem environments
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
 \newtheorem{example}{Example}
 \newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+
+% Proof environment is automatically provided by amsthm
+
+% Define algorithm-like keywords for listings
+\lstset{
+    morekeywords={Input, Output, for, to, do, end, if, then, else, return},
+    sensitive=false
+}
+
+% Load definitions without problematic fonts
+\makeatletter
+\let\oldtimes\times
+\let\times\relax
+\let\oldfontenc\fontenc  
+\let\fontenc\relax
+\usepackage{definitions}
+\let\fontenc\oldfontenc
+\let\times\oldtimes
+\makeatother
+
+% milyen nyelveken akarunk forráskódot
 \lstloadlanguages{Python}
 % más lehetőségek:
 % C, Matlab, Mathematica, Octave, Pascal, Perl, Python

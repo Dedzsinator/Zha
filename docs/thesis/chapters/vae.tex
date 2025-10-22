@@ -62,18 +62,25 @@ A hierarchikus megközelítés lehetővé teszi hosszabb távú szerkezetek mode
 
 \section{Matematikai alapelvek}
 \subsection{Átparaméterezési trükk}
-A kihívás: a mintavételezés nem differenciálható művelet, ami megakadályozná a gradiensszámítást. Megoldásként a sztochasztikus változót determinisztikus és véletlen komponensekre bontjuk \cite{kingma2014auto}:
+A kihívás: a mintavételezés nem differenciálható művelet, ami megakadályozná a gradiensszámítást. Megoldásként a sztochasztikus változót determinisztikus és véletlen komponensekre bontjuk:
 
 \[
 \mathbf{z} = \underbrace{\boldsymbol{\mu}}_{\text{differenciálható}} + \boldsymbol{\sigma} \odot \underbrace{\boldsymbol{\epsilon}}_{\boldsymbol{\epsilon} \sim \mathcal{N}(0, \mathbf{I})}
 \]
 
-Ez lehetővé teszi, hogy a gradiens a $\boldsymbol{\mu}$ és $\boldsymbol{\sigma}$ paramétereken keresztül áramoljon vissza a kódolóba, miközben a véletlenszerűséget a $\boldsymbol{\epsilon}$ mintavételezés biztosítja.
+Ez lehetővé teszi, hogy a gradiens a $\boldsymbol{\mu}$ és $\boldsymbol{\sigma}$ paramétereken keresztül áramoljon vissza a kódolóba, miközben a véletlenszerűséget a $\boldsymbol{\epsilon}$ mintavételezés biztosítja. A Zha implementációban ez a \texttt{reparameterize} metódus, amely opcionális hőmérséklet-kontrollt is biztosít a mintavételezés diverzitásának szabályozására. A részletes matematikai bizonyítás megtalálható a Függelékben (lásd Igazolások \ref{proof:reparameterization}).
+
+% TODO: FIGURE PLACEHOLDER - Reparametrizációs trükk diagram
+% Ábra: Flow diagram showing: x → Encoder → (μ, log σ²) → z = μ + σ⊙ε (ε~N(0,I)) → Decoder → x̂
+% Fontos: Gradient flow nyilakkal jelölve hogy μ és σ-n keresztül visszaáramlik
+% Piros doboz: "No gradient through ε sampling"
+% Zöld doboz: "Gradient flows through μ and σ"
+% Figure caption: "A reparametrizációs trükk működése a Zha VAE implementációban"
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.8\textwidth]{images/reparameterization_trick.png}
-\caption{Átparaméterezési trükk a VAE képzésben}
+% TODO: \includegraphics[width=0.8\textwidth]{images/reparameterization_trick.png}
+\caption{Átparaméterezési trükk a VAE képzésben (TODO: diagram hozzáadása)}
 \label{fig:reparam}
 \end{figure}
 
@@ -93,11 +100,26 @@ Gauss eloszlás esetén a KL-divergencia zárt alakban kifejezhető:
 D_{\text{KL}} = -\frac{1}{2} \sum_{j=1}^J \left(1 + \log\sigma_j^2 - \mu_j^2 - \sigma_j^2\right)
 \]
 
-ahol $J$ a látens tér dimenziója. A képlet szemléletes jelentése: 
+ahol $J$ a látens tér dimenziója (a Zha implementációban alapértelmezetten 128). A képlet szemléletes jelentése: 
 \begin{itemize}
     \item $\mu_j^2$ minimalizálása a látens átlag nullára tolását eredményezi
     \item $\log\sigma_j^2 - \sigma_j^2$ minimalizálása a szórás egységnyi érték felé mozdítja
 \end{itemize}
+
+% TODO: METRIC PLACEHOLDER - KL divergencia és rekonstrukciós loss training curves
+% Plot: X-axis: Training epoch (0-100) | Y-axis: Loss value
+% Vonalak: Total loss (ELBO), Reconstruction loss, KL divergence term (scaled by beta)
+% Beta értékek: 0.5, 1.0, 1.5 (3 külön subplot)
+% Forrás: backend/trainers/train_vae.py vagy train_golc_vae.py training logs
+% Figure caption: "ELBO komponensek alakulása különböző β értékekkel a VAE training során"
+
+% TODO: METRIC PLACEHOLDER - Latent space dimensionwise KL distribution
+% Box plot: X-axis: Latent dimension index (0-127) | Y-axis: KL divergence contribution
+% Cél: Megmutatni hogy mely dimenziók aktívak (non-zero KL) és melyek collaps-oltak
+% Hasznos metric: Active units count (KL > threshold)
+% Figure caption: "Latens dimenziók aktivitása (KL divergencia dimenzió-szinten)"
+
+A részletes matematikai bizonyítás megtalálható a Függelékben (lásd Igazolások \ref{proof:kl_gaussian}).
 
 \section{Kihívások a zenegenerációban}
 \subsection{Posterior collapse}
@@ -267,12 +289,43 @@ A csoport-orbitális konzisztencia elve a VAE-architektúrák természetes kiter
 \section{Zha VAE implementációs részletek}
 
 \subsection{ResidualBlock architektúra}
-A Zha VAE speciális ResidualBlock architektúrát alkalmaz a gradiens áramlás javítására \cite{brunner2018midivae}.
+A Zha VAE speciális ResidualBlock architektúrát alkalmaz a gradiens áramlás javítására, amely a \texttt{backend/models/vae.py} és \texttt{golc\_vae.py} fájlokban található. A ResidualBlock három komponensből áll:
+
+\begin{align}
+\text{ResidualBlock}(x) &= x + \text{SiLU}(\text{LayerNorm}(\text{Linear}(x))) \\
+\text{SiLU}(x) &= x \cdot \sigma(x) \quad \text{(Swish aktiváció)}
+\end{align}
+
+Ez a szerkezet biztosítja:
+\begin{itemize}
+    \item \textbf{Gradiens áramlás}: A skip connection ($x +$) megakadályozza a gradiens eltűnését
+    \item \textbf{Normalizálás stabilitás}: LayerNorm minden rétegben stabilizálja az aktivációkat
+    \item \textbf{Smooth aktiváció}: SiLU (Swish) simább gradienseket biztosít mint ReLU
+\end{itemize}
+
+A konkrét PyTorch implementáció:
+\begin{verbatim}
+class ResidualBlock(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.linear = nn.Linear(dim, dim)
+        self.norm = nn.LayerNorm(dim)
+        self.activation = nn.SiLU(inplace=True)
+    
+    def forward(self, x):
+        return x + self.activation(self.norm(self.linear(x)))
+\end{verbatim}
+
+% TODO: FIGURE PLACEHOLDER - ResidualBlock architektúra diagram
+% Ábra: Flow diagram: x → Linear(dim→dim) → LayerNorm → SiLU → (+) → output
+%                      └────────────────────────────────────────┘ (skip connection)
+% Jelölések: Skip connection nyíl vastagon, gradiens flow zölddel
+% Figure caption: "ResidualBlock architektúra a Zha VAE/GOLC-VAE modellekben"
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.7\textwidth]{images/residual_block_vae.png}
-\caption{ResidualBlock architektúra a Zha VAE-ben}
+% TODO: \includegraphics[width=0.7\textwidth]{images/residual_block_vae.png}
+\caption{ResidualBlock architektúra a Zha VAE-ben (TODO: diagram hozzáadása)}
 \label{fig:residual_block}
 \end{figure}
 
@@ -289,52 +342,124 @@ A ResidualBlock matematikai formája:
 h_{out} = h_{in} + \text{SiLU}(\text{LayerNorm}(\text{Linear}(h_{in})))
 \]
 
+\subsection{Encoder-Decoder architektúra részletei}
+A Zha VAE és GOLC-VAE azonos encoder-decoder architektúrát használ a tiszta összehasonlíthatóság érdekében:
+
+\textbf{Encoder útvonal (128→512→256→latent*2):}
+\begin{align}
+x &\xrightarrow{\text{Linear}(128, 512)} h_1 \\
+h_1 &\xrightarrow{\text{LayerNorm+SiLU+ResBlock}} h_2 \\
+h_2 &\xrightarrow{\text{Linear}(512, 256)} h_3 \\
+h_3 &\xrightarrow{\text{LayerNorm+SiLU+ResBlock}} h_4 \\
+h_4 &\xrightarrow{\text{Linear}(256, 256)}} [\mu, \log\sigma^2]
+\end{align}
+
+\textbf{Decoder útvonal (latent→256→512→128):}
+\begin{align}
+z &\xrightarrow{\text{Linear}(128, 256)} h_1 \\
+h_1 &\xrightarrow{\text{LayerNorm+SiLU+ResBlock}} h_2 \\
+h_2 &\xrightarrow{\text{Linear}(256, 512)} h_3 \\
+h_3 &\xrightarrow{\text{LayerNorm+SiLU+ResBlock}} h_4 \\
+h_4 &\xrightarrow{\text{Linear}(512, 128)+\text{Sigmoid}} \hat{x}
+\end{align}
+
+% TODO: FIGURE PLACEHOLDER - VAE Encoder-Decoder architektúra diagram
+% Ábra: Kétoldalú diagram: Bal oldal Encoder (128→512→256→128*2), Jobb oldal Decoder (128→256→512→128)
+% Közép: Latent space (128 dim) z-score normalizálva
+% ResidualBlock-ok piros dobozzal, LayerNorm+SiLU zölddel jelölve
+% Bottleneck-nél split μ és log σ²-re
+% Figure caption: "A Zha VAE/GOLC-VAE teljes encoder-decoder architektúrája ResidualBlock komponensekkel"
+
+% TODO: METRIC PLACEHOLDER - Architektúra paraméterszám táblázat
+% Táblázat: Layer | Input dim | Output dim | Parameters | Activation
+% Sorok: Encoder blocks (4 layers), Decoder blocks (4 layers), Total parameters
+% Várható total: ~1.5-2M parameters
+% Forrás: model.parameters() count PyTorch-ból
+% Table caption: "VAE/GOLC-VAE modell réteg-szintű paraméterszám lebontása"
+
 \subsection{Temperature-controlled sampling}
-A Zha rendszer kifinomult temperature sampling mechanizmust alkalmaz a generálás során:
+A Zha reparameterize metódus kifinomult temperature sampling mechanizmust alkalmaz:
 
 \[
-\mathbf{z}_{\text{sampled}} = \boldsymbol{\mu} + \frac{\boldsymbol{\sigma}}{\text{temperature}} \odot \boldsymbol{\epsilon}
+\mathbf{z}_{\text{sampled}} = \boldsymbol{\mu} + \boldsymbol{\sigma} \cdot \text{temperature} \cdot \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(0, I)
 \]
 
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{images/temperature_sampling.png}
-\caption{Temperature kontrollos sampling hatása a generált zenére}
-\label{fig:temperature}
-\end{figure}
+ahol $\sigma = \exp(0.5 \cdot \log\sigma^2)$. Training módban mintavételezést végez, inference módban determinisztikusan a $\mu$-t visszaadja.
 
 A temperature paraméter hatásai:
 \begin{itemize}
-\item \textbf{Alacsony temperature (< 1.0)}: Konzervatívabb, előre láthatóbb generálás
-\item \textbf{Magas temperature (> 1.0)}: Kreatívabb, változatosabb output
-\item \textbf{Adaptive temperature}: Dinamikus beállítás a kontextus alapján
+\item \textbf{temperature < 1.0}: Konzervatívabb, determinisztikusabb generálás (kisebb varianciá)
+\item \textbf{temperature = 1.0}: Sztenderd VAE mintavételezés (alapértelmezett)
+\item \textbf{temperature > 1.0}: Kreatívabb, diverzebb output (nagyobb variancia)
 \end{itemize}
 
-\subsection{Consistency loss mechanizmus}
-A Zha VAE egy további consistency loss termet alkalmaz a stabil rekonstrukció érdekében:
-
-\[
-\mathcal{L}_{\text{consistency}} = \|\text{Encoder}(\text{Decoder}(\mathbf{z})) - \mathbf{z}\|_2^2
-\]
-
-Ez biztosítja, hogy a kódoló-dekóder pár ciklikusan konzisztens maradjon.
-
-\subsection{Mixed precision training optimalizáció}
-A VAE képzés során automatikus mixed precision technológiát alkalmaz \cite{torch2023}:
+% TODO: METRIC PLACEHOLDER - Temperature ablation study
+% Plot: X-axis: Temperature (0.1, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0) | Y-axis: Generation quality metrics
+% Metrikák: Pitch diversity (σ of pitches), Reconstruction accuracy (MSE), Perplexity, Subjective rating
+% Várható: Sweet spot ~0.8-1.2 tartományban
+% Forrás: backend/trainers/train_vae.py temperature sweep experiment
+% Figure caption: "Temperature paraméter hatása a generálási minőségre és diverzitásra"
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.8\textwidth]{images/mixed_precision_vae.png}
-\caption{Mixed precision training a VAE képzésben}
-\label{fig:mixed_precision}
+% TODO: \includegraphics[width=0.8\textwidth]{images/temperature_sampling.png}
+\caption{Temperature kontrollos sampling hatása a generált zenére (TODO: metrics hozzáadása)}
+\label{fig:temperature}
 \end{figure}
 
-A mixed precision algoritmus előnyei:
-\begin{enumerate}
-\item \textbf{Memória megtakarítás}: ~50\% GPU memória csökkentés
-\item \textbf{Sebesség növelés}: 1.5-2x gyorsabb képzés moderne GPU-kon
-\item \textbf{Numerikus stabilitás}: Loss scaling a gradient underflow ellen
-\end{enumerate}
+\subsection{GOLC-VAE specifikus implementáció}
+
+A GOLC-VAE az alapvető VAE-t két kulcsfontosságú komponenssel egészíti ki: transzpozíciós műveletekkel és orbitális konzisztencia loss-szal.
+
+\textbf{Transzpozíciós csoport:} A Zha implementáció $G = \{T_{-k}, \ldots, T_0, \ldots, T_{+k}\}$ ahol $k$ a \texttt{transposition\_range} paraméter (alapértelmezetten 6 félhang). A $T_k$ transzpozíciós operátor:
+
+\[
+T_k(x)_i = x_{i-k}, \quad \text{ha } 0 \leq i-k < 128, \text{különben } 0
+\]
+
+Ez a MIDI pitch space circular shift műveletének felel meg.
+
+\textbf{Kanonikus reprezentáció számítása:} A \texttt{compute\_canonical\_representation} metódus az orbit átlagot számítja:
+
+\[
+z_c(x) = \frac{1}{|G|} \sum_{g \in G} \text{Enc}_\phi(g \cdot x)
+\]
+
+Efficient implementáció: teljes csoporton iterál ha $|G|$ kicsi, különben mintavételez.
+
+\textbf{Orbitális konzisztencia loss:} A GOLC loss méri az egyes orbit elemek reprezentációinak távolságát a kanonikus reprezentációtól:
+
+\[
+\mathcal{L}_{\text{orbit}} = \frac{1}{|G|} \sum_{g \in G} \|\mu(g \cdot x) - \mu_c(x)\|^2 + \|\log\sigma^2(g \cdot x) - \log\sigma^2_c(x)\|^2
+\]
+
+\textbf{Teljes GOLC-VAE loss függvény:}
+\[
+\mathcal{L}_{\text{GOLC}} = \mathcal{L}_{\text{recon}} + \beta \cdot \mathcal{L}_{\text{KL}} + \beta_{\text{orbit}} \cdot \mathcal{L}_{\text{orbit}}
+\]
+
+ahol $\beta = 1.0$ (alapértelmezett β-VAE súly) és $\beta_{\text{orbit}} = 0.5$ (orbitális konzisztencia súly).
+
+% TODO: METRIC PLACEHOLDER - GOLC orbit distance tracking
+% Plot: X-axis: Training epoch | Y-axis: Average orbit distance (L2 norm)
+% Vonalak: μ distance, log σ² distance, Combined orbit loss
+% Várható: Exponenciális csökkenés ~0.01 alá konvergenciával
+% Forrás: self.orbit_distances list GOLC_VAE training közben
+% Figure caption: "Orbitális konzisztencia alakulása a GOLC-VAE training során - csökkenő távolság az orbit elemek között"
+
+% TODO: METRIC PLACEHOLDER - Baseline VAE vs GOLC-VAE összehasonlító táblázat
+% Táblázat: Model | Reconstruction MSE | KL divergence | Test perplexity | Transposition consistency | Latent space smoothness
+% Sorok: Baseline VAE (β=1.0), GOLC-VAE (β=1.0, β_orbit=0.5), GOLC-VAE (β=1.0, β_orbit=1.0)
+% Key metric: Transposition consistency = avg(||Enc(T_k(x)) - Enc(x)||) over test set
+% Forrás: backend/trainers/train_golc_vae.py eval output és scripts/compare_vae_models.py
+% Table caption: "Baseline VAE és GOLC-VAE teljesítményének összehasonlítása zenei invariancia metrikákkal"
+
+% TODO: FIGURE PLACEHOLDER - Latent space t-SNE visualization
+% 2D scatter plot: t-SNE projekció a latent space-ből
+% Színkódolás: Egy dallam és transzponált változatai különböző színnel
+% Baseline VAE: Várhatóan szétszórt orbit elemek
+% GOLC-VAE: Orbit elemek szorosan klaszterezve
+% Figure caption: "t-SNE vizualizáció mutatva hogy GOLC-VAE összevonja az orbit elemeket míg baseline VAE külön reprezentálja őket"
 
 \subsection{Latent space interpoláció}
 A VAE latent terében történő interpoláció lehetővé teszi smooth zenei átmeneteket:

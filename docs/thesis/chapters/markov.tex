@@ -1,121 +1,79 @@
-\chapter{Markov láncok és Hidden Markov láncok}
+\chapter{Markov láncok és rejtett Markov modellek}
 \label{chap:markov}
 
 \section{Bevezetés és motiváció}
 
-A zenei generálás területén a hagyományos Markov-láncok jelentős eredményeket értek el, azonban korlátaik is nyilvánvalóvá váltak. Ezen korlátok leküzdésére fejlesztettük ki a Hidden Markov Model (HMM) kiterjesztéssel ellátott, alapvető GPU-gyorsítással rendelkező, magasabb rendű Markov-láncot, amely képes komplex zenei struktúrák modellezésére.
+A Markov láncok már régóta alapvető eszközei a zenei generálásnak, köszönhetően egyszerűségüknek és erős matematikai megalapozottságuknak. A hagyományos Markov modellek jelentős sikert értek el a zenei mintázatok statisztikai modellezésében, azonban korlátaik is nyilvánvalóvá váltak hosszabb távú szerkezetek és komplex harmonikus viszonyok kezelésében. Ezen korlátok felismerése vezetett a Zha projekt fejlett Markov implementációjának kifejlesztéséhez, amely a rejtett Markov modellekkel (HMM) való kiterjesztéssel, GPU-gyorsítással és magasabb rendű kontextusmodellezéssel képes komplex zenei struktúrák hatékony generálására.
 
-\subsection{Az implementáció főbb jellemzői}
+A Zha Markov implementációjának több innovatív jellemzője van. A \texttt{hmmlearn} könyvtár integrációja lehetővé teszi rejtett állapotok modellezését, amelyek a megfigyelhető zenei események mögött húzódó harmonikus és strukturális kontextust reprezentálják. A 2-6. rendű Markov láncok támogatása gazdagabb kontextus figyelembevételét teszi lehetővé, mint az egyszerű első rendű modellek. A CuPy könyvtárral megvalósított alapvető GPU gyorsítás jelentősen csökkenti a mátrixműveletek számítási idejét, míg a memóriahatékony ritkás adatstruktúrák nagyméretű zenei korpuszok feldolgozását teszik lehetővé. A robusztus hibakezelés és automatikus CPU fallback mechanizmusok biztosítják a rendszer megbízható működését különböző hardverkörnyezetekben.
 
-\begin{enumerate}
-    \item HMM integráció a \texttt{hmmlearn} könyvtár használatával
-    \item Magasabb rendű (2-6. rend) Markov-láncok implementációja
-    \item Alapvető GPU gyorsítás mátrix műveletekhez CuPy-val
-    \item Memóriahatékony sparse adatstruktúrák nagy zenei korpuszokhoz
-    \item Robusztus hibakezelés és CPU fallback mechanizmusok
-\end{enumerate}
+\section{Elméleti alapok}
 
-\section{Elméleti alapok és matematikai háttér}
+\subsection{A Markov tulajdonság és alapdefiníciók}
 
-\subsection{Definíció és tulajdonságok}
-
-A Markov-lánc olyan sztochasztikus folyamat, amely kielégíti a \textbf{Markov-tulajdonságot}, amely szerint a következő állapotba való átmenet valószínűsége csak az aktuális állapottól függ, az azt megelőző eseménysorozattól nem:
-
+A Markov lánc olyan sztochasztikus folyamat, amely kielégíti a Markov tulajdonságot—a következő állapotba való átmenet valószínűsége kizárólag a jelenlegi állapottól függ, a múltbeli történettől nem. Formálisan, legyen $\{X_t\}_{t \geq 0}$ egy diszkrét idejű sztochasztikus folyamat véges állapottéren $\mathcal{S} = \{s_1, s_2, \ldots, s_N\}$. A folyamat Markov tulajdonságú, ha minden $t$ időpontra és $s_i, s_j, s_k, \ldots \in \mathcal{S}$ állapotokra fennáll:
 \[
-P(X_{t+1} = s_j \mid X_t = s_i, X_{t-1} = s_k, \dots) = P(X_{t+1} = s_j \mid X_t = s_i) = p_{ij}
+P(X_{t+1} = s_j \mid X_t = s_i, X_{t-1} = s_k, \ldots) = P(X_{t+1} = s_j \mid X_t = s_i) = p_{ij}
 \]
 
-ahol:
-\begin{itemize}
-    \item \( \mathcal{S} = \{s_1, s_2, \dots, s_N\} \) az állapotok egy véges halmaza (pl. zenei hangok, akkordok).
-    \item \( \mathbf{P} = [p_{ij}] \) az állapotok közötti átmenetek mátrixa \( p_{ij} \geq 0 \) és \( \sum_j p_{ij} = 1 \) minden \( i \).
-\end{itemize}
+Az állapot-átmeneti valószínűségek a $\mathbf{P} = [p_{ij}]$ mátrixban szerveződnek, ahol $p_{ij} \geq 0$ és $\sum_j p_{ij} = 1$ minden $i$ indexre. Zenei kontextusban az állapotok gyakran egyedi hangjegyeket, akkordokat vagy harmonikus régiókat reprezentálnak, és az átmeneti valószínűségeket a tanító korpuszból becsüljük meg empirikus gyakorisággal.
 
-Itt \( p_{ij} \) az \( s_i \) állapotból az \( s_j \) állapotba való átmenet valószínűségét jelenti. Zenei kontextusban az állapotok gyakran hangjegyeknek vagy akkordoknak felelnek meg, és az átmenet valószínűségét a képzési adatokból becsüljük meg.
+A Markov lánc vizuális reprezentációja irányított gráfként értelmezhető, ahol a csúcsok az állapotokat, az élek pedig az átmeneteket jelölik, súlyozva az átmeneti valószínűségekkel. Ez az intuitív reprezentáció világosan mutatja a modell lokális jellegét—minden döntés csak a közvetlen megelőző állapot(ok)tól függ.
 
-\vspace{1em}
-\noindent\textbf{Figure:} Egy példa egy egyszerű kétállapotú Markov-folyamatra, amely az \( E \) és \( A \) állapotokat szemlélteti az átmenet valószínűségeivel jelölt irányított élekkel (önhurkok megengedettek). Ez a diszkrét modell intuitív és értelmezhető, de csak a helyi összefüggéseket ragadja meg. \hfill
-\includegraphics[width=0.4\textwidth]{images/markov.png}
-\label{fig:markov}
-\vspace{1em}
+\subsection{Magasabb rendű Markov modellek}
 
-\subsection{Rendek és Memória}
-
-Egy \( n \)-ed rendű Markov lánc kiterjeszti a függőségeket \( n \) utolsó állapotra:
-
+Míg az első rendű Markov lánc csak az aktuális állapotot veszi figyelembe, addig egy $n$-ed rendű modell kiterjeszti a függőséget az előző $n$ állapotra:
 \[
-P(X_{t+1} \mid X_t, X_{t-1}, \dots, X_{t-n+1})
+P(X_{t+1} \mid X_t, X_{t-1}, \ldots, X_{t-n+1})
 \]
 
-A magasabb rendű modellek hosszabb mintákat is képesek megragadni, de \( \mathcal{O}(|\mathcal{S}|^n) \) paramétereket igényelnek, ami a paraméterek számának exponenciális növekedése miatt \textbf{sparsity} problémákhoz vezet.
+Ez a kiterjesztés lehetővé teszi hosszabb zenei minták—motívumok, frázisok—megragadását, azonban a paraméterek száma exponenciálisan növekszik: $O(|\mathcal{S}|^{n+1})$. Például, ha $|\mathcal{S}| = 50$ (mondjuk 50 különböző hangjegy) és $n = 3$, akkor 125 000 paramétert kell becsülnünk, ami jelentős adatritkasági (sparsity) problémákat okozhat korlátozott méretű tanítóhalmazok esetén. A Zha implementáció ezt a problémát ritkás adatstruktúrákkal és intelligens visszaesési (fallback) stratégiákkal oldja meg: ha egy magasabb rendű kontextus nem látott, alacsonyabb rendű modellre vált vissza.
 
-\section{Zeneelméleti értelmezés}
+\subsection{Zeneelméleti értelmezés}
 
-\subsection{Állapot tér kialakítása}
+A zenei generálás kontextusában az állapottér $\mathcal{S}$ kialakítása kritikus tervezési döntés. Különböző granularitási szinteken definiálhatjuk az állapotokat: hangjegy-szinten, ahol minden állapot egyedi hangmagasságot vagy szünetet reprezentál (például C4, D#4); akkord-szinten, ahol az állapotok harmonikus progressziókat kódolnak (például I-IV-V); vagy hibrid megközelítésben, ahol az állapotok több zenei attribútumot kombinálnak, mint hangmagasság, időtartam és dinamika.
 
-A zenei generálásban az állapottér \( \mathcal{S} \) kialakítása kulcsfontosságú:
-
-\begin{itemize}
-    \item \textbf{Note-level}: Az állapotok egyes hangmagasságokat (pl. C4, D4) vagy szüneteket képviselnek.
-    \item \textbf{Kórusszint}: Az állapotok harmonikus haladást kódolnak (pl. I-IV-V).
-    \item \textbf{Hybrid}: Az állapotok több zenei attribútumot, például hangmagasságot, időtartamot és sebességet kombinálnak.
-\end{itemize}
-
-\subsection{Tranzíció valószínűségének becslése}
-
-Zenei szekvenciák korpusza esetén az \( p_{ij} \) átmenet valószínűségeket \textbf{maximum likelihood becslés} segítségével lehet becsülni:
-
+Az átmeneti valószínűségek becslése maximum likelihood módszerrel történik. Adott zenei szekvenciák korpusza esetén:
 \[
 p_{ij} = \frac{\text{Count}(s_i \rightarrow s_j)}{\sum_{k} \text{Count}(s_i \rightarrow s_k)}
 \]
+ahol a számlálóban az $s_i$ állapotból $s_j$ állapotba történő megfigyelt átmenetek száma, a nevezőben pedig az $s_i$ állapotból kiinduló összes átmenet szerepel. Laplace-simítás alkalmazásával ($\lambda$ paraméterrel) biztosíthatjuk, hogy nem megfigyelt átmenetek is kapjanak kicsi, de nem nulla valószínűséget, ezzel elkerülve a nulla valószínűségű szituációkat generáláskor.
 
-Például a Bach-kórusokban a C4-ről az E4-re való átmenetnek nagy valószínűsége lehet a dallamtercek gyakori előfordulása miatt.
+\subsection{Ergodicitás és stacionárius eloszlás}
 
-\section{Matematikai elemzés}
-
-\subsection{Stacionárius eloszlás}
-
-Egy Markov-láncot \textit{ergodikusnak} nevezünk, ha létezik egy olyan \( \pi \pi \) stacionárius eloszlás, hogy:
-
+Egy Markov láncot ergodikusnak nevezünk, ha létezik egyedi stacionárius eloszlás $\pi = (\pi_1, \ldots, \pi_N)$, amely kielégíti:
 \[
-\pi_j = \sum_{i} \pi_i p_{ij} \quad \forall j
+\pi_j = \sum_{i=1}^{N} \pi_i p_{ij} \quad \forall j
 \]
+A stacionárius eloszlás reprezentálja a hosszú távú állapot-gyakoriságokat—azaz, ha elég hosszú ideig generálunk, minden állapot relatív gyakorisága $\pi_i$-hez konvergál. Zenei kontextusban ez felfedi a darab tonális középpontját: a tonikus hangnemhez tartozó hangok típikusan magasabb stacionárius valószínűséggel rendelkeznek, tükrözve domináns szerepüket a harmonikus struktúrában. Az ergodicitás biztosítja, hogy a modell nem ragad be irreleváns állapotokban vagy zárt ciklusokban, hanem a teljes állapotteret fedezi hosszú távon.
 
-Zenei szempontból az \( \pi \) stacionárius eloszlása felfedheti egy darab \textbf{tonális középpontját}, mivel a tonikus hangoknak megfelelő állapotok nagyobb stacionárius valószínűséggel rendelkezhetnek.
+% TODO: METRIC PLACEHOLDER - Adjunk hozzá empirikus stacionárius eloszlás ábrát a Zha training korpusz alapján
+% Kell: Hisztogram amely mutatja a 128 MIDI hang stacionárius valószínűségeit
+% Várható eredmény: Csúcsok a C, E, G hangoknál (C-dúr triád) ha korpusz többnyire C-dúrban van
+% Figure caption: "A Zha Markov modell stacionárius hangjegy eloszlása a MIDI training korpusz alapján"
 
-\subsection{Entrópia arány}
+A formális ergodicitási feltételek bizonyítása megtalálható a Függelékben (lásd Igazolások \ref{proof:ergodicity}). Gyakorlati szempontból, az ergodicitás általában teljesül, ha a Markov lánc irreducibilis (minden állapotból minden másik elérhető) és aperiodikus (nem tartalmaz determinisztikus ciklusokat). A magasabb rendű Markov láncok első rendű ekvivalenciájának bizonyítása szintén megtalálható a Függelékben (lásd Igazolások \ref{proof:higher_order}).
 
-Az entrópiaráta \( H \) a Markov-lánc által generált szekvenciák kiszámíthatóságát méri:
+\subsection{Entrópiaráta és prediktabilitás}
 
+Az entrópiaráta $H$ a Markov lánc által generált szekvenciák kiszámíthatóságát méri:
 \[
 H = -\sum_{i,j} \pi_i p_{ij} \log p_{ij}
 \]
+ahol $\pi_i$ a stacionárius valószínűségek. Alacsony entrópiaráta azt jelzi, hogy a modell nagyon prediktábilis, ismétlődő mintázatokat generál—ami zenei szempontból unalmassá válhat. Magas entrópiaráta nagyobb variabilitást jelez, de túl magas érték esetén a kimenet véletlenszerűvé, strukturálatlanná válik. Az optimális entrópiaráta megtalálása a zenei stílustól függ: klasszikus zene általában alacsonyabb entrópiát mutat (strukturáltabb), míg a jazz vagy kísérleti zene magasabb entrópiát.
 
-Az alacsony entrópia arány ismétlődő kimenetekre utal, míg a magas entrópia arány a generált zene nagyobb változatosságára utal.
+% TODO: METRIC PLACEHOLDER - Entrópiaráta összehasonlító táblázat
+% Oszlopok: Modell típus | Entrópiaráta (bits/note) | Perplexity | Generált minták diverzitása
+% Sorok: 1. rendű Markov | 2. rendű Markov | 3. rendű Markov | HMM 8 hidden states | HMM 16 hidden states
+% Várható értékek: 1. rendű ~2.5-3.5 bits, 3. rendű ~3.0-4.0 bits, HMM 16 states ~3.5-4.5 bits
+% Forrás: backend/trainers/train_markov.py training output log-okból
+% Table caption: "Entrópiaráta és perplexity metrikák különböző Markov modell konfigurációkhoz a Zha projektben"
 
-\section{A zenei modellezés korlátai}
+\section{A Markov modellek korlátai zenei generálásban}
 
-\subsection{Lokális vs. globális struktúra}
+A Markov láncok, bár hatékonyak és matematikailag elegánsak, jelentős korlátokkal rendelkeznek a zenei generálás kontextusában. Legnagyobb problémájuk a lokális nézőpont: mivel csak a közelmúlt állapot(ok)ra támaszkodnak, nem képesek hosszú távú szerkezeti koherenciát biztosítani. Hierarch ikus formák—mint az A-B-A szerkezet vagy a szonáta forma—modellezése lehetetlen, mivel ezek több száz lépésnyi távolságra lévő kapcsolatokat igényelnek. A motívumok visszatérése, tematikus variációk és fejlesztések, amelyek az emberi kompozíció lényegi elemei, nem kezelhetők természetesen.
 
-\begin{itemize}
-    \item \textbf{Erősségek}: A Markov-láncok hatékonyan rögzítik az azonnali átmeneteket, például a dallamlépéseket.
-    \item \textbf{Hengeségek}: Nehezen modellezhetők:
-    \begin{itemize}
-        \item Hierarchikus formák (pl. A-B-A szakaszok).
-        \item Hosszú távú ismétlések (pl. több ütem után visszatérő motívumok).
-        \item Összetett zenei nyelvtan (pl. hangvezetési szabályok).
-    \end{itemize}
-\end{itemize}
-
-\subsection{Sparsity and Generalization}
-
-A magasabb rendű modellek a \textbf{dimenzió ördögével} szembesülnek:
-
-\[
-\text{Paraméterek száma} = |\mathcal{S}|^{n+1}
-\]
-
-Például \( |\mathcal{S}| = 50 \) (pl. jegyzetek) és \( n = 3 \) esetén a modell 125 000 paramétert igényel, ami a rendelkezésre álló képzési adatokkal alulmeghatározható.
+A magasabb rendű modellek részben enyhítik ezt a problémát, de a dimenzió átkával küzdenek. Ahogy az állapottér exponenciálisan nő $n$ növekedésével, a szükséges tanítóadatok mennyisége is exponenciálisan nő. Gyakorlati adatkészletek ritkán elégségesek harmad vagy negyedrendnél magasabb modellek megbízható becslé sére, különösen nagy ál
 
 \section{Implementáció a Zha projektben}
 
@@ -187,11 +145,22 @@ A technikai implementáció modern könyvtárak szinergikus használatán alapul
 
 \subsection{Hidden Markov Model integráció}
 
-A Zha implementáció HMM-et használ a rejtett zenei struktúrák modellezésére, amely lehetővé teszi a zenei kompozíciók mélyebb szerkezeti jellemzőinek felismerését és reprodukcióját. A HMM integráció különösen hatékony a zenei frázisok, szakaszhatárok és stilisztikai változások modellezésében, amelyek a hagyományos Markov-láncok számára nehezen kezelhetők.
+A Zha implementáció \texttt{hmmlearn.hmm.GaussianHMM}-et használ a rejtett zenei struktúrák modellezésére, amely lehetővé teszi a zenei kompozíciók mélyebb szerkezeti jellemzőinek felismerését és reprodukcióját. A HMM integráció különösen hatékony a zenei frázisok, szakaszhatárok és stilisztikai változások modellezésében, amelyek a hagyományos Markov-láncok számára nehezen kezelhetők. Az implementáció 16 rejtett állapotot használ alapértelmezetten, full covariance mátrixszal a komplex függőségek modellezésére.
 
-Az inicializálási folyamat többlépcsős workflow-t követ, amely a zenei szekvenciákból statisztikai jellemzők kinyerésével kezdődik. A rendszer hét dimenziós feature vektorokat konstruál minden szekvenciához, amelyek magukban foglalják a hangmagasság statisztikákat (átlag, szórás, tartomány), intervallum jellemzőket, dallamkontúr arányokat és időtartam információkat. Ezek a jellemzők normalizálásra kerülnek a numerikus stabilitás biztosítása érdekében, miközben outlier szűrés biztosítja a robusztus klaszterezést.
+Az inicializálási folyamat többlépcsős workflow-t követ, amely a zenei szekvenciákból statisztikai jellemzők kinyerésével kezdődik. A rendszer hét dimenziós feature vektorokat konstruál minden szekvenciához a \texttt{\_extract\_features} metódusban, amelyek magukban foglalják a hangmagasság statisztikákat (átlag, szórás, tartomány), intervallum jellemzőket (átlag, szórás), dallamkontúr arányokat (ascending ratio) és időtartam információkat (átlag időtartam). Ezek a jellemzők z-score normalizálásra kerülnek a numerikus stabilitás biztosítása érdekében, miközben outlier szűrés biztosítja a robusztus klaszterezést.
 
-A K-means algoritmus használata a rejtett állapotok inicializálásához különösen ötletes megoldás, mivel lehetővé teszi a zenei szekvenciák természetes csoportosítását hasonló karakterisztikák alapján. A Gaussian HMM illesztése ezután finomhangolja ezeket az állapotokat, létrehozva egy olyan modellt, amely képes megragadni a zenei struktúra rejtett dimenzióit. A validációs lépés biztosítja a modell konvergenciáját és stabilitását, ami kritikus fontosságú a megbízható zenei generáláshoz.
+% TODO: METRIC PLACEHOLDER - HMM hidden state interpretáció táblázat
+% Táblázat: Hidden State ID | Pitch Mean±Std | Interval Mean±Std | Ascending Ratio | Duration Mean | Zenei interpretáció
+% Példa sorok:
+% State 0 | 60±2.3 | 1.2±0.8 | 0.65 | 0.5 | "Közepes regisztér, kis léptékű emelkedő dallam"
+% State 7 | 72±4.1 | -1.5±1.2 | 0.35 | 0.25 | "Magas regisztér, gyors leereszkedő futamok"
+% State 15 | 55±1.5 | 0.1±0.5 | 0.50 | 1.0 | "Mély regisztér, lassú, stabil dallam"
+% Forrás: HMM means_ és covars_ attribútumok a betanított modellből
+% Table caption: "A HMM rejtett állapotainak zenei interpretációja feature statistics alapján"
+
+A K-means algoritmus használata (\texttt{sklearn.cluster.KMeans} vagy \texttt{cuml.cluster.KMeans}) a rejtett állapotok inicializálásához különösen ötletes megoldás, mivel lehetővé teszi a zenei szekvenciák természetes csoportosítását hasonló karakterisztikák alapján. A Gaussian HMM illesztése ezután finomhangolja ezeket az állapotokat Baum-Welch algoritmussal, létrehozva egy olyan modellt, amely képes megragadni a zenei struktúra rejtett dimenzióit. A validációs lépés biztosítja a modell konvergenciáját és stabilitását (\texttt{monitor\_.converged} attribútum ellenőrzése), ami kritikus fontosságú a megbízható zenei generáláshoz.
+
+A HMM algoritmusok (forward, backward, forward-backward, viterbi) részletes levezetései megtalálhatók a Függelékben (lásd Igazolások \ref{proof:forward} és \ref{proof:viterbi}). Az implementáció a \texttt{hmmlearn} könyvtár optimalizált C implementációit használja, amely jelentős teljesítménynövekedést biztosít tisztán Python implementációhoz képest.
 
 A HMM betanításához használt jellemző vektor konstrukció tudományosan megalapozott megközelítést követ:
 
@@ -206,11 +175,26 @@ Ez a megközelítés biztosítja, hogy a rejtett állapotok valódi zenei jelent
 
 \subsection{GPU architektúra és optimalizálás}
 
-A GPU gyorsítás implementációja két kritikus területen valósul meg, optimalizálva a számítási teljesítményt anélkül, hogy feláldozná a kompatibilitást vagy a megbízhatóságot. A mátrix műveletek optimalizálása tartalmazza a row-wise valószínűség normalizálást, automatikus GPU/CPU memóriaátadást, memory-efficient sparse reprezentációkat és batch processing képességeket többszörös szekvencia kezeléshez.
+A GPU gyorsítás implementációja PyTorch-alapú CUDAOptimizer osztályra épül, amely automatikus eszköz detektálást (CUDA/CPU) és optimalizált mátrix normalizálást biztosít. A mátrix műveletek optimalizálása tartalmazza a row-wise valószínűség normalizálást \texttt{torch.sum} és \texttt{torch.where} használatával, automatikus GPU/CPU memóriaátadást, memory-efficient reprezentációkat és batch processing képességeket többszörös szekvencia kezeléshez. Az implementáció a \texttt{backend/models/markov\_chain.py} fájl CUDAOptimizer osztályában található, amely PyTorch tensor műveleteket használ a numerikus stabilitás és platformfüggetlen kompatibilitás biztosítására.
 
-A rendszer intelligens fallback stratégiája biztosítja, hogy GPU hibák esetén automatikusan CPU számításra váltson, miközben identikus eredményeket garantál mindkét platformon. Ez a robusztus hibakezelés kritikus fontosságú production környezetben, ahol a megbízhatóság elsőbbséget élvez a nyers teljesítménnyel szemben. A numerikus stabilitás biztosítása zero division védelem révén, valamint a konzisztens normalizálási eredmények seamless performance degradation mellett teszik a rendszert alkalmas valós felhasználásra.
+% TODO: METRIC PLACEHOLDER - GPU gyorsítási benchmarkok
+% Táblázat: Művelettípus | CPU idő (ms) | GPU idő (ms) | Gyorsítási arány
+% Sorok: Transition matrix normalizálás (128x128) | Forward algorithm (16 hidden states, 100 timesteps) | Viterbi algoritmus (16 states, 100 timesteps) | Batch generálás (10 szekvencia, 200 note/each)
+% Hardver: CPU: [SPEC], GPU: [SPEC]
+% Várható gyorsítás: 5-20x a GPU-n nagyobb mátrixok esetén
+% Forrás: scripts/benchmark_gpu.py futtatásával mérhető
+% Table caption: "GPU vs CPU teljesítmény összehasonlítás a Zha Markov implementációban PyTorch backend használatával"
 
-A CPU fallback mechanizmus automatikusan aktiválódik GPU hibaesemények során, biztosítva a folyamatos működést. A numerikus stabilitás fenntartása különösen fontos a valószínűségi számítások során, ahol kis eltérések jelentős hatással lehetnek a generált zenei tartalom minőségére. A rendszer konzisztens normalizálási eredményeket biztosít CPU és GPU között, ami garantálja a reprodukálható eredményeket platformtól függetlenül.
+% TODO: FIGURE PLACEHOLDER - GPU memória használat időbeli alakulása
+% Line plot: X-axis: Training iteration | Y-axis: GPU memory usage (GB)
+% Vonalak: Allocated memory, Reserved memory, Peak memory
+% Megjegyzés: Fontos látni hogy nincs memory leak a training során
+% Forrás: torch.cuda.memory_allocated() és torch.cuda.max_memory_allocated() használatával loggolható
+% Figure caption: "GPU memória profil a Markov modell tanítása során 1000 iteráción keresztül"
+
+A rendszer intelligens fallback stratégiája biztosítja, hogy GPU hibák esetén automatikusan CPU számításra váltson PyTorch device management révén, miközben identikus eredményeket garantál mindkét platformon. Ez a robusztus hibakezelés kritikus fontosságú production környezetben, ahol a megbízhatóság elsőbbséget élvez a nyers teljesítménnyel szemben. A numerikus stabilitás biztosítása zero division védelem révén (\texttt{torch.where} használatával), valamint a konzisztens normalizálási eredmények seamless performance degradation mellett teszik a rendszert alkalmas valós felhasználásra.
+
+A CPU fallback mechanizmus automatikusan aktiválódik GPU hibaesemények során vagy ha CUDA nem elérhető, biztosítva a folyamatos működést. A numerikus stabilitás fenntartása különösen fontos a valószínűségi számítások során, ahol kis eltérések jelentős hatással lehetnek a generált zenei tartalom minőségére. A rendszer konzisztens normalizálási eredményeket biztosít CPU és GPU között, ami garantálja a reprodukálható eredményeket platformtól függetlenül. A konkrét GPU implementáció részletei megtalálhatók a Függelékben (lásd Igazolások \ref{proof:gpu_normalization}).
 
 \subsection{Magasabb rendű átmenetek}
 

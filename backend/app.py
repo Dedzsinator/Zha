@@ -593,13 +593,22 @@ async def generate_markov(
                 length=length,
                 complexity=complexity
             )
+            
+            # Check if generation failed
+            if complex_output is None:
+                raise Exception("Markov generation returned None - check model state")
+                
         except Exception as e:
-            logger.warning(f"Error in key parsing: {e}, falling back to default key")
+            logger.warning(f"Error in generation: {e}, falling back to default key")
             complex_output = markov_model.generate_expressive_sequence(
                 key_context="C major",  # Default to C major if parsing fails
                 length=length,
                 complexity=complexity
             )
+            
+            # Check fallback also succeeded
+            if complex_output is None:
+                raise Exception("Markov generation failed even with fallback key")
 
         # Log generated musical features
         logger.info(f"Generated sequence in key: {complex_output.get('key', 'unknown')}")

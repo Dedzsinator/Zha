@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { FaPlay, FaPause, FaStop } from 'react-icons/fa';
 import * as Tone from 'tone';
 import { Midi } from '@tonejs/midi';
@@ -73,9 +73,9 @@ export default function MidiPlayer({
                 if (responseNote < 108) { // Stay in reasonable MIDI range
                     playNoteOnOutput(responseNote, velocity, 0, 0.5); // Play with 0.5s duration
 
-                    // Also play on internal synth for feedback
+                    // Also play on internal synth for feedback (use synth 16 for duet responses)
                     const noteName = Tone.Frequency(responseNote, "midi").toNote();
-                    synths.current[1]?.triggerAttackRelease(
+                    synths.current[16]?.triggerAttackRelease(
                         noteName,
                         0.5,
                         undefined,
@@ -167,7 +167,7 @@ export default function MidiPlayer({
                 // Also play on internal synth
                 setTimeout(() => {
                     const noteName = Tone.Frequency(responseNote, "midi").toNote();
-                    synths.current[1]?.triggerAttackRelease(
+                    synths.current[16]?.triggerAttackRelease(
                         noteName,
                         0.3,
                         undefined,
@@ -208,7 +208,7 @@ export default function MidiPlayer({
             velocity: velocity / 127  // Normalize to 0-1 range
         });
 
-        // Play the note on internal synth
+        // Play the note on internal synth (use synth 0 for user input)
         const midiNote = note;
         const noteName = Tone.Frequency(midiNote, "midi").toNote();
 
@@ -273,6 +273,32 @@ export default function MidiPlayer({
         }, delay * 1000);
     };
 
+    // Handler functions with useCallback to prevent re-creation
+    const handleStop = useCallback(() => {
+        // Stop all scheduled notes
+        scheduledNotes.current.forEach(id => {
+            Tone.Transport.clear(id);
+        });
+        scheduledNotes.current = [];
+
+        // Stop all active synths
+        synths.current.forEach(synth => {
+            synth.releaseAll();
+        });
+
+        // Reset transport
+        Tone.Transport.stop();
+        Tone.Transport.seconds = 0;
+
+        // Reset state
+        setCurrentTime(0);
+        setIsPlaying(false);
+
+        // Notify parent
+        if (onTimeUpdate) onTimeUpdate(0);
+        if (onActiveNotesChange) onActiveNotesChange([]);
+    }, [onTimeUpdate, onActiveNotesChange]);
+
     // Clean up and initialize midi player
     useEffect(() => {
         // Clean up previous synths
@@ -292,26 +318,50 @@ export default function MidiPlayer({
         setDuration(midiData.duration);
         setCurrentTime(0);
 
-        // Create synths for playback
-        // Synth 0: for user input and primary midi playback
-        // Synth 1: for duet/AI responses
-        for (let i = 0; i < 2; i++) {
-            const synth = new Tone.PolySynth(Tone.Synth).toDestination();
-            synth.volume.value = -5; // Reduce volume a bit
+        console.log(`MIDI loaded: ${midiData.tracks.length} tracks, duration: ${midiData.duration.toFixed(2)}s`);
+        midiData.tracks.forEach((track, idx) => {
+            console.log(`  Track ${idx}: ${track.notes.length} notes, channel: ${track.channel !== undefined ? track.channel : 'undefined'}, instrument: ${track.instrument?.name || 'none'}`);
+        });
+
+        // Reset transport position
+        Tone.Transport.seconds = 0;        // Create a synth for each of the 16 MIDI channels + 1 for duet responses
+        for (let i = 0; i < 17; i++) {
+            const synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: {
+                    type: 'triangle'
+                },
+                envelope: {
+                    attack: 0.005,
+                    decay: 0.1,
+                    sustain: 0.3,
+                    release: 1
+                }
+            }).toDestination();
+
+            synth.volume.value = -6; // Set volume to -6dB
             synths.current.push(synth);
         }
 
+        console.log(`Synths created: ${synths.current.length} (one per MIDI channel + duet)`);
+
         // Schedule all notes for playback
-        midiData.tracks.forEach((track, i) => {
-            // Only schedule notes for the selected channel if specified
+        let totalNotesScheduled = 0;
+        let tracksProcessed = 0;
+
+        midiData.tracks.forEach((track) => {
+            // If a specific channel is selected (not 0 = all), only play that channel
             if (selectedChannel !== 0 && track.channel !== undefined && track.channel !== selectedChannel - 1) {
                 return;
             }
 
+            tracksProcessed++;
+            const trackChannel = track.channel !== undefined ? track.channel : 0;
+
             track.notes.forEach(note => {
                 const id = Tone.Transport.schedule((time) => {
-                    // Play on both internal synth and MIDI output if connected
-                    synths.current[0]?.triggerAttackRelease(
+                    // Use the appropriate synth for this track's channel
+                    const synthIndex = Math.min(trackChannel, 15); // Ensure we don't exceed array bounds
+                    synths.current[synthIndex]?.triggerAttackRelease(
                         note.name,
                         note.duration,
                         time,
@@ -322,20 +372,39 @@ export default function MidiPlayer({
                     if (outputDevice.current) {
                         const noteNumber = note.midi;
                         const noteOnVelocity = Math.floor(note.velocity * 127);
+                        const midiChannel = selectedChannel !== 0 ? selectedChannel - 1 : trackChannel;
 
                         // Note On
-                        outputDevice.current.send([0x90 + (selectedChannel - 1), noteNumber, noteOnVelocity]);
+                        outputDevice.current.send([0x90 + midiChannel, noteNumber, noteOnVelocity]);
 
                         // Schedule Note Off
                         setTimeout(() => {
-                            outputDevice.current?.send([0x80 + (selectedChannel - 1), noteNumber, 0]);
+                            outputDevice.current?.send([0x80 + midiChannel, noteNumber, 0]);
                         }, note.duration * 1000);
                     }
                 }, note.time);
 
                 scheduledNotes.current.push(id);
+                totalNotesScheduled++;
             });
         });
+
+        console.log(`Scheduled ${totalNotesScheduled} notes from ${tracksProcessed} tracks (duration: ${midiData.duration}s)`);
+
+        return () => {
+            // Only dispose synths on unmount or when midiData changes
+            synths.current.forEach(synth => {
+                synth.dispose();
+            });
+            scheduledNotes.current.forEach(id => {
+                Tone.Transport.clear(id);
+            });
+        };
+    }, [midiData, selectedChannel]);
+
+    // Separate effect for time updates to prevent re-initialization
+    useEffect(() => {
+        if (!midiData) return;
 
         // Set up loop to update current time
         const interval = setInterval(() => {
@@ -353,14 +422,8 @@ export default function MidiPlayer({
 
         return () => {
             clearInterval(interval);
-            synths.current.forEach(synth => {
-                synth.dispose();
-            });
-            scheduledNotes.current.forEach(id => {
-                Tone.Transport.clear(id);
-            });
         };
-    }, [midiData, selectedChannel, onTimeUpdate]);
+    }, [isPlaying, midiData, onTimeUpdate, handleStop]);
 
     // Start recording
     const startRecording = () => {
@@ -401,11 +464,24 @@ export default function MidiPlayer({
     };
 
     const handlePlay = async () => {
-        if (Tone.Transport.state !== "started") {
+        try {
+            // Ensure Tone.js is started (required for browser audio policy)
             await Tone.start();
-            Tone.Transport.start();
+            console.log('Audio context started');
+
+            // Start or resume the transport
+            if (Tone.Transport.state !== "started") {
+                Tone.Transport.start();
+            } else {
+                // If already started but paused, just update state
+                Tone.Transport.start();
+            }
+
+            setIsPlaying(true);
+        } catch (error) {
+            console.error('Failed to start playback:', error);
+            alert('Failed to start audio playback. Please check your browser permissions.');
         }
-        setIsPlaying(true);
     };
 
     const handlePause = () => {
@@ -413,22 +489,30 @@ export default function MidiPlayer({
         setIsPlaying(false);
     };
 
-    const handleStop = () => {
-        Tone.Transport.stop();
-        Tone.Transport.seconds = 0;
-        setCurrentTime(0);
-        setIsPlaying(false);
-        if (onTimeUpdate) onTimeUpdate(0);
-    };
-
     const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
         const seekTime = parseFloat(e.target.value);
+
+        // Validate the seek time
+        if (isNaN(seekTime) || seekTime < 0 || seekTime > duration) {
+            return;
+        }
+
+        // Update transport position
         Tone.Transport.seconds = seekTime;
+
+        // Update state
         setCurrentTime(seekTime);
+
+        // Notify parent
         if (onTimeUpdate) onTimeUpdate(seekTime);
     };
 
     const formatTime = (seconds: number): string => {
+        // Handle invalid values
+        if (isNaN(seconds) || !isFinite(seconds)) {
+            return '0:00';
+        }
+
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -446,10 +530,10 @@ export default function MidiPlayer({
                     {isPlaying ? <FaPause size={14} /> : <FaPlay size={14} />}
                 </button>
                 <button
-                    className={`flex items-center justify-center w-10 h-10 rounded-full mr-2 ${!midiData || !isPlaying ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    className={`flex items-center justify-center w-10 h-10 rounded-full mr-2 ${!midiData ? 'bg-gray-300 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white'
                         }`}
                     onClick={handleStop}
-                    disabled={!midiData || !isPlaying}
+                    disabled={!midiData}
                 >
                     <FaStop size={14} />
                 </button>

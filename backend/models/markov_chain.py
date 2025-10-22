@@ -1899,15 +1899,21 @@ class MarkovChain:
             num_chords = max(8, length // 4)
             chords = self.generate_chord_progression(key_context=cleaned_key, num_chords=num_chords)
             
+            if not chords:
+                logger.warning(f"No chords generated for key {cleaned_key}, using default progression")
+                chords = ["C major", "G major", "A minor", "F major"] * (num_chords // 4 + 1)
+                chords = chords[:num_chords]
+            
             # Determine starting note
             start_note = self._determine_start_note(cleaned_key)
             
             # Handle time signature
             if time_signature not in self.musical_features['time_signatures']:
+                logger.debug(f"Time signature {time_signature} not in trained signatures, using 4/4")
                 time_signature = "4/4"  # Default to 4/4 if not found
             
             # Generate notes with rhythm awareness
-            notes, durations, beat_positions = self.generate_rhythmic_sequence(
+            rhythmic_sequence = self.generate_rhythmic_sequence(
                 start_note=start_note,
                 key_context=cleaned_key,
                 length=length,
@@ -1915,6 +1921,18 @@ class MarkovChain:
                 measures=length // 8,
                 use_interval_generation=True
             )
+            
+            # Unpack the rhythmic sequence (returns list of (note, duration, beat_position) tuples)
+            if rhythmic_sequence:
+                notes = [item[0] for item in rhythmic_sequence]
+                durations = [item[1] for item in rhythmic_sequence]
+                beat_positions = [item[2] for item in rhythmic_sequence]
+            else:
+                # Fallback if generation fails
+                logger.warning("Rhythmic sequence generation failed, using defaults")
+                notes = [start_note] * length
+                durations = [0.5] * length
+                beat_positions = [0.0] * length
             
             # Map notes to chord progression
             chord_sequence = self._map_notes_to_chords(notes, durations, chords)
@@ -1933,7 +1951,7 @@ class MarkovChain:
             }
             
         except Exception as e:
-            logger.error(f"Error in generate_with_chords: {e}")
+            logger.error(f"Error in generate_with_chords: {e}", exc_info=True)
             return None
 
     def _parse_chord_name(self, chord_name):

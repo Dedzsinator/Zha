@@ -1,0 +1,259 @@
+\select@language {magyar} \contentsline {chapter}{\numberline {1}Bevezetés}{2}{chapter.1}%
+\select@language {magyar} \contentsline {section}{\numberline {1.1}Motiváció}{2}{section.1.1}%
+\select@language {magyar} \contentsline {section}{\numberline {1.2}Kutatási célok}{2}{section.1.2}%
+\select@language {magyar} \contentsline {chapter}{\numberline {2}Háttér és elméleti alapok}{3}{chapter.2}%
+\select@language {magyar} \contentsline {section}{\numberline {2.1}Szimbolikus zene generálás}{3}{section.2.1}%
+\select@language {magyar} \contentsline {section}{\numberline {2.2}A Zha rendszer architektúrális alapjai}{3}{section.2.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.2.1}Többmodelles generálási stratégia}{3}{subsection.2.2.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.2.2}Adatfeldolgozási pipeline}{4}{subsection.2.2.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.2.3}MIDI események}{4}{subsection.2.2.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.2.4}Piano-Roll ábrázolások}{5}{subsection.2.2.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.2.5}Tokenizált szekvencia-reprezentációk}{5}{subsection.2.2.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.2.6}Kihívások: Dinamika, többszólamúság és időzítés}{6}{subsection.2.2.6}%
+\select@language {magyar} \contentsline {paragraph}{Dynamika kódolása}{6}{section*.5}%
+\select@language {magyar} \contentsline {paragraph}{Többszólamúság modellezése}{6}{section*.6}%
+\select@language {magyar} \contentsline {paragraph}{Időzítés és kifejezőerő}{6}{section*.7}%
+\select@language {magyar} \contentsline {section}{\numberline {2.3}Értékelési mérőszámok}{7}{section.2.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.3.1}Perplexitás}{7}{subsection.2.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.3.2}Hangmagasság Entropiája}{7}{subsection.2.3.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.3.3}Groove konzisztencia}{7}{subsection.2.3.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.3.4}Emberi hallgatási tesztek}{8}{subsection.2.3.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {2.3.5}Összetett és új mérőszámok}{8}{subsection.2.3.5}%
+\select@language {magyar} \contentsline {chapter}{\numberline {3}Markov láncok és Hidden Markov láncok}{9}{chapter.3}%
+\select@language {magyar} \contentsline {section}{\numberline {3.1}Bevezetés és motiváció}{9}{section.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.1.1}Az implementáció főbb jellemzői}{9}{subsection.3.1.1}%
+\select@language {magyar} \contentsline {section}{\numberline {3.2}Elméleti alapok és matematikai háttér}{9}{section.3.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.2.1}Definíció és tulajdonságok}{9}{subsection.3.2.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.2.2}Rendek és Memória}{10}{subsection.3.2.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.3}Zeneelméleti értelmezés}{11}{section.3.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.3.1}Állapot tér kialakítása}{11}{subsection.3.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.3.2}Tranzíció valószínűségének becslése}{11}{subsection.3.3.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.4}Matematikai elemzés}{11}{section.3.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.4.1}Stacionárius eloszlás}{11}{subsection.3.4.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.4.2}Entrópia arány}{12}{subsection.3.4.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.5}A zenei modellezés korlátai}{12}{section.3.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.5.1}Lokális vs. globális struktúra}{12}{subsection.3.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.5.2}Sparsity and Generalization}{12}{subsection.3.5.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.6}Implementáció a Zha projektben}{13}{section.3.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.6.1}Architektúra áttekintése}{13}{subsection.3.6.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.6.2}Optimalizálás}{13}{subsection.3.6.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.7}Egy esettanulmány: Bach-kórus generálása}{13}{section.3.7}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.7.1}Tréning adatok}{13}{subsection.3.7.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.7.2}Eredmények}{14}{subsection.3.7.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.8}A Zha projekt Markov-lánc implementációja}{14}{section.3.8}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.1}Architektúra áttekintése}{14}{subsection.3.8.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.2}Hidden Markov Model integráció}{15}{subsection.3.8.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.3}GPU architektúra és optimalizálás}{16}{subsection.3.8.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.4}Magasabb rendű átmenetek}{17}{subsection.3.8.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.5}Interval-alapú modellezés}{17}{subsection.3.8.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.6}Zenei jellemzők kinyerése és feldolgozása}{17}{subsection.3.8.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.7}Generálási módszerek}{19}{subsection.3.8.7}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.8.8}HMM valószínűségek}{23}{subsection.3.8.8}%
+\select@language {magyar} \contentsline {section}{\numberline {3.9}Hidden Markov Model elméleti alapjai zenei alkalmazásokhoz}{24}{section.3.9}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.9.1}HMM matematikai definíciója}{24}{subsection.3.9.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.9.2}HMM problémák zenei alkalmazásokban}{24}{subsection.3.9.2}%
+\select@language {magyar} \contentsline {subsubsection}{1. Értékelési probléma (Forward Algorithm)}{24}{section*.8}%
+\select@language {magyar} \contentsline {subsubsection}{2. Dekódolási probléma (Viterbi Algorithm)}{25}{section*.9}%
+\select@language {magyar} \contentsline {subsubsection}{3. Tanítási probléma (Baum-Welch Algorithm)}{25}{section*.10}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.9.3}Gaussian HMM zenei jellemzőkhöz}{26}{subsection.3.9.3}%
+\select@language {magyar} \contentsline {section}{\numberline {3.10}Magasabb rendű Markov-láncok HMM integrációval}{26}{section.3.10}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.10.1}Kombinált modell architektúra}{26}{subsection.3.10.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.10.2}Hierarchikus állapottér}{27}{subsection.3.10.2}%
+\select@language {magyar} \contentsline {section}{\numberline {3.11}Tényleges GPU-gyorsítás a Zha implementációban}{27}{section.3.11}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.11.1}Alapvető GPU architektúra}{27}{subsection.3.11.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.11.2}HMM integráció külső könyvtárakkal}{27}{subsection.3.11.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {3.11.3}Memória és erőforrás kezelés}{28}{subsection.3.11.3}%
+\select@language {magyar} \contentsline {chapter}{\numberline {4}Variációs autoenkóderek zene generáláshoz}{29}{chapter.4}%
+\select@language {magyar} \contentsline {section}{\numberline {4.1}Elméleti Alapok}{29}{section.4.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.1.1}Látens változó modellek}{29}{subsection.4.1.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.1.2}Variációs következtetés és ELBO}{29}{subsection.4.1.2}%
+\select@language {magyar} \contentsline {section}{\numberline {4.2}Zene-specifikus Architektúra}{30}{section.4.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.2.1}Kódoló tervezés}{30}{subsection.4.2.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.2.2}Dekódoló architektúrák}{30}{subsection.4.2.2}%
+\select@language {magyar} \contentsline {section}{\numberline {4.3}Matematikai alapelvek}{31}{section.4.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.3.1}Átparaméterezési trükk}{31}{subsection.4.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.3.2}Beta-VAE és regularizáció}{31}{subsection.4.3.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.3.3}KL-divergencia analízis}{31}{subsection.4.3.3}%
+\select@language {magyar} \contentsline {section}{\numberline {4.4}Kihívások a zenegenerációban}{32}{section.4.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.4.1}Posterior collapse}{32}{subsection.4.4.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.4.2}Diszkrét adatok kezelése}{32}{subsection.4.4.2}%
+\select@language {magyar} \contentsline {section}{\numberline {4.5}Speciális VAE architektúrák}{33}{section.4.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.5.1}Hierarchikus VAE}{33}{subsection.4.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.5.2}Transformer-VAE}{33}{subsection.4.5.2}%
+\select@language {magyar} \contentsline {section}{\numberline {4.6}Csoport-orbitális konzisztencia a zenei VAE-modellekben}{33}{section.4.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.1}Motiváció és elméleti háttér}{33}{subsection.4.6.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.2}Az alapötlet: csoport-orbitális konzisztencia}{34}{subsection.4.6.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.3}Elméleti megalapozás}{34}{subsection.4.6.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.4}Formális definíciók}{35}{subsection.4.6.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.5}Formális igazolások}{35}{subsection.4.6.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.6}Empirikus következmények és várakozások}{36}{subsection.4.6.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.6.7}Összegzés}{37}{subsection.4.6.7}%
+\select@language {magyar} \contentsline {section}{\numberline {4.7}Korlátozások és jövőbeli irányok}{37}{section.4.7}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.7.1}Fő kihívások}{37}{subsection.4.7.1}%
+\select@language {magyar} \contentsline {section}{\numberline {4.8}Zha VAE implementációs részletek}{37}{section.4.8}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.1}ResidualBlock architektúra}{37}{subsection.4.8.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.2}Temperature-controlled sampling}{38}{subsection.4.8.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.3}Consistency loss mechanizmus}{38}{subsection.4.8.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.4}Mixed precision training optimalizáció}{38}{subsection.4.8.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.5}Latent space interpoláció}{39}{subsection.4.8.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.6}Beta-scheduling stratégia}{39}{subsection.4.8.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {4.8.7}ONNX export és deployment optimalizáció}{39}{subsection.4.8.7}%
+\select@language {magyar} \contentsline {chapter}{\numberline {5}Transzformerek a zene generálásnál}{47}{chapter.5}%
+\select@language {magyar} \contentsline {section}{\numberline {5.1}Elméleti alapok}{47}{section.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.1.1}Önfigyelő mechanizmus}{47}{subsection.5.1.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.1.2}Többfejű figyelem}{47}{subsection.5.1.2}%
+\select@language {magyar} \contentsline {section}{\numberline {5.2}Zene-specifikus adaptációk}{48}{section.5.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.2.1}Relatív pozíciókódolás}{48}{subsection.5.2.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.2.2}Rotációs pozíciós beágyazások}{48}{subsection.5.2.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.2.3}Dekódolási stratégiák}{49}{subsection.5.2.3}%
+\select@language {magyar} \contentsline {section}{\numberline {5.3}Matematikai elemzés}{49}{section.5.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.3.1}Továbbfejlesztett figyelemmechanizmus}{49}{subsection.5.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.3.2}Xavier inicializálási stratégia}{49}{subsection.5.3.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.3.3}Kapuzott előrecsatoló hálózatok}{50}{subsection.5.3.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.3.4}Gradiens Flow}{50}{subsection.5.3.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.3.5}Bonyolultsági szempontok}{51}{subsection.5.3.5}%
+\select@language {magyar} \contentsline {section}{\numberline {5.4}Kihívások a zenegenerációban}{51}{section.5.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.4.1}Hosszú távú függőségek}{51}{subsection.5.4.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.4.2}Szakaszos memória rendszer strukturált generáláshoz}{52}{subsection.5.4.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.4.3}Strukturális prioritások}{52}{subsection.5.4.3}%
+\select@language {magyar} \contentsline {section}{\numberline {5.5}Zha transzformátorának megvalósítása}{53}{section.5.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.5.1}Részletek az építészetről}{53}{subsection.5.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.5.2}Memória-alapú generálási stratégia}{54}{subsection.5.5.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.5.3}Structured generation algoritmus}{55}{subsection.5.5.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.5.4}Top-k és nucleus sampling optimalizáció}{56}{subsection.5.5.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.5.5}JIT compilation optimalizáció}{57}{subsection.5.5.5}%
+\select@language {magyar} \contentsline {section}{\numberline {5.6}Esettanulmány: Bach-korálgeneráció}{57}{section.5.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.6.1}Kísérleti beállítás}{57}{subsection.5.6.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.6.2}Eredmények}{58}{subsection.5.6.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.6.3}Tanítási stabilitás és konvergencia}{58}{subsection.5.6.3}%
+\select@language {magyar} \contentsline {section}{\numberline {5.7}Korlátozások és kiterjesztések}{58}{section.5.7}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.7.1}Főbb kihívások}{58}{subsection.5.7.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.7.2}Speciális változatok}{59}{subsection.5.7.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.7.3}Jövőbeli kutatási irányok}{59}{subsection.5.7.3}%
+\select@language {magyar} \contentsline {section}{\numberline {5.8}Zha Transformer implementáció részletes elemzése}{60}{section.5.8}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.8.1}Pozíciós kódolás implementáció}{60}{subsection.5.8.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.8.2}Memória-alapú generálás}{60}{subsection.5.8.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.8.3}Strukturált generálás}{60}{subsection.5.8.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.8.4}Sampling stratégiák}{61}{subsection.5.8.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.8.5}Architektúra specifikációk}{61}{subsection.5.8.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {5.8.6}Optimalizálás és teljesítmény}{62}{subsection.5.8.6}%
+\select@language {magyar} \contentsline {chapter}{\numberline {6}Képzési és optimalizálási technikák}{64}{chapter.6}%
+\select@language {magyar} \contentsline {section}{\numberline {6.1}Modellspecifikus képzési paradigmák}{64}{section.6.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.1.1}Markov-láncok}{64}{subsection.6.1.1}%
+\select@language {magyar} \contentsline {subsubsection}{Paraméterbecslés}{64}{section*.22}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.1.2}Gyakorlati megfontolások}{64}{subsection.6.1.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.1.3}Változatos automatikus kódolók}{65}{subsection.6.1.3}%
+\select@language {magyar} \contentsline {subsubsection}{Veszteség összetevői}{65}{section*.23}%
+\select@language {magyar} \contentsline {subsubsection}{Tanítási algorithmus}{65}{section*.24}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.1.4}Transformers}{65}{subsection.6.1.4}%
+\select@language {magyar} \contentsline {subsubsection}{Autoregresszív képzés}{65}{section*.25}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.1.5}Optimalizálási Stratégia}{65}{subsection.6.1.5}%
+\select@language {magyar} \contentsline {section}{\numberline {6.2}Megosztott optimalizálási kihívások}{66}{section.6.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.2.1}Képzési stabilitás}{66}{subsection.6.2.1}%
+\select@language {magyar} \contentsline {section}{\numberline {6.3}Zha képzési rendszere}{66}{section.6.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.3.1}Egységes képzési infrastruktúra}{66}{subsection.6.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.3.2}Gyakorlati implementáció részletei}{66}{subsection.6.3.2}%
+\select@language {magyar} \contentsline {subsubsection}{Memóriahatékony adatkezelés}{67}{section*.26}%
+\select@language {magyar} \contentsline {subsubsection}{Automatikus mixed precision optimalizáció}{67}{section*.27}%
+\select@language {magyar} \contentsline {subsubsection}{Gradiens akkumuláció és clipping mechanizmus}{67}{section*.28}%
+\select@language {magyar} \contentsline {subsubsection}{Dinamikus learning rate scheduling}{68}{section*.29}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.3.3}Modellspecifikus képzési stratégiák}{68}{subsection.6.3.3}%
+\select@language {magyar} \contentsline {subsubsection}{Transformer architektúra és képzési optimalizációk}{68}{section*.30}%
+\select@language {magyar} \contentsline {subsubsection}{VAE képzés speciális technikái}{69}{section*.31}%
+\select@language {magyar} \contentsline {subsubsection}{Markov-lánc fejlett képzési stratégiák}{69}{section*.32}%
+\select@language {magyar} \contentsline {subsubsection}{Korai leállítás és modell mentés stratégia}{70}{section*.33}%
+\select@language {magyar} \contentsline {subsubsection}{Adaptív optimalizációs stratégiák}{70}{section*.34}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.3.4}Fejlett képzési technikák}{71}{subsection.6.3.4}%
+\select@language {magyar} \contentsline {subsubsection}{Strukturált zenei generálás támogatása}{71}{section*.35}%
+\select@language {magyar} \contentsline {subsubsection}{Temperature és nucleus sampling a generálásban}{71}{section*.36}%
+\select@language {magyar} \contentsline {subsubsection}{GPU-accelerált Markov-lánc optimalizációk}{71}{section*.37}%
+\select@language {magyar} \contentsline {subsubsection}{Dinamikus batch méretezés és memória menedzsment}{72}{section*.38}%
+\select@language {magyar} \contentsline {subsubsection}{Hierarchikus feature extraction zenei kontextushoz}{72}{section*.39}%
+\select@language {magyar} \contentsline {section}{\numberline {6.4}Hiperparaméter optimalizálás}{73}{section.6.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.4.1}Bayesi keresés}{73}{subsection.6.4.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.4.2}Automatizált hiperparaméter keresés}{73}{subsection.6.4.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.4.3}Multi-objective optimalizáció}{74}{subsection.6.4.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.4.4}Optimális konfigurációk}{74}{subsection.6.4.4}%
+\select@language {magyar} \contentsline {section}{\numberline {6.5}Képzési monitorozás és hibakeresés}{74}{section.6.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.5.1}Valós idejű metrika követés}{74}{subsection.6.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.5.2}Hibakeresési eszközök és anomália detektálás}{75}{subsection.6.5.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.5.3}Automatizált hiperparaméter optimalizáció}{75}{subsection.6.5.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.5.4}Képzési monitorozás és hibakeresés}{76}{subsection.6.5.4}%
+\select@language {magyar} \contentsline {subsubsection}{Valós idejű metrika követés és anomália detektálás}{76}{section*.45}%
+\select@language {magyar} \contentsline {subsubsection}{Automatikus hiba helyreállítás és fallback mechanizmusok}{76}{section*.46}%
+\select@language {magyar} \contentsline {subsection}{\numberline {6.5.5}Teljesítmény optimalizáció és skálázhatóság}{77}{subsection.6.5.5}%
+\select@language {magyar} \contentsline {subsubsection}{Multi-GPU és distributed training támogatás}{77}{section*.47}%
+\select@language {magyar} \contentsline {subsubsection}{Deployment-ready modell export}{77}{section*.48}%
+\select@language {magyar} \contentsline {chapter}{\numberline {7}System Design of Zha}{82}{chapter.7}%
+\select@language {magyar} \contentsline {section}{\numberline {7.1}High-level System Overview}{82}{section.7.1}%
+\select@language {magyar} \contentsline {section}{\numberline {7.2}Data Flow}{82}{section.7.2}%
+\select@language {magyar} \contentsline {section}{\numberline {7.3}Data Preprocessing Pipeline}{82}{section.7.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.3.1}MIDI Parsing and Cleaning}{82}{subsection.7.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.3.2}Quantization}{83}{subsection.7.3.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.3.3}Tokenization Schema}{83}{subsection.7.3.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.3.4}Dataset Statistics}{83}{subsection.7.3.4}%
+\select@language {magyar} \contentsline {section}{\numberline {7.4}Model Architectures}{84}{section.7.4}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.4.1}Markov Chain}{84}{subsection.7.4.1}%
+\select@language {magyar} \contentsline {subsubsection}{Implementation Details}{84}{section*.51}%
+\select@language {magyar} \contentsline {subsubsection}{Sampling Algorithm}{84}{section*.52}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.4.2}Variational Autoencoder}{84}{subsection.7.4.2}%
+\select@language {magyar} \contentsline {subsubsection}{Encoder}{84}{section*.53}%
+\select@language {magyar} \contentsline {subsubsection}{Decoder}{85}{section*.54}%
+\select@language {magyar} \contentsline {subsubsection}{Training Tricks}{85}{section*.55}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.4.3}Transformer}{85}{subsection.7.4.3}%
+\select@language {magyar} \contentsline {subsubsection}{Architecture}{85}{section*.56}%
+\select@language {magyar} \contentsline {subsubsection}{Relative Position Bias}{85}{section*.57}%
+\select@language {magyar} \contentsline {section}{\numberline {7.5}Training Methodologies}{86}{section.7.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.5.1}Common Infrastructure}{86}{subsection.7.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.5.2}Markov Trainer}{86}{subsection.7.5.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.5.3}VAE Trainer}{86}{subsection.7.5.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.5.4}Transformer Trainer}{86}{subsection.7.5.4}%
+\select@language {magyar} \contentsline {section}{\numberline {7.6}Inference Engine}{87}{section.7.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.6.1}End-to-End Script (\texttt {generate.py})}{87}{subsection.7.6.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.6.2}Performance}{87}{subsection.7.6.2}%
+\select@language {magyar} \contentsline {section}{\numberline {7.7}Evaluation and Experiments}{88}{section.7.7}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.7.1}Objective Metrics}{88}{subsection.7.7.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.7.2}Subjective Listening Study}{88}{subsection.7.7.2}%
+\select@language {magyar} \contentsline {section}{\numberline {7.8}Limitations and Future Work}{88}{section.7.8}%
+\select@language {magyar} \contentsline {subsection}{\numberline {7.8.1}Current Limitations}{88}{subsection.7.8.1}%
+\select@language {magyar} \contentsline {chapter}{\numberline {8}Matematikai Levezetések}{90}{chapter.8}%
+\select@language {magyar} \contentsline {section}{\numberline {8.1}Variációs Következtetés és az ELBO Levezetése}{90}{section.8.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.1.1}ELBO Levezetése}{90}{subsection.8.1.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.1.2}Interpretáció}{91}{subsection.8.1.2}%
+\select@language {magyar} \contentsline {section}{\numberline {8.2}ELBO Gradiens Becslése}{91}{section.8.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.2.1}Reparametrizációs Technika}{91}{subsection.8.2.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.2.2}Monte Carlo Becslés}{91}{subsection.8.2.2}%
+\select@language {magyar} \contentsline {section}{\numberline {8.3}Gradiens Analízis RNN-ekben}{92}{section.8.3}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.3.1}Visszaterjesztés Időben (BPTT)}{92}{subsection.8.3.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.3.2}Eltűnő és Robbanó Gradiensek}{92}{subsection.8.3.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.3.3}Megoldások}{92}{subsection.8.3.3}%
+\select@language {magyar} \contentsline {section}{\numberline {8.4}ELBO Variációs RNN-ekben}{93}{section.8.4}%
+\select@language {magyar} \contentsline {section}{\numberline {8.5}Beta-VAE Matematikai Keretrendszer}{93}{section.8.5}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.5.1}Beta Paraméter Analízis}{93}{subsection.8.5.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.5.2}Szétválasztási Elmélet}{94}{subsection.8.5.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.5.3}Konzisztencia Veszteség a Zenei Folytonosságért}{94}{subsection.8.5.3}%
+\select@language {magyar} \contentsline {section}{\numberline {8.6}Transformer Architektúra Matematikája}{94}{section.8.6}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.6.1}Pozicionális Kódolás Implementáció}{94}{subsection.8.6.1}%
+\select@language {magyar} \contentsline {subsubsection}{Matematikai Tulajdonságok}{95}{section*.60}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.6.2}Memória Mechanizmus Zenei Struktúrához}{95}{subsection.8.6.2}%
+\select@language {magyar} \contentsline {section}{\numberline {8.7}Magasabb Rendű Markov Láncok Elmélete}{95}{section.8.7}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.7.1}Matematikai Alapok}{95}{subsection.8.7.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.7.2}Állapottér Komplexitás}{96}{subsection.8.7.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.7.3}Maximum Likelihood Becslés}{96}{subsection.8.7.3}%
+\select@language {magyar} \contentsline {section}{\numberline {8.8}Rejtett Markov Modell Integráció}{96}{section.8.8}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.8.1}Elméleti Háttér}{96}{subsection.8.8.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.8.2}Zenei Jellemzők Kinyerése HMM-hez}{97}{subsection.8.8.2}%
+\select@language {magyar} \contentsline {section}{\numberline {8.9}GPU Gyorsítás Matematikája}{97}{section.8.9}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.9.1}Párhuzamos Mátrix Műveletek}{97}{subsection.8.9.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.9.2}Ritka Mátrix Műveletek}{97}{subsection.8.9.2}%
+\select@language {magyar} \contentsline {section}{\numberline {8.10}Vegyes Pontosságú Tanítás Elmélete}{98}{section.8.10}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.10.1}Automatikus Vegyes Pontosság Implementáció}{98}{subsection.8.10.1}%
+\select@language {magyar} \contentsline {section}{\numberline {8.11}Gradiens Akkumuláció Matematikája}{98}{section.8.11}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.11.1}Mini-batch Gradiens Becslés}{98}{subsection.8.11.1}%
+\select@language {magyar} \contentsline {section}{\numberline {8.12}Tanulási Ráta Ütemezés Elmélete}{98}{section.8.12}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.12.1}Koszinusz Enyhítés}{98}{subsection.8.12.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.12.2}Egy Ciklusú Tanulási Ráta}{99}{subsection.8.12.2}%
+\select@language {magyar} \contentsline {section}{\numberline {8.13}Zenei Jellemzők Kinyerésének Matematikája}{99}{section.8.13}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.13.1}Intervallum Analízis}{99}{subsection.8.13.1}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.13.2}Ritmikai Minták Kódolása}{99}{subsection.8.13.2}%
+\select@language {magyar} \contentsline {subsection}{\numberline {8.13.3}Akkordprogresszió Analízis}{100}{subsection.8.13.3}%

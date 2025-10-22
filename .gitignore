@@ -180,3 +180,4 @@ venv/
 output/
 trained_models/
 generated_files/
+docs/thesis/*.aux
