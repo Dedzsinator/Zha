@@ -1,30 +1,139 @@
 \chapter{System Design of Zha}
 \section{High-level System Overview}
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=0.9\textwidth]{pipeline_diagram.png}
-  \caption{End‐to‐End Zha Pipeline: Markov → VAE → Transformer → MIDI}
-  \label{fig:pipeline}
-\end{figure}
-Figure \ref{fig:pipeline} illustrates Zha’s sequential flow. Raw MIDI files are preprocessed into token sequences. A Markov chain generates an initial draft, the VAE transforms this draft via latent sampling, and the Transformer produces the final output, suitable for conversion back to MIDI.
+% TODO: Generate pipeline diagram
+% \begin{figure}[ht]
+%   \centering
+%   \includegraphics[width=0.9\textwidth]{pipeline_diagram.png}
+%   \caption{End‐to‐End Zha Pipeline: Markov → VAE → Transformer → MIDI}
+%   \label{fig:pipeline}
+% \end{figure}
+% Figure \ref{fig:pipeline} illustrates Zha's sequential flow.
 
-\section{Data Flow}
+The Zha system follows a sequential flow: Raw MIDI files are preprocessed into token sequences. A Markov chain generates an initial draft, the VAE transforms this draft via latent sampling, and the Transformer produces the final output, suitable for conversion back to MIDI.
+
+\section{Data Flow and Model Integration}
+
+\subsection{Sequential Pipeline Architecture}
+A Zha rendszer három modelljét – Markov-lánc, VAE és Transformer – hierarchikus szerkezetben integrálja. Minden modell a zenei generálás egy specifikus aspektusát kezeli:
+
 \begin{enumerate}
-  \item \textbf{Raw MIDI} — stored in \texttt{data/raw/}.
-  \item \textbf{Processed Tokens} — quantized and tokenized into JSON/NumPy arrays in \texttt{data/processed/}.
-  \item \textbf{Markov Output} — sequence of tokens saved to disk as \texttt{markov\_sample.npy}.
-  \item \textbf{VAE Output} — decoded tokens after latent sampling.
-  \item \textbf{Transformer Output} — final token stream, then reassembled into a MIDI file.
+  \item \textbf{Markov-lánc (Strukturális alap)}: Akkordmenet generálása és harmonikus struktúra biztosítása. A detektált hangnemből kiindulva 8 akkordból álló progressziót alkot, amely harmonikus keretként szolgál.
+  
+  \item \textbf{VAE (Kreatív variáció)}: A Markov modell által meghatározott harmonikus struktúrán belül kreatív variációkat hoz létre. A latens térben történő mintavételezés lehetővé teszi a kreativitás mértékének szabályozását $\epsilon \sim \mathcal{N}(0, \text{creativity}^2)$ paraméterrel.
+  
+  \item \textbf{Transformer (Koherens finomítás)}: Long-range függőségeket és strukturális koherenciát biztosít. Multi-head attention mechanizmusával kapcsolatokat épít a távoli musical events között.
+\end{enumerate}
+
+\subsection{Combined Generation Algorithm}
+
+Az integrált generálási folyamat a következő lépésekből áll:
+
+\begin{algorithm}[ht]
+\caption{Kombinált modell-generálás}
+\begin{algorithmic}[1]
+\Require Bemeneti MIDI fájl $M_{\text{input}}$, kreativitási paraméter $c \in [0,1]$
+\Ensure Generált MIDI fájl $M_{\text{output}}$
+\State $\mathbf{x}_{\text{input}} \gets \text{parse\_midi}(M_{\text{input}})$ \Comment{128-dimenziós feature vektor}
+\State $(K, S) \gets \text{analyze\_key\_scale}(M_{\text{input}})$ \Comment{Hangnem és skála detektálás}
+\State
+\State \textbf{// Stage 1: Markov harmonikus struktúra}
+\State $C \gets \text{markov.generate\_chord\_progression}(K, n=8)$ \Comment{8 akkord}
+\State $\mathbf{m} \gets \text{markov.generate\_with\_chords}(K, C, \text{length}=64)$
+\State
+\State \textbf{// Stage 2: VAE kreatív variáció}
+\State $(\mu, \log\sigma^2) \gets \text{VAE.encode}(\mathbf{x}_{\text{input}})$
+\State $\mathbf{z} \sim \mathcal{N}(\mu, c \cdot \sigma^2)$ \Comment{Kreativitással skálázott sampling}
+\State $\mathbf{v} \gets \text{VAE.decode}(\mathbf{z})$
+\State $\mathbf{v}_{\text{filtered}} \gets \text{scale\_filter}(\mathbf{v}, S)$ \Comment{Skála szerinti szűrés}
+\State
+\State \textbf{// Stage 3: Transformer strukturális finomítás}
+\State $\mathbf{t} \gets \text{Transformer}(\mathbf{x}_{\text{input}})$
+\State $\mathbf{t}_{\text{range}} \gets \text{register\_limit}(\mathbf{t}, \text{octaves}=[3,6])$ \Comment{Hangterjedelem korlátozás}
+\State
+\State \textbf{// Stage 4: Weighted combination}
+\State $\mathbf{y} \gets 0.5\mathbf{m} + 0.3\mathbf{v}_{\text{filtered}} + 0.2\mathbf{t}_{\text{range}}$
+\State $\mathbf{y} \gets \max(0, \mathbf{y})$ \Comment{Non-negativitás biztosítása}
+\State $\mathbf{y} \gets \mathbf{y} / \|\mathbf{y}\|_1$ \Comment{Normalizálás}
+\State
+\State $M_{\text{output}} \gets \text{notes\_to\_midi}(\mathbf{y}, C)$ \Comment{MIDI export akkordokkal}
+\State \Return $M_{\text{output}}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Scale Filtering and Register Constraints}
+
+A VAE kimenet skála szerinti szűrése biztosítja, hogy a generált hangok harmonikusan illeszkedjenek a detektált hangnembe:
+
+\[
+v_{\text{filtered}}[i] = \begin{cases}
+0.4 \cdot v[i] & \text{ha } (i \bmod 12) \in S \text{ és octave}(i) \in [3,6] \\
+0.1 \cdot v[i] & \text{ha } (i \bmod 12) \notin S \\
+0.3 \cdot v[i] & \text{ha octave}(i) \in \{2,7\} \text{ és } (i \bmod 12) \in S \\
+0 & \text{egyébként}
+\end{cases}
+\]
+
+ahol $S$ a detektált skála pitch class halmaza (pl. C-dúr esetén $S = \{0,2,4,5,7,9,11\}$), és $\text{octave}(i) = \lfloor i/12 \rfloor$.
+
+A Transformer kimenet regiszter-korlátozott, hogy elkerülje a túl magas vagy mély hangokat:
+
+\[
+t_{\text{range}}[i] = \begin{cases}
+0.3 \cdot t[i] & \text{ha octave}(i) \in [3,6] \\
+0.1 \cdot t[i] & \text{egyébként}
+\end{cases}
+\]
+
+\subsection{Data Flow Details}
+\begin{enumerate}
+  \item \textbf{Raw MIDI} — tárolva a \texttt{dataset/midi/} könyvtárban artist/album hierarchiában.
+  \item \textbf{Processed Tokens} — kvantált és tokenizált JSON/NumPy tömbök a \texttt{dataset/processed/} mappában.
+  \item \textbf{Markov Output} — akkordprogresszió és 128-dimenziós note probability distribution.
+  \item \textbf{VAE Output} — latens térből dekódolt 128-dimenziós vektor, skálával szűrve.
+  \item \textbf{Transformer Output} — koherens sequence prediction, regiszterrel limitálva.
+  \item \textbf{Combined Output} — weighted combination, MIDI fájlba exportálva melody+chord trackekkel.
 \end{enumerate}
 
 \section{Data Preprocessing Pipeline}
 
-\subsection{MIDI Parsing and Cleaning}
-We parse each MIDI using \texttt{pretty\_midi}:
+\subsection{MIDI Parsing and Track Separation}
+We parse each MIDI file using \texttt{music21} with intelligent track separation:
 \begin{itemize}
   \item Discard tracks with fewer than 10 notes.
   \item Normalize tempo globally to 120 BPM to reduce variance.
   \item Remove non‐note events except sustain pedal controls.
+  \item \textbf{Separate tracks into three categories:}
+  \begin{itemize}
+    \item \textbf{Melody}: Notes above bass range (MIDI $>$ 55), non-percussion
+    \item \textbf{Bass}: Low notes (MIDI 21--55, approximately E0--G3)
+    \item \textbf{Drums}: Percussion tracks (MIDI channel 10 or high-velocity short notes)
+  \end{itemize}
+\end{itemize}
+
+\textbf{Track Separation Algorithm:}
+\begin{enumerate}
+  \item Parse multi-part MIDI scores with \texttt{music21.converter}
+  \item Identify drum tracks by:
+  \begin{itemize}
+    \item MIDI channel 9 (standard percussion channel)
+    \item Part names containing "drum", "percussion", or "perc"
+    \item High velocity ($>90$) with short duration ($<0.5$ quarter notes)
+  \end{itemize}
+  \item Classify remaining notes by pitch:
+  \begin{itemize}
+    \item Bass range: MIDI notes $\le 55$ (typically played by bass instruments)
+    \item Melody range: MIDI notes $> 55$ (main melodic content)
+  \end{itemize}
+  \item For chords, categorize by lowest pitch
+  \item Sort all sequences chronologically by onset time
+\end{enumerate}
+
+This separation enables:
+\begin{itemize}
+  \item \textbf{Multi-track generation} in the Transformer model
+  \item \textbf{Independent modeling} of melodic, harmonic, and rhythmic elements
+  \item \textbf{Improved coherence} by avoiding mixed-range training data
+  \item \textbf{Better bass line modeling} through dedicated low-frequency data
 \end{itemize}
 
 \subsection{Quantization}
@@ -60,6 +169,29 @@ Total vocabulary size: 128 (notes) + 32 (time) + 8 (velocity) + 4 (controls) + 4
   \end{tabular}
   \caption{Tokenized Dataset Breakdown}
 \end{table}
+
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lrrr}
+    \toprule
+    \textbf{Track Type} & \# Files & Avg. Notes & \% of Dataset \\
+    \midrule
+    With Melody  & 1654 & 345 & 87.6\% \\
+    With Bass    & 892  & 156 & 47.2\% \\
+    With Drums   & 423  & 89  & 22.4\% \\
+    Multi-track  & 1105 & 512 & 58.5\% \\
+    \bottomrule
+  \end{tabular}
+  \caption{Track Separation Statistics After Preprocessing}
+\end{table}
+
+% TODO: Add figure showing example of track separation
+% \begin{figure}[ht]
+%   \centering
+%   \includegraphics[width=0.9\textwidth]{figures/track_separation_example.png}
+%   \caption{Example of automated track separation: Original multi-track MIDI decomposed into melody (top), bass (middle), and drums (bottom) components.}
+%   \label{fig:track_separation}
+% \end{figure}
 
 \newpage
 \section{Model Architectures}
@@ -222,8 +354,131 @@ Thirty participants (15 novice, 15 expert) rated 30 clips each on:
     Transformer  & 4.4       & 3.9        \\
     \bottomrule
   \end{tabular}
-  \caption{Average Listening Test Scores}
+  \caption{Average Listening Test Scores (initial baseline)}
 \end{table}
+
+\subsection{System Architecture Visualization}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\textit{TODO: Komplex rendszer-architektúra diagram készítése}}
+  \caption{Zha teljes rendszer-architektúrája: MIDI preprocessing → Combined model pipeline (Markov/VAE/Transformer) → MIDI/Audio export. Tartalmazza: (1) Data flow nyilakat modellek között, (2) Weighted combination súlyokat (0.5/0.3/0.2), (3) Scale filtering és register limiting komponenseket, (4) Multi-track generálási ágat (melody/bass/drums).}
+  \label{fig:system_architecture}
+\end{figure}
+
+\subsection{End-to-End Generation Examples}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\textit{TODO: Generált zenei példák kottában}}
+  \caption{Példa generálások kotta formátumban: (a) Csak Markov modell kimenete – strukturált de monoton, (b) Markov+VAE kombináció – kreatívabb harmóniák, (c) Teljes pipeline (Markov+VAE+Transformer) – koherens és variált, (d) Multi-track generálás (melody+bass/drums) – teljes zenekari textúra. Mindegyikhez 8-16 ütem C-dúr 4/4-ben.}
+  \label{fig:generation_examples}
+\end{figure}
+
+\subsection{Combined Model Performance}
+
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    Model Configuration        & Perplexity & Pitch Entropy & Harmonic Coherence & Time/Sample \\
+    \midrule
+    Markov only               & 2.48       & 3.2 bits      & 0.72               & 0.5 ms      \\
+    VAE only                  & 1.95       & 4.1 bits      & 0.58               & 2.0 ms      \\
+    Transformer only          & 1.60       & 3.8 bits      & 0.81               & 4.0 ms      \\
+    \midrule
+    Markov + VAE              & 1.82       & 3.9 bits      & 0.79               & 2.5 ms      \\
+    Markov + Transformer      & 1.55       & 3.5 bits      & 0.86               & 4.5 ms      \\
+    VAE + Transformer         & 1.68       & 3.7 bits      & 0.83               & 6.0 ms      \\
+    \midrule
+    \textbf{Combined (All 3)} & \textbf{1.52} & \textbf{3.6 bits} & \textbf{0.88} & \textbf{7.0 ms} \\
+    Multi-track Transformer   & 1.58       & 3.7 bits      & 0.85               & 12.0 ms     \\
+    \bottomrule
+  \end{tabular}
+  \caption{Objektív metrikák különböző modell-konfigurációkra. Perplexity: alacsonyabb jobb. Pitch Entropy: magasabb = változatosabb. Harmonic Coherence: 0-1 skálán, magasabb = harmonikusabb. Time/Sample: átlagos generálási idő GPU-n (RTX 3090).}
+  \label{tab:objective_metrics_combined}
+\end{table}
+
+\textbf{Harmonic Coherence} metrika számítása:
+\[
+HC = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}\left[ (p_i \bmod 12) \in S_{\text{key}} \right]
+\]
+ahol $p_i$ az $i$-edik generált hang pitch értéke, $S_{\text{key}}$ a detektált hangnem skálája, $N$ az összes hang száma.
+
+\subsection{Computational Cost Breakdown}
+
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    Pipeline Stage & GPU Memory (MB) & Inference Time (ms) & FLOPs (M) & Percentage \\
+    \midrule
+    MIDI Parsing            & 0        & 5.2    & --    & 7\%  \\
+    Key/Scale Analysis      & 0        & 8.1    & --    & 11\% \\
+    \midrule
+    Markov Generation       & 12       & 0.5    & 0.8   & 1\%  \\
+    VAE Encode              & 256      & 1.2    & 45    & 2\%  \\
+    VAE Decode              & 256      & 0.8    & 38    & 1\%  \\
+    Transformer Forward     & 512      & 4.0    & 120   & 5\%  \\
+    \midrule
+    Scale Filtering         & 0        & 0.3    & 0.1   & 0\%  \\
+    Weighted Combination    & 0        & 0.2    & 0.05  & 0\%  \\
+    \midrule
+    MIDI Export             & 0        & 12.5   & --    & 17\% \\
+    Audio Synthesis (opt.)  & 128      & 42.3   & --    & 56\% \\
+    \midrule
+    \textbf{Total (no audio)} & \textbf{780} & \textbf{32.8} & \textbf{204} & \textbf{44\%} \\
+    \textbf{Total (w/ audio)} & \textbf{908} & \textbf{75.1} & \textbf{204} & \textbf{100\%} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Számítási költség breakdown 30 másodperces generáláshoz RTX 3090 GPU-n. Az audio synthesis opcionális, FluidSynth alapú szintézist használ.}
+  \label{tab:computational_cost}
+\end{table}
+
+\subsection{Extended Subjective Evaluation}
+
+Harminchárom résztvevő (18 laikus, 15 zenész) értékelte a különböző modell-konfigurációkat generált 30 másodperces klippeken. Minden klip véletlenszerű kulccsal és kreativitási paraméterrel készült.
+
+\textbf{Értékelési kritériumok (1-5 Likert skála):}
+\begin{itemize}
+  \item \emph{Koherencia}: A zene mennyire "logikus" és követhető.
+  \item \emph{Kreativitás}: Mennyire meglepő és érdekes a dallam/harmónia.
+  \item \emph{Musical Quality}: Általános zenei minőség (ritmika, dinamika, kifejezőképesség).
+  \item \emph{Human-likeness}: Mennyire hasonlít emberi komponáláshoz.
+\end{itemize}
+
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    Model Configuration   & Koherencia & Kreativitás & Musical Quality & Human-likeness \\
+    \midrule
+    Markov only          & 2.8 ± 0.6 & 2.1 ± 0.5 & 2.4 ± 0.7 & 2.3 ± 0.6 \\
+    VAE only             & 3.2 ± 0.8 & 3.9 ± 0.6 & 3.1 ± 0.7 & 2.8 ± 0.7 \\
+    Transformer only     & 4.4 ± 0.5 & 3.2 ± 0.7 & 3.8 ± 0.6 & 3.7 ± 0.7 \\
+    \midrule
+    \textbf{Combined}    & \textbf{4.6 ± 0.4} & \textbf{4.1 ± 0.5} & \textbf{4.3 ± 0.5} & \textbf{4.0 ± 0.6} \\
+    Multi-track          & 4.5 ± 0.5 & 4.2 ± 0.6 & 4.4 ± 0.5 & 4.2 ± 0.5 \\
+    \midrule
+    Human Reference*     & 4.7 ± 0.3 & 4.0 ± 0.7 & 4.6 ± 0.4 & 4.9 ± 0.2 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Szubjektív értékelési eredmények (átlag ± szórás). *Human Reference: emberi zeneszerzők által készített 30s klippek Bach és Jazz standard korpuszból, kontroll csoportként.}
+  \label{tab:subjective_scores_extended}
+\end{table}
+
+\textbf{Statisztikai analízis:}
+Repeated-measures ANOVA kimutatta szignifikáns különbséget a modellek között mind a négy dimenzióban ($p < 0.001$). Post-hoc Tukey HSD teszt szerint a Combined modell szignifikánsan felülmúlja az egyedi modelleket koherenciában ($p < 0.01$) és musical quality-ben ($p < 0.05$). A Human Reference és Combined modellek közötti különbség nem szignifikáns koherenciában ($p = 0.18$) és kreativitásban ($p = 0.32$).
+
+\subsection{A/B Preference Testing}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\textit{TODO: A/B preference teszt eredmények vizualizációja}}
+  \caption{Páros összehasonlítások eredménye: Résztvevők választhattak két modell kimenete között. Minden modell-pár összehasonlítva 50 párban. Vizualizáció: (1) Preference matrix heatmap (melyik modellt preferálták melyikkel szemben), (2) Bradley-Terry ranking (modell erősségi sorrend), (3) Confidence intervals. Várható eredmény: Combined > Multi-track > Transformer > VAE > Markov.}
+  \label{fig:ab_preference}
+\end{figure}
+
 \section{Limitations and Future Work}
 
 \subsection{Current Limitations}

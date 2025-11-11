@@ -817,7 +817,7 @@
 % a következő szükséges, hogy a minted együttműködjön a magyar babel-lel
 % ld. https://github.com/gpoore/minted/issues/158
 \makeatletter
-\minted@checkstyle{}
+% \minted@checkstyle{} % Commented out - may not exist in newer minted versions
 \renewcommand{\fps@listing}{t}
 \SetupFloatingEnvironment{listing}{name=kódrészlet}
 \makeatother

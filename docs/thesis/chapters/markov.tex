@@ -228,6 +228,13 @@ A metrikai és dinamikai elemzés pozícióalapú beat strength kalkuláción al
 
 A harmonikus struktúra elemzése automatikus akkordosítás chordify műveletekkel kezdődik, amelyet funkcionális harmónia elemzés követ római szám jelölések használatával. A gyakori akkordmenetek identifikálása statisztikai alapon történik, míg a tonalitás-centikus interpretáció biztosítja a hangnem-specifikus harmonikus kontextus megértését. Ez a komplex harmonikus elemzés alapvető fontosságú a koherens akkordprogressziók generálásához.
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{figures/midi_preprocessing_pipeline.pdf}
+\caption{A MIDI előfeldolgozási pipeline és a Markov modell bemeneti formátuma. A bal felső ábra a teljes zenei szekvenciát mutatja, ahol minden hangjegy időbeli pozíciója és hangmagassága látható. A jobb felső ábra a dallamvonalat emeli ki, amely a főbb dallami elemeket tartalmazza. A bal alsó ábra a basszusvonalat ábrázolja, amely a harmonikus alapot biztosítja. A jobb alsó ábra pedig a dobokat és ütős hangszereket mutatja, amelyek ritmikai struktúrát adnak a zenének. Minden ábra esetében a pontok mérete az időtartamot, a színek pedig a hangerőt jelölik.}
+\label{fig:midi_preprocessing}
+\end{figure}
+
 \subsection{Generálási módszerek}
 
 A Zha implementáció sokrétű generálási stratégiákat kínál, amelyek különböző zenei igényekhez és komplexitási szintekhez igazodnak. Az alapvető szekvencia generálás Markov lánc alapú algoritmusra épül, amely felhasználó által definiált vagy véletlenszerű kezdő hangból indul. A skála szűrés biztosítja a tonalitás-konzisztens hangválasztást, míg a valószínűségi mintavételezés weighted random selection révén természetes zenei áramlatot hoz létre. A dinamikus szekvencia méret kontroll lehetővé teszi a rugalmas kompozíciós hosszúság kezelését.
