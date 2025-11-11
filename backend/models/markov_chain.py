@@ -2137,7 +2137,7 @@ class MarkovChain:
     # Enhanced generation methods with HMM and higher-order transitions
     
     def generate_with_hmm(self, length=64, key_context=None, use_hidden_states=True):
-        """Generate sequence using HMM and higher-order transitions"""
+        """Generate sequence using HMM and higher-order transitions with anti-repetition"""
         if not self.trained or not self.hmm_model:
             logger.warning("HMM not available, falling back to standard generation")
             return self.generate_expressive_sequence(key_context, length)
@@ -2164,9 +2164,22 @@ class MarkovChain:
                     hidden_states[i] if i < len(hidden_states) else 0,
                     key_context
                 )
+                
+                # Safety check: if we're getting too repetitive, force variety
+                if len(sequence) >= 4:
+                    recent_4 = sequence[-4:]
+                    if len(set(recent_4)) == 1:  # All the same note!
+                        logger.warning(f"Detected repetition at step {i}, forcing variety")
+                        scale_pitches = self._get_scale_pitches(key_context)
+                        if scale_pitches:
+                            # Pick a different note from scale
+                            different_notes = [n for n in scale_pitches if n != next_note and 48 <= n <= 84]
+                            if different_notes:
+                                next_note = random.choice(different_notes)
+                
                 sequence.append(next_note)
                 
-            # Generate timing and rhythm
+            # Generate timing and rhythm with variety
             durations = self._generate_hmm_durations(sequence, hidden_states[:len(sequence)])
             
             return {
@@ -2192,7 +2205,7 @@ class MarkovChain:
             return [i % self.n_hidden_states for i in range(length)]
     
     def _predict_next_note_hmm(self, context_notes, hidden_state, key_context):
-        """Predict next note using HMM state and higher-order context"""
+        """Predict next note using HMM state and higher-order context with repetition avoidance"""
         try:
             # Try highest order first
             for order in range(min(len(context_notes), 6), 0, -1):
@@ -2201,9 +2214,9 @@ class MarkovChain:
                     if context in self.higher_order_transitions[order]:
                         transitions = self.higher_order_transitions[order][context]
                         
-                        # Weight by hidden state preference
+                        # Weight by hidden state preference AND penalize repetition
                         weighted_transitions = self._weight_by_hidden_state(
-                            transitions, hidden_state, key_context
+                            transitions, hidden_state, key_context, context_notes
                         )
                         
                         if weighted_transitions:
@@ -2211,17 +2224,44 @@ class MarkovChain:
                             probs = list(weighted_transitions.values())
                             return random.choices(notes, weights=probs)[0]
             
-            # Fallback to standard transition
+            # Fallback to standard transition with repetition penalty
             if len(context_notes) > 0:
                 current_note = context_notes[-1]
                 if 0 <= current_note < 128:
-                    probs = self.transitions[current_note]
+                    probs = self.transitions[current_note].copy()
+                    
+                    # Penalize recent notes to avoid repetition
+                    recent_notes = context_notes[-min(8, len(context_notes)):]
+                    note_counts = Counter(recent_notes)
+                    for note, count in note_counts.items():
+                        if 0 <= note < 128:
+                            # Exponentially decay repeated notes
+                            probs[note] *= (0.3 ** count)
+                    
+                    # Boost melodic intervals (steps and small leaps)
+                    for note in range(128):
+                        interval = abs(note - current_note)
+                        if interval == 0:
+                            probs[note] *= 0.1  # Strongly discourage exact repetition
+                        elif 1 <= interval <= 2:
+                            probs[note] *= 1.5  # Prefer steps
+                        elif 3 <= interval <= 5:
+                            probs[note] *= 1.2  # Allow small leaps
+                        elif interval > 12:
+                            probs[note] *= 0.5  # Discourage large jumps
+                    
                     if probs.sum() > 0:
+                        probs = probs / probs.sum()
                         return np.random.choice(128, p=probs)
             
-            # Final fallback
+            # Final fallback - ensure variety
             scale_pitches = self._get_scale_pitches(key_context)
             if scale_pitches:
+                # Filter out recently used notes
+                recent_set = set(context_notes[-4:]) if len(context_notes) >= 4 else set()
+                available = [n for n in scale_pitches if 48 <= n <= 84 and n not in recent_set]
+                if available:
+                    return random.choice(available)
                 return random.choice([n for n in scale_pitches if 48 <= n <= 84])
             else:
                 return random.randint(48, 84)
@@ -2230,35 +2270,66 @@ class MarkovChain:
             logger.warning(f"HMM note prediction failed: {e}")
             return random.randint(48, 84)
     
-    def _weight_by_hidden_state(self, transitions, hidden_state, key_context):
-        """Weight note transitions by hidden state preferences"""
+    def _weight_by_hidden_state(self, transitions, hidden_state, key_context, context_notes=None):
+        """Weight note transitions by hidden state preferences with anti-repetition"""
         try:
             # Get scale pitches for the key
             scale_pitches = self._get_scale_pitches(key_context)
+            
+            # Track recent notes to avoid repetition
+            recent_notes = context_notes[-min(8, len(context_notes)):] if context_notes else []
+            note_counts = Counter(recent_notes)
+            last_note = recent_notes[-1] if recent_notes else None
             
             weighted = {}
             for note, prob in transitions.items():
                 weight = prob
                 
+                # ANTI-REPETITION: Strongly penalize recently used notes
+                repeat_count = note_counts.get(note, 0)
+                if repeat_count > 0:
+                    weight *= (0.2 ** repeat_count)  # Exponential decay
+                
+                # Extra penalty for exact same note repetition
+                if note == last_note:
+                    weight *= 0.05
+                
+                # Boost melodic movement (stepwise and small leaps)
+                if last_note is not None:
+                    interval = abs(note - last_note)
+                    if interval == 0:
+                        weight *= 0.1  # Discourage staying on same note
+                    elif interval <= 2:
+                        weight *= 1.8  # Strong preference for steps
+                    elif interval <= 5:
+                        weight *= 1.3  # Allow small leaps
+                    elif interval <= 7:
+                        weight *= 0.9  # Neutral on medium leaps
+                    else:
+                        weight *= 0.4  # Discourage large jumps
+                
                 # Boost notes in the current key
                 if scale_pitches and note in scale_pitches:
-                    weight *= 1.5
+                    weight *= 1.4
                 
-                # Hidden state preferences (simplified model)
+                # Hidden state preferences for musical expression
                 state_mod = hidden_state % 4
                 if state_mod == 0:  # Stable state - prefer consonant intervals
                     if note % 12 in [0, 4, 7]:  # Root, third, fifth
-                        weight *= 1.3
+                        weight *= 1.2
                 elif state_mod == 1:  # Ascending state
-                    weight *= (1.2 if note > max(transitions.keys()) * 0.5 else 0.8)
+                    if last_note and note > last_note:
+                        weight *= 1.3
+                    elif last_note and note < last_note:
+                        weight *= 0.7
                 elif state_mod == 2:  # Descending state
-                    weight *= (1.2 if note < max(transitions.keys()) * 0.5 else 0.8)
+                    if last_note and note < last_note:
+                        weight *= 1.3
+                    elif last_note and note > last_note:
+                        weight *= 0.7
                 else:  # Transitional state - prefer stepwise motion
-                    prev_notes = list(transitions.keys())
-                    if prev_notes:
-                        avg_note = sum(prev_notes) / len(prev_notes)
-                        if abs(note - avg_note) <= 2:  # Within step
-                            weight *= 1.4
+                    if last_note and abs(note - last_note) <= 2:
+                        weight *= 1.5
                 
                 if weight > 0:
                     weighted[note] = weight

@@ -43,11 +43,56 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
 
+
+class MultiTrackAttention(nn.Module):
+    """
+    Multi-track attention mechanism for coordinating melody, bass, and drums.
+    
+    This module allows different musical tracks to attend to each other,
+    ensuring harmonic and rhythmic coherence across the arrangement.
+    """
+    def __init__(self, embed_dim, num_heads=8, dropout=0.1):
+        super(MultiTrackAttention, self).__init__()
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim, 
+            num_heads, 
+            dropout=dropout,
+            batch_first=True
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, query_track, key_value_track):
+        """
+        Apply cross-attention between two tracks.
+        
+        Args:
+            query_track: The track attending to another [batch, seq_len, embed_dim]
+            key_value_track: The track being attended to [batch, seq_len, embed_dim]
+        
+        Returns:
+            Attended representation of query_track
+        """
+        # Cross-attention
+        attn_output, _ = self.cross_attention(
+            query_track, 
+            key_value_track, 
+            key_value_track
+        )
+        
+        # Residual connection and normalization
+        output = self.norm(query_track + self.dropout(attn_output))
+        return output
+
 class TransformerModel(nn.Module):
     def __init__(self, input_dim=128, embed_dim=512, num_heads=8,
-                num_layers=8, dim_feedforward=2048, dropout=0.1):
+                num_layers=8, dim_feedforward=2048, dropout=0.1, 
+                enable_multitrack=False):
         """
-        Enhanced Music Transformer model for sequence generation
+        Enhanced Music Transformer model for sequence generation with optional multi-track support.
+        
+        When enable_multitrack=True, the model generates coordinated melody, bass, and drum tracks
+        using specialized cross-attention mechanisms for harmonic and rhythmic coherence.
         
         Args:
             input_dim: Input dimension (typically MIDI notes = 128)
@@ -56,92 +101,187 @@ class TransformerModel(nn.Module):
             num_layers: Number of transformer layers
             dim_feedforward: Dimension of feedforward network
             dropout: Dropout rate
+            enable_multitrack: Enable multi-track generation (melody + bass + drums)
         """
         super(TransformerModel, self).__init__()
         
-        # Input projection
+        self.enable_multitrack = enable_multitrack
+        self.input_dim = input_dim
+        
+        # Input projection (shared across tracks for parameter efficiency)
         self.embedding = nn.Linear(input_dim, embed_dim)
         
         # Positional encoding
         self.pos_encoder = PositionalEncoding(embed_dim)
         
-        # Transformer encoder layers
+        # Main transformer encoder layers
         encoder_layers = nn.TransformerEncoderLayer(
             d_model=embed_dim, 
             nhead=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            batch_first=True  # Use batch-first convention [batch, seq, features]
+            batch_first=True
         )
         
-        # Full transformer encoder
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layers,
             num_layers=num_layers
         )
         
-        # Output projection
-        self.output_projection = nn.Linear(embed_dim, input_dim)
+        # Multi-track components (only if enabled)
+        if enable_multitrack:
+            # Separate encoders for bass and drums to capture their unique characteristics
+            self.bass_encoder = nn.TransformerEncoder(
+                nn.TransformerEncoderLayer(
+                    d_model=embed_dim, 
+                    nhead=num_heads,
+                    dim_feedforward=dim_feedforward,
+                    dropout=dropout,
+                    batch_first=True
+                ),
+                num_layers=max(2, num_layers // 2)  # Lighter model for bass
+            )
+            
+            self.drum_encoder = nn.TransformerEncoder(
+                nn.TransformerEncoderLayer(
+                    d_model=embed_dim, 
+                    nhead=num_heads,
+                    dim_feedforward=dim_feedforward,
+                    dropout=dropout,
+                    batch_first=True
+                ),
+                num_layers=max(2, num_layers // 2)  # Lighter model for drums
+            )
+            
+            # Cross-attention modules for inter-track coordination
+            self.bass_melody_attention = MultiTrackAttention(embed_dim, num_heads, dropout)
+            self.drum_melody_attention = MultiTrackAttention(embed_dim, num_heads, dropout)
+            self.drum_bass_attention = MultiTrackAttention(embed_dim, num_heads, dropout)
+            
+            # Track-specific output projections
+            self.melody_output = nn.Linear(embed_dim, input_dim)
+            self.bass_output = nn.Linear(embed_dim, input_dim)
+            
+            # Drums use a subset of MIDI notes (typically 35-81 for General MIDI drums)
+            # But we keep full input_dim and apply constraints during sampling
+            self.drum_output = nn.Linear(embed_dim, input_dim)
+            
+            # Learnable track type embeddings (added to positional encoding)
+            self.melody_type_emb = nn.Parameter(torch.randn(1, 1, embed_dim) * 0.02)
+            self.bass_type_emb = nn.Parameter(torch.randn(1, 1, embed_dim) * 0.02)
+            self.drum_type_emb = nn.Parameter(torch.randn(1, 1, embed_dim) * 0.02)
+        else:
+            # Single-track output projection
+            self.output_projection = nn.Linear(embed_dim, input_dim)
         
         # Initialize memory structures
         self.memory = None
         self.memory_length = 0
         self.section_memories = {}
         
+        # Multi-track memory (if enabled)
+        if enable_multitrack:
+            self.bass_memory = None
+            self.drum_memory = None
+        
         # Initialize mask for auto-regressive generation
         self._generate_square_subsequent_mask = self._generate_mask
 
-    def forward(self, x, use_memory=False):
+    def forward(self, x, use_memory=False, return_all_tracks=False):
         """
-        Forward pass through the transformer
+        Forward pass through the transformer.
+        
+        For multi-track models, generates melody, bass, and drums simultaneously
+        with cross-attention for harmonic and rhythmic coherence.
         
         Args:
             x: Input tensor [batch_size, input_dim] or [batch_size, seq_len, input_dim]
             use_memory: Whether to use stored memory for generation
+            return_all_tracks: If multi-track is enabled, return dict with all tracks
             
         Returns:
-            Output tensor [batch_size, input_dim] or [batch_size, seq_len, input_dim]
+            Single-track: Output tensor [batch_size, input_dim] or [batch_size, seq_len, input_dim]
+            Multi-track: Dictionary {'melody': ..., 'bass': ..., 'drums': ...}
         """
         # Handle input shape - add sequence dimension if needed
         if len(x.shape) == 2:
-            # If input is [batch_size, features], reshape to [batch_size, 1, features]
             x = x.unsqueeze(1)
         
-        # If using memory for generation and memory exists, concatenate with input
-        if use_memory and hasattr(self, 'memory') and self.memory is not None:
-            x = torch.cat([self.memory, x], dim=1)
-        
-        # Project input to embedding dimension
-        x = self.embedding(x)
-        
-        # Add positional encoding
-        x = self.pos_encoder(x)
-        
-        # Pass through transformer encoder
-        output = self.transformer_encoder(x)
-        
-        # Project output back to input dimension
-        output = self.output_projection(output)
-        
-        # Update memory if we're using it
-        if use_memory:
-            # Store the full sequence output in memory
-            if not hasattr(self, 'memory') or self.memory is None:
-                self.memory = output.detach()
-                self.memory_length = output.size(1)
-            else:
-                # Keep memory from growing too large by truncating if needed
-                max_memory_length = 1024  # Adjust as needed
+        if not self.enable_multitrack:
+            # Standard single-track processing
+            if use_memory and hasattr(self, 'memory') and self.memory is not None:
+                x = torch.cat([self.memory, x], dim=1)
+            
+            x_emb = self.embedding(x)
+            x_emb = self.pos_encoder(x_emb)
+            output = self.transformer_encoder(x_emb)
+            output = self.output_projection(output)
+            
+            if use_memory:
+                max_memory_length = 1024
                 self.memory = output.detach()
                 if self.memory.size(1) > max_memory_length:
                     self.memory = self.memory[:, -max_memory_length:, :]
                 self.memory_length = self.memory.size(1)
+            
+            if output.size(1) == 1:
+                output = output.squeeze(1)
+            
+            return output
         
-        # Remove sequence dimension if input didn't have it
-        if len(x.shape) == 3 and x.size(1) == 1 and output.size(1) == 1:
-            output = output.squeeze(1)
-        
-        return output
+        else:
+            # Multi-track processing with cross-attention
+            batch_size, seq_len, _ = x.shape
+            
+            # Embed input for all tracks (shared embedding)
+            x_emb = self.embedding(x)
+            x_pos = self.pos_encoder(x_emb)
+            
+            # Add track-specific type embeddings
+            melody_emb = x_pos + self.melody_type_emb.expand(batch_size, seq_len, -1)
+            bass_emb = x_pos + self.bass_type_emb.expand(batch_size, seq_len, -1)
+            drum_emb = x_pos + self.drum_type_emb.expand(batch_size, seq_len, -1)
+            
+            # Process melody track (main track)
+            melody_hidden = self.transformer_encoder(melody_emb)
+            
+            # Process bass track with attention to melody (for harmonic coherence)
+            bass_hidden = self.bass_encoder(bass_emb)
+            bass_hidden = self.bass_melody_attention(bass_hidden, melody_hidden)
+            
+            # Process drum track with attention to both melody and bass
+            drum_hidden = self.drum_encoder(drum_emb)
+            drum_hidden = self.drum_melody_attention(drum_hidden, melody_hidden)
+            drum_hidden = self.drum_bass_attention(drum_hidden, bass_hidden)
+            
+            # Project to output space
+            melody_out = self.melody_output(melody_hidden)
+            bass_out = self.bass_output(bass_hidden)
+            drum_out = self.drum_output(drum_hidden)
+            
+            # Update memory for all tracks if requested
+            if use_memory:
+                max_memory_length = 1024
+                self.memory = melody_hidden.detach()
+                self.bass_memory = bass_hidden.detach()
+                self.drum_memory = drum_hidden.detach()
+                
+                if self.memory.size(1) > max_memory_length:
+                    self.memory = self.memory[:, -max_memory_length:, :]
+                    self.bass_memory = self.bass_memory[:, -max_memory_length:, :]
+                    self.drum_memory = self.drum_memory[:, -max_memory_length:, :]
+            
+            if return_all_tracks:
+                return {
+                    'melody': melody_out,
+                    'bass': bass_out,
+                    'drums': drum_out
+                }
+            else:
+                # Return melody by default for backward compatibility
+                if melody_out.size(1) == 1:
+                    melody_out = melody_out.squeeze(1)
+                return melody_out
 
     def _generate_mask(self, sz):
         """Generate a square mask for the sequence"""
@@ -154,6 +294,11 @@ class TransformerModel(nn.Module):
         self.memory = None
         self.memory_length = 0
         self.section_memories = {}
+        
+        # Reset multi-track memory if enabled
+        if self.enable_multitrack:
+            self.bass_memory = None
+            self.drum_memory = None
     
     def generate(self, seed, steps=100, temperature=0.8, top_k=5, top_p=0.92):
         """
@@ -336,3 +481,188 @@ class TransformerModel(nn.Module):
         
         # Concatenate all outputs
         return torch.cat(outputs, dim=1)
+    
+    def generate_multitrack(self, seed, steps=100, temperature=0.8, 
+                           bass_temperature=0.7, drum_temperature=0.9):
+        """
+        Generate coordinated melody, bass, and drum tracks.
+        
+        This method implements the multi-track generation algorithm where:
+        1. Melody provides the harmonic foundation
+        2. Bass follows the melody's harmonic progression (root notes, fifths)
+        3. Drums provide rhythmic structure synchronized with bass
+        
+        Args:
+            seed: Initial seed tensor [batch_size, input_dim]
+            steps: Number of steps to generate
+            temperature: Sampling temperature for melody (higher = more random)
+            bass_temperature: Sampling temperature for bass (typically lower for stability)
+            drum_temperature: Sampling temperature for drums (typically higher for variety)
+            
+        Returns:
+            Dictionary containing:
+                - 'melody': Generated melody track [batch_size, steps, input_dim]
+                - 'bass': Generated bass track [batch_size, steps, input_dim]
+                - 'drums': Generated drum track [batch_size, steps, input_dim]
+                - 'combined': Combined multi-track representation
+        """
+        if not self.enable_multitrack:
+            raise ValueError("Multi-track generation requires enable_multitrack=True")
+        
+        self.eval()  # Set to evaluation mode
+        batch_size = seed.size(0)
+        device = seed.device
+        
+        # Reset memory
+        self.reset_memory()
+        
+        # Initialize with seed
+        x = seed.unsqueeze(1) if len(seed.shape) == 2 else seed
+        
+        # Storage for generated tracks
+        melody_sequence = []
+        bass_sequence = []
+        drum_sequence = []
+        
+        # MIDI drum note mappings (General MIDI standard)
+        DRUM_NOTES = {
+            'kick': 36,      # Bass Drum 1
+            'snare': 38,     # Acoustic Snare
+            'hihat_closed': 42,  # Closed Hi-Hat
+            'hihat_open': 46,    # Open Hi-Hat
+            'crash': 49,     # Crash Cymbal 1
+            'ride': 51,      # Ride Cymbal 1
+            'tom_low': 43,   # Low Tom
+            'tom_mid': 47,   # Mid Tom
+            'tom_high': 50   # High Tom
+        }
+        
+        # Generate step by step
+        for step in range(steps):
+            with torch.no_grad():
+                # Forward pass through multi-track model
+                outputs = self.forward(x, use_memory=(step > 0), return_all_tracks=True)
+                
+                melody_logits = outputs['melody'][:, -1, :] / temperature
+                bass_logits = outputs['bass'][:, -1, :] / bass_temperature
+                drum_logits = outputs['drums'][:, -1, :] / drum_temperature
+                
+                # === MELODY GENERATION ===
+                melody_probs = F.softmax(melody_logits, dim=-1)
+                melody_note = torch.multinomial(melody_probs, num_samples=1)
+                
+                # === BASS GENERATION (Harmonically Constrained) ===
+                # Bass follows melody's harmonic implications
+                # Typically plays root notes, octaves, or fifths
+                bass_probs = F.softmax(bass_logits, dim=-1)
+                melody_pitch_class = melody_note % 12  # Get pitch class (C=0, C#=1, etc.)
+                
+                # Define harmonic bass notes (root, fifth, octave below)
+                # Bass typically plays in lower register (MIDI 28-52, roughly E1-E3)
+                bass_root = 28 + melody_pitch_class.item()  # Root in bass register
+                bass_fifth = bass_root + 7  # Perfect fifth
+                bass_octave_up = bass_root + 12  # Octave
+                
+                # Create weighted distribution favoring harmonic bass notes
+                bass_probs_adjusted = bass_probs.clone()
+                
+                # Boost probability of harmonically relevant notes
+                harmonic_boost = 10.0  # Strong bias toward harmonic notes
+                if bass_root < self.input_dim:
+                    bass_probs_adjusted[0, bass_root] *= harmonic_boost
+                if bass_fifth < self.input_dim:
+                    bass_probs_adjusted[0, bass_fifth] *= harmonic_boost / 2
+                if bass_octave_up < self.input_dim:
+                    bass_probs_adjusted[0, bass_octave_up] *= harmonic_boost / 3
+                
+                # Suppress notes outside bass range (keep only MIDI 28-52)
+                bass_mask = torch.ones_like(bass_probs_adjusted)
+                bass_mask[:, :28] = 0.01  # Very low probability for notes too low
+                bass_mask[:, 53:] = 0.01  # Very low probability for notes too high
+                bass_probs_adjusted *= bass_mask
+                
+                # Renormalize and sample
+                bass_probs_adjusted = bass_probs_adjusted / bass_probs_adjusted.sum(dim=-1, keepdim=True)
+                bass_note = torch.multinomial(bass_probs_adjusted, num_samples=1)
+                
+                # === DRUM GENERATION (Rhythmically Constrained) ===
+                # Drums constrained to General MIDI drum notes (35-81)
+                # Apply rhythmic patterns based on step position
+                
+                # Create drum-specific probability distribution
+                drum_probs = F.softmax(drum_logits, dim=-1)
+                drum_probs_adjusted = torch.zeros_like(drum_probs)
+                
+                # Define rhythmic pattern (4/4 time, 16th note resolution)
+                beat_position = step % 16  # Position within a measure
+                
+                # Kick drum (strong beats: 0, 8) 
+                if beat_position % 8 == 0:
+                    drum_probs_adjusted[0, DRUM_NOTES['kick']] = 0.8
+                elif beat_position % 4 == 0:
+                    drum_probs_adjusted[0, DRUM_NOTES['kick']] = 0.3
+                
+                # Snare (backbeats: 4, 12)
+                if beat_position in [4, 12]:
+                    drum_probs_adjusted[0, DRUM_NOTES['snare']] = 0.7
+                
+                # Hi-hat (every 2 steps for constant rhythm)
+                if beat_position % 2 == 0:
+                    drum_probs_adjusted[0, DRUM_NOTES['hihat_closed']] = 0.6
+                else:
+                    drum_probs_adjusted[0, DRUM_NOTES['hihat_closed']] = 0.4
+                
+                # Occasional open hi-hat or crash for variation
+                if beat_position == 0 or (beat_position == 8 and step % 32 == 0):
+                    drum_probs_adjusted[0, DRUM_NOTES['crash']] = 0.2
+                
+                # Add some of the model's learned probabilities (weighted by drum_temperature)
+                model_drum_contribution = drum_temperature * 0.1
+                for note_idx in DRUM_NOTES.values():
+                    if note_idx < self.input_dim:
+                        drum_probs_adjusted[0, note_idx] += model_drum_contribution * drum_probs[0, note_idx]
+                
+                # Renormalize
+                drum_probs_sum = drum_probs_adjusted.sum(dim=-1, keepdim=True)
+                if drum_probs_sum > 0:
+                    drum_probs_adjusted = drum_probs_adjusted / drum_probs_sum
+                else:
+                    # Fallback: uniform over drum notes
+                    for note_idx in DRUM_NOTES.values():
+                        if note_idx < self.input_dim:
+                            drum_probs_adjusted[0, note_idx] = 1.0 / len(DRUM_NOTES)
+                
+                drum_note = torch.multinomial(drum_probs_adjusted, num_samples=1)
+                
+                # === CREATE ONE-HOT VECTORS ===
+                melody_one_hot = torch.zeros(batch_size, 1, self.input_dim, device=device)
+                bass_one_hot = torch.zeros(batch_size, 1, self.input_dim, device=device)
+                drum_one_hot = torch.zeros(batch_size, 1, self.input_dim, device=device)
+                
+                melody_one_hot[0, 0, melody_note[0]] = 1.0
+                bass_one_hot[0, 0, bass_note[0]] = 1.0
+                drum_one_hot[0, 0, drum_note[0]] = 1.0
+                
+                # Store generated notes
+                melody_sequence.append(melody_one_hot)
+                bass_sequence.append(bass_one_hot)
+                drum_sequence.append(drum_one_hot)
+                
+                # Update input for next iteration (use melody as primary guide)
+                x = melody_one_hot
+        
+        # Concatenate all generated steps
+        melody_output = torch.cat(melody_sequence, dim=1)
+        bass_output = torch.cat(bass_sequence, dim=1)
+        drum_output = torch.cat(drum_sequence, dim=1)
+        
+        # Create combined representation (sum of all tracks)
+        # Note: In practice, you may want to assign to different MIDI channels
+        combined = {
+            'melody': melody_output,
+            'bass': bass_output,
+            'drums': drum_output,
+            'combined': melody_output + bass_output + drum_output  # Simple mix
+        }
+        
+        return combined

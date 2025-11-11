@@ -194,16 +194,18 @@ logger.info(f"Audio files: {AUDIO_DIR}")
 models_available = {
     "transformer": False,
     "vae": False,
-    "markov": False
+    "markov": False,
+    "multitrack_transformer": False
 }
 
-# Initialize models
+# Initialize standard transformer model
 transformer_model = TransformerModel(
     input_dim=128,
     embed_dim=512,
     num_heads=8,
     num_layers=8,
-    dim_feedforward=2048
+    dim_feedforward=2048,
+    enable_multitrack=False
 )
 if os.path.exists(os.path.join(MODEL_DIR, "trained_transformer.pt")):
     try:
@@ -220,6 +222,35 @@ if os.path.exists(os.path.join(MODEL_DIR, "trained_transformer.pt")):
         print("Transformer model loaded successfully")
     except Exception as e:
         print(f"Failed to load transformer model: {e}")
+
+# Initialize multi-track transformer model
+multitrack_transformer = TransformerModel(
+    input_dim=128,
+    embed_dim=512,
+    num_heads=8,
+    num_layers=8,
+    dim_feedforward=2048,
+    enable_multitrack=True
+)
+if os.path.exists(os.path.join(MODEL_DIR, "trained_multitrack_transformer.pt")):
+    try:
+        state_dict = torch.load(os.path.join(MODEL_DIR, "trained_multitrack_transformer.pt"), map_location=device)
+        if any(key.startswith('_orig_mod.') for key in state_dict):
+            new_state_dict = {key[len('_orig_mod.'):]: value if key.startswith('_orig_mod.') else value 
+                             for key, value in state_dict.items()}
+            state_dict = new_state_dict
+        multitrack_transformer.load_state_dict(state_dict)
+        multitrack_transformer.to(device)
+        multitrack_transformer.eval()
+        models_available["multitrack_transformer"] = True
+        print("Multi-track transformer model loaded successfully")
+    except Exception as e:
+        print(f"Error loading multi-track transformer model: {e}")
+else:
+    # Even if not trained, we can use it (will generate from random initialization)
+    multitrack_transformer.to(device)
+    multitrack_transformer.eval()
+    print("Multi-track transformer initialized (not yet trained)")
 
 vae_model = VAEModel(input_dim=128, latent_dim=128)
 if os.path.exists(os.path.join(MODEL_DIR, "trained_vae.pt")):
@@ -238,9 +269,9 @@ if os.path.exists(os.path.join(MODEL_DIR, "trained_vae.pt")):
         print(f"Failed to load VAE model: {e}")
 
 markov_model = MarkovChain()
-if os.path.exists(os.path.join(MODEL_DIR, "trained_markov.npy")):
+if os.path.exists(os.path.join(MODEL_DIR, "markov.npy")):
     try:
-        markov_model.load(os.path.join(MODEL_DIR, "trained_markov.npy"))
+        markov_model.load(os.path.join(MODEL_DIR, "markov.npy"))
         models_available["markov"] = True
         print("Markov model loaded successfully")
     except Exception as e:
@@ -924,6 +955,154 @@ def convert_chord_name(chord_name):
     
     # Pass through if unknown
     return chord_name
+
+@app.post("/generate/multitrack")
+async def generate_multitrack_music(
+    midi_file: UploadFile = File(None),
+    steps: int = Form(100),
+    temperature: float = Form(0.8),
+    bass_temperature: float = Form(0.7),
+    drum_temperature: float = Form(0.9),
+    duration: float = Form(30.0),
+    generate_audio: bool = Form(True),
+    melody_instrument: str = Form("piano"),
+    bass_instrument: str = Form("electric_bass_finger"),
+):
+    """
+    Generate coordinated multi-track music with melody, bass, and drums.
+    
+    This endpoint implements professional multi-track arrangement where:
+    - Melody provides harmonic foundation
+    - Bass follows harmonic progression (roots, fifths)
+    - Drums provide rhythmic structure
+    
+    All tracks are generated with cross-attention for musical coherence.
+    """
+    try:
+        # Create seed from MIDI file or use random seed
+        if midi_file and midi_file.filename:
+            temp_midi_path = tempfile.mktemp(suffix=".mid")
+            with open(temp_midi_path, "wb") as temp_file:
+                temp_file.write(await midi_file.read())
+            
+            feature_vector = parse_midi(temp_midi_path)
+            if feature_vector is None:
+                raise HTTPException(status_code=400, detail="Could not parse MIDI file")
+            
+            seed = torch.tensor(feature_vector, dtype=torch.float32).unsqueeze(0).to(device)
+        else:
+            # Random seed (C major chord as starting point)
+            seed = torch.zeros(1, 128, device=device)
+            seed[0, 60] = 1.0  # C
+            seed[0, 64] = 1.0  # E
+            seed[0, 67] = 1.0  # G
+        
+        # Generate multi-track output
+        with torch.no_grad():
+            multitrack_transformer.reset_memory()
+            
+            outputs = multitrack_transformer.generate_multitrack(
+                seed=seed,
+                steps=steps,
+                temperature=temperature,
+                bass_temperature=bass_temperature,
+                drum_temperature=drum_temperature
+            )
+        
+        # Create MIDI file with separate tracks
+        unique_id = str(uuid.uuid4())[:8]
+        output_midi_path = tempfile.mktemp(suffix=".mid")
+        midi_file_obj = mido.MidiFile()
+        
+        # Helper function to convert one-hot to notes
+        def one_hot_to_notes(one_hot_seq, track_name="Track"):
+            notes = []
+            for step_idx in range(one_hot_seq.size(1)):
+                step_vector = one_hot_seq[0, step_idx].cpu().numpy()
+                active_notes = np.where(step_vector > 0.5)[0]
+                for note in active_notes:
+                    notes.append({
+                        'note': int(note),
+                        'time': step_idx * 0.25,  # 16th notes
+                        'duration': 0.25,
+                        'velocity': 80
+                    })
+            return notes
+        
+        # Track 1: Melody (Channel 0)
+        melody_track = mido.MidiTrack()
+        melody_track.name = "Melody"
+        midi_file_obj.tracks.append(melody_track)
+        melody_track.append(mido.Message('program_change', program=INSTRUMENT_MAP.get(melody_instrument, 0), time=0, channel=0))
+        
+        melody_notes = one_hot_to_notes(outputs['melody'], "Melody")
+        current_time = 0
+        for note_info in sorted(melody_notes, key=lambda x: x['time']):
+            delta_time = int((note_info['time'] - current_time) * 480)  # Convert to ticks
+            melody_track.append(mido.Message('note_on', note=note_info['note'], velocity=note_info['velocity'], time=delta_time, channel=0))
+            melody_track.append(mido.Message('note_off', note=note_info['note'], velocity=0, time=int(note_info['duration'] * 480), channel=0))
+            current_time = note_info['time']
+        
+        # Track 2: Bass (Channel 1)
+        bass_track = mido.MidiTrack()
+        bass_track.name = "Bass"
+        midi_file_obj.tracks.append(bass_track)
+        bass_track.append(mido.Message('program_change', program=INSTRUMENT_MAP.get(bass_instrument, 33), time=0, channel=1))
+        
+        bass_notes = one_hot_to_notes(outputs['bass'], "Bass")
+        current_time = 0
+        for note_info in sorted(bass_notes, key=lambda x: x['time']):
+            delta_time = int((note_info['time'] - current_time) * 480)
+            bass_track.append(mido.Message('note_on', note=note_info['note'], velocity=note_info['velocity'], time=delta_time, channel=1))
+            bass_track.append(mido.Message('note_off', note=note_info['note'], velocity=0, time=int(note_info['duration'] * 480), channel=1))
+            current_time = note_info['time']
+        
+        # Track 3: Drums (Channel 9 - MIDI drum channel)
+        drum_track = mido.MidiTrack()
+        drum_track.name = "Drums"
+        midi_file_obj.tracks.append(drum_track)
+        
+        drum_notes = one_hot_to_notes(outputs['drums'], "Drums")
+        current_time = 0
+        for note_info in sorted(drum_notes, key=lambda x: x['time']):
+            delta_time = int((note_info['time'] - current_time) * 480)
+            drum_track.append(mido.Message('note_on', note=note_info['note'], velocity=note_info['velocity'], time=delta_time, channel=9))
+            drum_track.append(mido.Message('note_off', note=note_info['note'], velocity=0, time=int(note_info['duration'] * 480), channel=9))
+            current_time = note_info['time']
+        
+        # Save MIDI file
+        midi_file_obj.save(output_midi_path)
+        midi_filename = f"multitrack_{unique_id}.mid"
+        midi_dest = os.path.join(MIDI_DIR, midi_filename)
+        os.makedirs(os.path.dirname(midi_dest), exist_ok=True)
+        shutil.copy2(output_midi_path, midi_dest)
+        
+        # Generate audio if requested
+        audio_url = None
+        if generate_audio:
+            audio_filename = f"multitrack_{unique_id}.wav"
+            output_audio_path = tempfile.mktemp(suffix=".wav")
+            
+            if generate_audio(output_midi_path, output_audio_path, instrument=melody_instrument):
+                audio_dest = os.path.join(AUDIO_DIR, audio_filename)
+                if os.path.exists(output_audio_path) and os.path.getsize(output_audio_path) > 0:
+                    shutil.copy2(output_audio_path, audio_dest)
+                    audio_url = f"/download/audio/{audio_filename}"
+        
+        return {
+            "midi_url": f"/download/midi/{midi_filename}",
+            "audio_url": audio_url,
+            "message": f"Successfully generated multi-track music: melody + bass + drums ({steps} steps)",
+            "tracks": {
+                "melody": len(melody_notes),
+                "bass": len(bass_notes),
+                "drums": len(drum_notes)
+            }
+        }
+    
+    except Exception as e:
+        logger.error(f"Multi-track generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
 
 @app.get("/download/midi/{filename}")
 async def download_midi(filename: str):

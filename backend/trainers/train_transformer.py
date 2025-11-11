@@ -18,7 +18,9 @@ def train_transformer_model(
     num_heads=8,
     num_layers=8,
     dim_feedforward=2048,
-    dropout=0.1
+    dropout=0.1,
+    use_preprocessed=True,
+    track_type='full'
 ):
     """
     Train a transformer model for music generation with enhanced performance
@@ -34,6 +36,8 @@ def train_transformer_model(
         num_layers: Number of transformer layers
         dim_feedforward: Dimension of feedforward network
         dropout: Dropout rate for regularization
+        use_preprocessed: Whether to use preprocessed data instead of processing MIDI files
+        track_type: Type of track to train on ('full', 'melody', 'bass', 'drums')
 
     Returns:
         Trained model and training metrics
@@ -55,6 +59,7 @@ def train_transformer_model(
         dropout=dropout
     ).to(device)
     print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
+    print(f"💾 Using preprocessed data: {use_preprocessed}, track: {track_type}")
 
     # Optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -75,12 +80,13 @@ def train_transformer_model(
 
     # Data loading with memory-efficient caching
     print("📂 Setting up data loader...")
-    dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=500)
+    dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=500, 
+                         use_preprocessed=use_preprocessed, track_type=track_type)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=4 if not use_preprocessed else 0,
         pin_memory=True
     )
 
@@ -142,5 +148,7 @@ if __name__ == "__main__":
         num_heads=8,
         num_layers=8,
         dim_feedforward=2048,
-        dropout=0.1
+        dropout=0.1,
+        use_preprocessed=True,   # Use preprocessed data for faster training
+        track_type='full'        # Track type: 'full', 'melody', 'bass', 'drums'
     )

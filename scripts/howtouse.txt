@@ -1,6 +1,8 @@
 # Start the backend server (in one terminal)
 python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000
 
+python scripts/generate_all_diagrams.py
+
 # In another terminal, test with curl
 # First, check if the API is healthy
 curl http://localhost:8000/health
