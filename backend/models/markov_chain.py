@@ -646,7 +646,7 @@ class MarkovChain:
                 
         return features
         
-    def train(self, midi_sequences, progress_callback=None):
+    def train(self, midi_sequences, chord_sequences=None, progress_callback=None):
         """Enhanced training with HMM initialization and GPU acceleration - memory efficient"""
         logger.info("Starting enhanced model training with HMM and GPU acceleration...")
         

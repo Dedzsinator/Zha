@@ -126,6 +126,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
 
         # Extract sequences for the specified track type
         note_sequences = []
+        chord_sequences = []
         track_count = 0
 
         for item in sequences_iter:
@@ -138,17 +139,21 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
                 elif track_type == 'full' and 'full' in seq_data and seq_data['full']:
                     note_sequences.append(seq_data['full'])
                     track_count += 1
+                
+                # Extract chord sequences
+                if 'chords' in seq_data and seq_data['chords']:
+                    # Convert chords to sequence of chord representations
+                    chord_seq = []
+                    for chord_info in seq_data['chords']:
+                        # Represent chord as tuple of pitches
+                        chord_seq.append(tuple(sorted(chord_info['pitches'])))
+                    if chord_seq:
+                        chord_sequences.append(chord_seq)
             else:
-                # Older format: item may directly contain 'sequence' or be a plain sequence list
-                if isinstance(item, dict) and 'sequence' in item:
-                    if track_type == 'full' and item['sequence']:
-                        note_sequences.append(item['sequence'])
-                        track_count += 1
-                elif isinstance(item, (list, tuple)):
-                    # Assume it's already a plain sequence list
-                    if track_type == 'full' and item:
-                        note_sequences.append(item)
-                        track_count += 1
+                # Older format handling
+                pass
+
+        logger.info(f"✅ Successfully loaded {len(note_sequences)} {track_type} sequences and {len(chord_sequences)} chord sequences from {track_count} files.")
 
         logger.info(f"✅ Successfully loaded {len(note_sequences)} {track_type} sequences from {track_count} files.")
 
@@ -191,7 +196,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         current = int(percent * 100)
         progress_bar.update(current - progress_bar.n)
     
-    training_success = model.train(note_sequences, progress_callback=update_progress)
+    training_success = model.train(note_sequences, chord_sequences=chord_sequences, progress_callback=update_progress)
     progress_bar.close()
     
     # --- 3. Clean Up Memory ---

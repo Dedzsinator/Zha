@@ -1,12 +1,73 @@
 import torch, os, warnings
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler
+import torch.nn.functional as F
 from backend.models.transformer import TransformerModel
 from backend.trainers.utils import train_epoch, LRSchedulerWithBatchOption, EarlyStopping
 from backend.trainers.train_vae import MIDIDataset  # Reuse the dataset class
 
 warnings.filterwarnings("ignore")
 torch.backends.cudnn.benchmark = True
+
+class TransformerMIDIDataset(MIDIDataset):
+    """Extended dataset for Transformer training with chord/tempo conditioning"""
+    
+    def __init__(self, midi_dir=None, max_files=None, cache_size=500, use_preprocessed=True, track_type='full'):
+        super().__init__(midi_dir, max_files, cache_size, use_preprocessed, track_type)
+        
+        if use_preprocessed:
+            # Load additional conditioning data
+            processed_data_path = "dataset/processed/markov_sequences.pt"
+            if os.path.exists(processed_data_path):
+                try:
+                    data = torch.load(processed_data_path)
+                    sequences = data['sequences']
+                    
+                    self.chord_sequences = []
+                    self.tempo_sequences = []
+                    
+                    for item in sequences:
+                        seq_data = item['sequences']
+                        if track_type in seq_data and len(seq_data[track_type]) > 0:
+                            # Load chord and tempo data if available
+                            chords = seq_data.get('chords', [])
+                            tempo_changes = seq_data.get('tempo_changes', [])
+                            
+                            self.chord_sequences.append(chords)
+                            self.tempo_sequences.append(tempo_changes)
+                        else:
+                            # Default empty conditioning
+                            self.chord_sequences.append([])
+                            self.tempo_sequences.append([])
+                    
+                    print(f"✅ Loaded conditioning data for {len(self.chord_sequences)} sequences")
+                    
+                except Exception as e:
+                    print(f"⚠️ Error loading conditioning data: {e}")
+                    self.chord_sequences = [[]] * len(self.processed_sequences)
+                    self.tempo_sequences = [[]] * len(self.processed_sequences)
+    
+    def __getitem__(self, idx):
+        if self.use_preprocessed:
+            # Get the base sequence
+            sequence = self.processed_sequences[idx]
+            
+            # Get conditioning data
+            chords = self.chord_sequences[idx] if hasattr(self, 'chord_sequences') else []
+            tempo_changes = self.tempo_sequences[idx] if hasattr(self, 'tempo_sequences') else []
+            
+            return {
+                'sequence': sequence,
+                'chords': chords,
+                'tempo_changes': tempo_changes
+            }
+        else:
+            # Fallback to MIDI processing (simplified)
+            return {
+                'sequence': torch.zeros(128),  # Placeholder
+                'chords': [],
+                'tempo_changes': []
+            }
 
 def train_transformer_model(
     epochs=100,
@@ -56,7 +117,8 @@ def train_transformer_model(
         num_heads=num_heads,
         num_layers=num_layers,
         dim_feedforward=dim_feedforward,
-        dropout=dropout
+        dropout=dropout,
+        enable_conditioning=True  # Enable chord/tempo conditioning
     ).to(device)
     print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
     print(f"💾 Using preprocessed data: {use_preprocessed}, track: {track_type}")
@@ -80,8 +142,8 @@ def train_transformer_model(
 
     # Data loading with memory-efficient caching
     print("📂 Setting up data loader...")
-    dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=500, 
-                         use_preprocessed=use_preprocessed, track_type=track_type)
+    dataset = TransformerMIDIDataset(midi_dir="dataset/midi/", cache_size=500, 
+                                   use_preprocessed=use_preprocessed, track_type=track_type)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -97,26 +159,93 @@ def train_transformer_model(
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
     for epoch in range(epochs):
-        # Train one epoch using the common training utility
-        metrics = train_epoch(
-            model=model,
-            dataloader=dataloader,
-            optimizer=optimizer,
-            scheduler=scheduler_wrapper,
-            device=device,
-            scaler=scaler,
-            accumulation_steps=grad_accum_steps,
-            epoch_idx=epoch
-        )
-
-        # Store metrics
+        # Custom training loop for Transformer with conditioning
+        model.train()
+        epoch_loss = 0.0
+        num_batches = 0
+        
+        for batch_idx, batch in enumerate(dataloader):
+            sequences = batch['sequence'].to(device)
+            chords = batch['chords']  # List of chord lists
+            tempo_changes = batch['tempo_changes']  # List of tempo lists
+            
+            # Prepare conditioning tensors for this batch
+            batch_size = sequences.size(0)
+            seq_len = sequences.size(1) if len(sequences.shape) > 1 else 1
+            
+            chord_conditioning = None
+            tempo_conditioning = None
+            
+            if model.enable_conditioning:
+                # Convert batch conditioning data to tensors
+                max_chords = max(len(c) for c in chords) if chords else 0
+                max_tempos = max(len(t) for t in tempo_changes) if tempo_changes else 0
+                
+                if max_chords > 0:
+                    chord_conditioning = torch.zeros(batch_size, seq_len, 31, device=device)
+                    for b, chord_list in enumerate(chords):
+                        for i, chord in enumerate(chord_list[:seq_len]):
+                            # Fill chord conditioning (same logic as in model)
+                            if 'root' in chord and chord['root'] is not None:
+                                root_idx = chord['root'] % 12
+                                chord_conditioning[b, i, root_idx] = 1.0
+                            # Add other chord features...
+                
+                if max_tempos > 0:
+                    tempo_conditioning = torch.zeros(batch_size, seq_len, 1, device=device)
+                    for b, tempo_list in enumerate(tempo_changes):
+                        for i, tempo_change in enumerate(tempo_list[:seq_len]):
+                            if 'tempo' in tempo_change:
+                                tempo_val = tempo_change['tempo']
+                                normalized_tempo = (tempo_val - 60) / (200 - 60)
+                                normalized_tempo = max(0.0, min(1.0, normalized_tempo))
+                                tempo_conditioning[b, i, 0] = normalized_tempo
+            
+            # Forward pass
+            optimizer.zero_grad()
+            with torch.cuda.amp.autocast(enabled=scaler is not None):
+                output = model(sequences, chord_conditioning=chord_conditioning, 
+                             tempo_conditioning=tempo_conditioning)
+                
+                # Compute loss (cross-entropy for next token prediction)
+                if len(sequences.shape) == 2:
+                    # Single step prediction
+                    loss = F.cross_entropy(output, sequences.argmax(dim=-1))
+                else:
+                    # Sequence prediction - predict next tokens
+                    target = sequences[:, 1:].contiguous()
+                    output = output[:, :-1].contiguous()
+                    loss = F.cross_entropy(output.view(-1, output.size(-1)), 
+                                         target.view(-1))
+            
+            # Backward pass
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                if (batch_idx + 1) % grad_accum_steps == 0:
+                    scaler.step(optimizer)
+                    scaler.update()
+                    scheduler_wrapper.step()
+            else:
+                loss.backward()
+                if (batch_idx + 1) % grad_accum_steps == 0:
+                    optimizer.step()
+                    scheduler_wrapper.step()
+            
+            epoch_loss += loss.item()
+            num_batches += 1
+            
+            if batch_idx % 10 == 0:
+                print(f"Epoch {epoch+1}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+        
+        avg_loss = epoch_loss / num_batches
+        metrics = {'loss': avg_loss}
         all_metrics.append(metrics)
 
         # Report metrics
-        print(f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
+        print(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
 
         # Early stopping check
-        if early_stopping(metrics['loss']):
+        if early_stopping(avg_loss):
             print(f"⚠️ Early stopping triggered after {epoch+1} epochs")
             break
 

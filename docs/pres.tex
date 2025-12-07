@@ -177,7 +177,7 @@ A Zha projekt Markov-modulja a következőképpen működik:
 
 \subsection{Architektúra áttekintése}
 
-A Zha projekt \texttt{MarkovChain} osztálya egy fejlett architektúrát valósít meg, amely a hagyományos Markov-lánc modellezést jelentősen kibővíti modern mélytanulási és optimalizációs technikákkal. A rendszer központi innovációja abban rejlik, hogy a klasszikus állapot-átmenet modellezést magasabb rendű kontextusokkal gazdagítja, miközben rejtett állapotok modellezését is integrálja a komplex zenei struktúrák felismerése érdekében.
+A Zha projekt \texttt{MarkovChain} osztálya egy fejlett architektúrát valósít meg, amely a hagyományos Markov-lánc modellezést jelentősen kibővíti modern mélytanulási és optimalizációs technikákkal. A rendszer fő újítása abban rejlik, hogy a klasszikus állapot-átmenet modellezést magasabb rendű kontextusokkal gazdagítja, miközben rejtett állapotok modellezését is integrálja a komplex zenei struktúrák felismerése érdekében.
 
 Az implementáció több architekturális rétegben szerveződik, amelyek egymásra épülve biztosítják a zenei generálás különböző aspektusait. Az alapvető réteg a hagyományos note-to-note átmeneteket képviseli egy 128×128-as valószínűségi mátrixban, amely minden MIDI hangjegy közötti átmenetet modellezi. Erre épül az intervallum-alapú reprezentáció, amely transzpozíció-invariáns dallamminták felismerését teszi lehetővé azáltal, hogy a hangmagasság-különbségeket modellezi az abszolút hangmagasságok helyett.
 
@@ -191,7 +191,7 @@ A Zha implementáció HMM-et használ a rejtett zenei struktúrák modellezésé
 
 Az inicializálási folyamat többlépcsős workflow-t követ, amely a zenei szekvenciákból statisztikai jellemzők kinyerésével kezdődik. A rendszer hét dimenziós feature vektorokat konstruál minden szekvenciához, amelyek magukban foglalják a hangmagasság statisztikákat (átlag, szórás, tartomány), intervallum jellemzőket, dallamkontúr arányokat és időtartam információkat. Ezek a jellemzők normalizálásra kerülnek a numerikus stabilitás biztosítása érdekében, miközben outlier szűrés biztosítja a robusztus klaszterezést.
 
-A K-means algoritmus használata a rejtett állapotok inicializálásához különösen ötletes megoldás, mivel lehetővé teszi a zenei szekvenciák természetes csoportosítását hasonló karakterisztikák alapján. A Gaussian HMM illesztése ezután finomhangolja ezeket az állapotokat, létrehozva egy olyan modellt, amely képes megragadni a zenei struktúra rejtett dimenzióit. A validációs lépés biztosítja a modell konvergenciáját és stabilitását, ami kritikus fontosságú a megbízható zenei generáláshoz.
+A K-means algoritmus használata a rejtett állapotok inicializálásához különösen ötletes megoldás, mivel lehetővé teszi a zenei szekvenciák természetes csoportosítását hasonló karakterisztikák alapján. A Gaussian HMM illesztése ezután finomhangolja ezeket az állapotokat, létrehozva egy olyan modellt, amely képes megragadni a zenei struktúra rejtett dimenzióit. A validációs lépés biztosítja a modell konvergenciáját és stabilitását, ami kulcsfontosságú a megbízható zenei generáláshoz.
 
 A HMM betanításához használt jellemző vektor konstrukció tudományosan megalapozott megközelítést követ:
 
@@ -208,7 +208,7 @@ Ez a megközelítés biztosítja, hogy a rejtett állapotok valódi zenei jelent
 
 A GPU gyorsítás implementációja két kritikus területen valósul meg, optimalizálva a számítási teljesítményt anélkül, hogy feláldozná a kompatibilitást vagy a megbízhatóságot. A mátrix műveletek optimalizálása tartalmazza a row-wise valószínűség normalizálást, automatikus GPU/CPU memóriaátadást, memory-efficient sparse reprezentációkat és batch processing képességeket többszörös szekvencia kezeléshez.
 
-A rendszer intelligens fallback stratégiája biztosítja, hogy GPU hibák esetén automatikusan CPU számításra váltson, miközben identikus eredményeket garantál mindkét platformon. Ez a robusztus hibakezelés kritikus fontosságú production környezetben, ahol a megbízhatóság elsőbbséget élvez a nyers teljesítménnyel szemben. A numerikus stabilitás biztosítása zero division védelem révén, valamint a konzisztens normalizálási eredmények seamless performance degradation mellett teszik a rendszert alkalmas valós felhasználásra.
+A rendszer intelligens fallback stratégiája biztosítja, hogy GPU hibák esetén automatikusan CPU számításra váltson, miközben identikus eredményeket garantál mindkét platformon. Ez a robusztus hibakezelés kulcsfontosságú production környezetben, ahol a megbízhatóság elsőbbséget élvez a nyers teljesítménnyel szemben. A numerikus stabilitás biztosítása zero division védelem révén, valamint a konzisztens normalizálási eredmények seamless performance degradation mellett teszik a rendszert alkalmas valós felhasználásra.
 
 A CPU fallback mechanizmus automatikusan aktiválódik GPU hibaesemények során, biztosítva a folyamatos működést. A numerikus stabilitás fenntartása különösen fontos a valószínűségi számítások során, ahol kis eltérések jelentős hatással lehetnek a generált zenei tartalom minőségére. A rendszer konzisztens normalizálási eredményeket biztosít CPU és GPU között, ami garantálja a reprodukálható eredményeket platformtól függetlenül.
 

@@ -11,17 +11,17 @@ interface PianoRollProps {
     selectedChannel?: number;
     editable?: boolean;
     onNoteAdd?: (note: number, time: number, duration: number, channel?: number) => void;
-    onNoteRemove?: (note: number, time: number) => void;
+    onChannelSelect?: (channel: number) => void;
     showChannels?: boolean;
     height?: number;
 }
 
 const NOTE_HEIGHT = 12;
 const NOTES_IN_OCTAVE = 12;
-const OCTAVES = 10; // Extended range (MIDI 0-127)
-const MIN_NOTE = 0;
-const MAX_NOTE = 127;
-const TOTAL_NOTES = MAX_NOTE - MIN_NOTE + 1;
+// const OCTAVES = 10; // Extended range (MIDI 0-127) - unused
+// const MIN_NOTE = 0; // unused
+// const MAX_NOTE = 127; // unused
+// const TOTAL_NOTES = MAX_NOTE - MIN_NOTE + 1; // unused
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BLACK_KEY_INDICES = [1, 3, 6, 8, 10];
 const PIANO_KEYS_WIDTH = 60;
@@ -54,7 +54,7 @@ export default function PianoRoll({
     selectedChannel = 0,
     editable = false,
     onNoteAdd,
-    onNoteRemove,
+    onChannelSelect,
     showChannels = true,
     height = 500
 }: PianoRollProps) {
@@ -201,8 +201,7 @@ export default function PianoRoll({
 
         // Draw playhead
         drawPlayhead(ctx, canvas.height);
-    }, [midiData, currentTime, effectivePixelsPerSecond, effectiveNoteHeight, visibleNotes,
-        activeNotes, isDrawing, drawStartPos, mousePos, hoverNote, hoverTime, viewportRange]);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Render on every frame when playing, or when dependencies change
     useEffect(() => {
@@ -530,16 +529,37 @@ export default function PianoRoll({
             {/* Channel legend */}
             {showChannels && midiData && (
                 <div className="flex flex-wrap gap-2 p-2 bg-gray-800 border-t border-gray-700 text-xs">
-                    <span className="text-gray-400">Channels:</span>
-                    {Array.from(new Set(midiData.tracks.map(t => t.channel ?? 0))).sort().map(channel => (
-                        <div key={channel} className="flex items-center gap-1">
-                            <div
-                                className="w-3 h-3 rounded border border-gray-600"
-                                style={{ backgroundColor: CHANNEL_COLORS[channel % CHANNEL_COLORS.length].main }}
-                            />
-                            <span className="text-gray-300">Ch{channel + 1}</span>
-                        </div>
-                    ))}
+                    <span className="text-gray-400">Tracks:</span>
+                    {midiData.tracks.map((track, index) => {
+                        const channel = track.channel ?? 0;
+                        const trackName = track.name || `Channel ${channel + 1}`;
+                        const isSelected = selectedChannel === 0 || channel === selectedChannel - 1;
+                        return (
+                            <button
+                                key={index}
+                                onClick={() => onChannelSelect?.(channel + 1)}
+                                className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${isSelected
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    }`}
+                            >
+                                <div
+                                    className="w-3 h-3 rounded border border-gray-600"
+                                    style={{ backgroundColor: CHANNEL_COLORS[channel % CHANNEL_COLORS.length].main }}
+                                />
+                                <span>{trackName}</span>
+                            </button>
+                        );
+                    })}
+                    <button
+                        onClick={() => onChannelSelect?.(0)}
+                        className={`px-2 py-1 rounded text-xs transition-colors ${selectedChannel === 0
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                    >
+                        All Tracks
+                    </button>
                 </div>
             )}
         </div>

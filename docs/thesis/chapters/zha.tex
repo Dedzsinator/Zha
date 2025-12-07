@@ -1,19 +1,19 @@
-\chapter{System Design of Zha}
-\section{High-level System Overview}
+\chapter{A Zha rendszer tervezése}
+\section{A rendszer magas szintű áttekintése}
 % TODO: Generate pipeline diagram
 % \begin{figure}[ht]
 %   \centering
 %   \includegraphics[width=0.9\textwidth]{pipeline_diagram.png}
-%   \caption{End‐to‐End Zha Pipeline: Markov → VAE → Transformer → MIDI}
+%   \caption{Végponttól végpontig tartó Zha folyamat: Markov → VAE → Transformer → MIDI}
 %   \label{fig:pipeline}
-% \end{figure}
-% Figure \ref{fig:pipeline} illustrates Zha's sequential flow.
+%   \end{figure}
+% A \ref{fig:pipeline} ábra szemlélteti a Zha szekvenciális folyamatát.
 
-The Zha system follows a sequential flow: Raw MIDI files are preprocessed into token sequences. A Markov chain generates an initial draft, the VAE transforms this draft via latent sampling, and the Transformer produces the final output, suitable for conversion back to MIDI.
+A Zha rendszer szekvenciális folyamatot követ: A nyers MIDI fájlok token szekvenciákká kerülnek előfeldolgozásra. Egy Markov-lánc készít egy kezdeti vázlatot, a VAE latens mintavételezéssel alakítja át ezt a vázlatot, és a Transformer állítja elő a végleges kimenetet, amely alkalmas MIDI formátumba való visszaalakításra.
 
-\section{Data Flow and Model Integration}
+\section{Adatfolyam és modell integráció}
 
-\subsection{Sequential Pipeline Architecture}
+\subsection{Szekvenciális pipeline architektúra}
 A Zha rendszer három modelljét – Markov-lánc, VAE és Transformer – hierarchikus szerkezetben integrálja. Minden modell a zenei generálás egy specifikus aspektusát kezeli:
 
 \begin{enumerate}
@@ -94,64 +94,64 @@ t_{\text{range}}[i] = \begin{cases}
   \item \textbf{Combined Output} — weighted combination, MIDI fájlba exportálva melody+chord trackekkel.
 \end{enumerate}
 
-\section{Data Preprocessing Pipeline}
+\section{Adat-előfeldolgozási folyamat}
 
-\subsection{MIDI Parsing and Track Separation}
-We parse each MIDI file using \texttt{music21} with intelligent track separation:
+\subsection{MIDI elemzés és sávok szétválasztása}
+Minden MIDI fájlt a \texttt{music21} segítségével elemezünk intelligens sávszétválasztással:
 \begin{itemize}
-  \item Discard tracks with fewer than 10 notes.
-  \item Normalize tempo globally to 120 BPM to reduce variance.
-  \item Remove non‐note events except sustain pedal controls.
-  \item \textbf{Separate tracks into three categories:}
+  \item Eldobjuk azokat a sávokat, amelyek kevesebb mint 10 hangjegyből állnak.
+  \item A tempót globálisan 120 BPM-re normalizáljuk a variancia csökkentése érdekében.
+  \item Eltávolítjuk a nem hangjegy eseményeket, kivéve a sustain pedál vezérléseket.
+  \item \textbf{A sávokat három kategóriába soroljuk:}
   \begin{itemize}
-    \item \textbf{Melody}: Notes above bass range (MIDI $>$ 55), non-percussion
-    \item \textbf{Bass}: Low notes (MIDI 21--55, approximately E0--G3)
-    \item \textbf{Drums}: Percussion tracks (MIDI channel 10 or high-velocity short notes)
+    \item \textbf{Melódia}: Basszus tartomány feletti hangok (MIDI $>$ 55), nem ütős
+    \item \textbf{Basszus}: Alacsony hangok (MIDI 21--55, körülbelül E0--G3)
+    \item \textbf{Dobok}: Ütős sávok (MIDI 10-es csatorna vagy nagy sebességű rövid hangok)
   \end{itemize}
 \end{itemize}
 
-\textbf{Track Separation Algorithm:}
+\textbf{Sávszétválasztási algoritmus:}
 \begin{enumerate}
-  \item Parse multi-part MIDI scores with \texttt{music21.converter}
-  \item Identify drum tracks by:
+  \item Több részes MIDI partitúrák elemzése \texttt{music21.converter} segítségével
+  \item Dob sávok azonosítása:
   \begin{itemize}
-    \item MIDI channel 9 (standard percussion channel)
-    \item Part names containing "drum", "percussion", or "perc"
-    \item High velocity ($>90$) with short duration ($<0.5$ quarter notes)
+    \item MIDI 9-es csatorna (standard ütős csatorna)
+    \item Résznév tartalmazza "drum", "percussion" vagy "perc" szavakat
+    \item Nagy sebesség ($>90$) rövid időtartammal ($<0.5$ negyedhang)
   \end{itemize}
-  \item Classify remaining notes by pitch:
+  \item Fennmaradó hangok osztályozása hangmagasság szerint:
   \begin{itemize}
-    \item Bass range: MIDI notes $\le 55$ (typically played by bass instruments)
-    \item Melody range: MIDI notes $> 55$ (main melodic content)
+    \item Basszus tartomány: MIDI hangok $\le 55$ (általában basszus hangszerek játsszák)
+    \item Melódia tartomány: MIDI hangok $> 55$ (fő dallami tartalom)
   \end{itemize}
-  \item For chords, categorize by lowest pitch
-  \item Sort all sequences chronologically by onset time
+  \item Akkordok esetén a legalacsonyabb hang alapján kategorizálunk
+  \item Minden szekvenciát időrendben rendezünk kezdési idő szerint
 \end{enumerate}
 
-This separation enables:
+Ez a szétválasztás lehetővé teszi:
 \begin{itemize}
-  \item \textbf{Multi-track generation} in the Transformer model
-  \item \textbf{Independent modeling} of melodic, harmonic, and rhythmic elements
-  \item \textbf{Improved coherence} by avoiding mixed-range training data
-  \item \textbf{Better bass line modeling} through dedicated low-frequency data
+  \item \textbf{Több sávos generálást} a Transformer modellben
+  \item \textbf{Független modellezést} a dallami, harmonikus és ritmikai elemeknek
+  \item \textbf{Jobb koherenciát} a vegyes tartományú tanítási adatok elkerülése által
+  \item \textbf{Jobb basszusvonal modellezést} a dedikált alacsony frekvenciájú adatokon keresztül
 \end{itemize}
 
-\subsection{Quantization}
-Time is discretized to 16th‐note grid. For each note event:
+\subsection{Kvantálás}
+Az időt 16-os hang rácsra diszkretizáljuk. Minden hangjegy eseményre:
 \[
   t_{\text{quant}} = \mathrm{round}\!\bigl(t_{\text{actual}} \times 4 \bigr) \,/\,4.
 \]
-This ensures all onset and offset times snap to discrete bins.
+Ez biztosítja, hogy minden kezdési és befejezési idő diszkrét intervallumokra essen.
 
-\subsection{Tokenization Schema}
-We adopt an extended REMI representation:
+\subsection{Tokenizációs séma}
+A kiterjesztett REMI reprezentációt használjuk:
 \begin{itemize}
-  \item \texttt{NOTE\_ON\_p} / \texttt{NOTE\_OFF\_p} for pitches $p\in[0,127]$.
-  \item \texttt{TIME\_SHIFT\_i} for $i\in[1,32]$ sixteenth‐note steps.
-  \item \texttt{VELOCITY\_b} for eight velocity bins $b\in[1,8]$ computed via quantiles.
-  \item \texttt{CONTROL\_SUSTAIN\_ON}, \texttt{CONTROL\_SUSTAIN\_OFF} tokens.
+  \item \texttt{NOTE\_ON\_p} / \texttt{NOTE\_OFF\_p} hangmagasságokra $p\in[0,127]$.
+  \item \texttt{TIME\_SHIFT\_i} $i\in[1,32]$ 16-os hang lépésekre.
+  \item \texttt{VELOCITY\_b} nyolc sebesség intervallumra $b\in[1,8]$ kvantilisek alapján számítva.
+  \item \texttt{CONTROL\_SUSTAIN\_ON}, \texttt{CONTROL\_SUSTAIN\_OFF} tokenek.
 \end{itemize}
-Total vocabulary size: 128 (notes) + 32 (time) + 8 (velocity) + 4 (controls) + 4 (special) = 176.
+Teljes szókincs méret: 128 (hangok) + 32 (idő) + 8 (sebesség) + 4 (vezérlések) + 4 (speciális) = 176.
 
 \subsection{Dataset Statistics}
 \begin{table}[ht]
@@ -182,7 +182,7 @@ Total vocabulary size: 128 (notes) + 32 (time) + 8 (velocity) + 4 (controls) + 4
     Multi-track  & 1105 & 512 & 58.5\% \\
     \bottomrule
   \end{tabular}
-  \caption{Track Separation Statistics After Preprocessing}
+  \caption{Sávszétválasztási statisztikák előfeldolgozás után}
 \end{table}
 
 % TODO: Add figure showing example of track separation
@@ -194,81 +194,80 @@ Total vocabulary size: 128 (notes) + 32 (time) + 8 (velocity) + 4 (controls) + 4
 % \end{figure}
 
 \newpage
-\section{Model Architectures}
+\section{Modell architektúrák}
 
-\subsection{Markov Chain}
-\subsubsection{Implementation Details}
+\subsection{Markov-lánc}
+\subsubsection{Implementációs részletek}
 \begin{itemize}
-  \item Stored in \texttt{src/models/markov.py}.
-  \item Supports $n$th‐order chains ($n\le4$).
-  \item Uses Python \texttt{defaultdict(Counter)} for count accumulation.
-  \item Applies Laplace smoothing with configurable $\alpha$.
+  \item Tárolva \texttt{src/models/markov.py} fájlban.
+  \item Támogat $n$-ed rendű láncokat ($n\le4$).
+  \item Python \texttt{defaultdict(Counter)} használata számláláshoz.
+  \item Laplace simítás alkalmazása konfigurálható $\alpha$ paraméterrel.
 \end{itemize}
 
-\subsubsection{Sampling Algorithm}
+\subsubsection{Mintavételezési algoritmus}
 \begin{enumerate}
-  \item Initialize context with \texttt{START} tokens.
-  \item For each step:
+  \item Kontextus inicializálása \texttt{START} tokenekkel.
+  \item Minden lépésben:
     \begin{itemize}
-      \item Retrieve probability distribution $P(\cdot\mid\mathrm{context})$.
-      \item Sample next token via cumulative multinomial sampling.
-      \item Slide context window forward.
+      \item Valószínűségi eloszlás lekérése $P(\cdot\mid\mathrm{kontextus})$.
+      \item Következő token mintavételezése kumulatív multinomiális mintavételezéssel.
+      \item Kontextus ablak eltolása előre.
     \end{itemize}
-  \item Terminate upon \texttt{END} token or length limit.
+  \item Befejezés \texttt{END} tokennél vagy hosszlimitnél.
 \end{enumerate}
 
-\subsection{Variational Autoencoder}
-\subsubsection{Encoder}
+\subsection{Variációs autoenkóder}
+\subsubsection{Enkóder}
 \[
   h_t = \mathrm{BiLSTM}(x_t, h_{t-1}),\quad
   \mu = W_\mu \, h_{T},\quad
   \log\sigma^2 = W_\sigma \, h_{T}.
 \]
-Implementation resides in \texttt{src/models/vae.py}.
+Implementáció \texttt{src/models/vae.py} fájlban található.
 
-\subsubsection{Decoder}
-At each time step $t$:
+\subsubsection{Dekóder}
+Minden időlépésben $t$:
 \[
   \hat{x}_t = \mathrm{Softmax}\bigl(W_o [e_{t-1} \,\|\, z]\bigr),
 \]
-where $e_{t-1}$ is the embedding of the previous token and $z$ the sampled latent.
+ahol $e_{t-1}$ az előző token beágyazása és $z$ a mintavételezett latens vektor.
 
-\subsubsection{Training Tricks}
+\subsubsection{Tanítási trükkök}
 \begin{itemize}
-  \item \textbf{KL‐Annealing}: $\beta(e)=\min(1, e/E_{\mathrm{warmup}})$.
-  \item \textbf{Free Bits}: floor KL per dimension at $0.1$ to prevent collapse.
-  \item \textbf{Gradient Clipping}: $\lVert \nabla \rVert_\infty \le 1.0$.
+  \item \textbf{KL-annealing}: $\beta(e)=\min(1, e/E_{\mathrm{warmup}})$.
+  \item \textbf{Free Bits}: KL dimenziónként minimum 0.1 értékre korlátozva az összeomlás elkerülése érdekében.
+  \item \textbf{Gradiens vágás}: $\lVert \nabla \rVert_\infty \le 1.0$.
 \end{itemize}
 
 \subsection{Transformer}
-\subsubsection{Architecture}
+\subsubsection{Architektúra}
 \begin{itemize}
-  \item Six layers, eight heads, $d_{\mathrm{model}}=512$.
-  \item Rotary positional embeddings as per Su et al.\ (2020).
-  \item Feed‐forward hidden size: 2048.
-  \item Dropout: 0.1 on attention and feed‐forward sublayers.
+  \item Hat réteg, nyolc fej, $d_{\mathrm{model}}=512$.
+  \item Rotációs pozicionális beágyazások Su et al. (2020) szerint.
+  \item Feed-forward rejtett méret: 2048.
+  \item Dropout: 0.1 figyelem és feed-forward alrétegeken.
 \end{itemize}
 
-\subsubsection{Relative Position Bias}
-A learned bias matrix $B_{i,j}$ is added to attention logits to model musical interval relationships.
+\subsubsection{Relatív pozíció bias}
+Tanult bias mátrix $B_{i,j}$ hozzáadása a figyelem logitjaihoz a zenei intervallum kapcsolatok modellezésére.
 
-\newpage
-\section{Training Methodologies}
+\section{Tanítási módszertanok}
 
-\subsection{Common Infrastructure}
+\subsection{Közös infrastruktúra}
 \begin{itemize}
-  \item All trainers in \texttt{src/trainers/}, share \texttt{TrainerBase} for logging and checkpointing.
-  \item Use \texttt{Hydra} for hyperparameter configuration.
-  \item Metrics written to TensorBoard and CSV.
+  \item Minden trainer \texttt{src/trainers/} könyvtárban, megosztott \texttt{TrainerBase} logoláshoz és checkpointoláshoz.
+  \item \texttt{Hydra} használata hiperparaméter konfigurációhoz.
+  \item Metrikák írása TensorBoard és CSV formátumban.
 \end{itemize}
 
-\subsection{Markov Trainer}
+\subsection{Markov trainer}
 \begin{itemize}
-  \item Processes all token sequences, builds and saves $\text{P}_{\mathrm{matrix}}$.
-  \item Validates by generating 100 sequences and checking unique transition coverage.
+  \item Feldolgoz minden token szekvenciát, felépíti és menti a $\text{P}_{\mathrm{mátrix}}$-ot.
+  \item Validálás 100 szekvencia generálásával és egyedi átmenetek lefedettségének ellenőrzésével.
 \end{itemize}
 
-\subsection{VAE Trainer}
+\subsection{VAE trainer}
 \begin{lstlisting}[language=Python]
 for epoch in range(num_epochs):
     for batch in dataloader:
@@ -280,31 +279,31 @@ for epoch in range(num_epochs):
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 \end{lstlisting}
-Early stopping triggered if validation loss does not improve for 5 epochs.
+Korai leállítás aktiválódik, ha a validációs veszteség nem javul 5 epoch alatt.
 
-\subsection{Transformer Trainer}
+\subsection{Transformer trainer}
 \begin{itemize}
-  \item Mixed‐precision via \texttt{torch.cuda.amp}.
-  \item Learning rate: warmup over first 5k steps, then cosine decay to zero by 200k steps.
-  \item Gradient accumulation to simulate batch size of 512 when GPU memory limited.
+  \item Vegyes pontosság \texttt{torch.cuda.amp} segítségével.
+  \item Tanulási ráta: warmup az első 5k lépésben, majd koszinuszos csökkenés nulláig 200k lépésig.
+  \item Gradiens akkumuláció 512-es batch méret szimulálására GPU memória korlátozás esetén.
 \end{itemize}
 
 \newpage
-\section{Inference Engine}
+\section{Inferenciás motor}
 
-\subsection{End-to-End Script (\texttt{generate.py})}
+\subsection{Végponttól-végpontig szkript (\texttt{generate.py})}
 \begin{lstlisting}[language=Python]
 def generate(length=512, top_p=0.9, temp=1.0):
-    # Stage 1: Markov
+    # 1. szakasz: Markov
     mk = MarkovModel.load('checkpoints/markov.npy')
     seq1 = mk.sample(length=128)
 
-    # Stage 2: VAE
+    # 2. szakasz: VAE
     vae = VAE.load('checkpoints/vae.pt')
     z = vae.encode(seq1)
     seq2 = vae.decode(z, temperature=temp)
 
-    # Stage 3: Transformer
+    # 3. szakasz: Transformer
     trans = MusicTransformer.load('checkpoints/trans.pt')
     seq3 = trans.generate(prefix=seq2, max_len=length, top_p=top_p)
 
@@ -312,52 +311,52 @@ def generate(length=512, top_p=0.9, temp=1.0):
     midi.write('output/generated.mid')
 \end{lstlisting}
 
-\subsection{Performance}
+\subsection{Teljesítmény}
 \begin{itemize}
-  \item Markov sampling: $\approx$0.5 ms/token on CPU.
-  \item VAE decode: $\approx$2 ms/token on GPU.
-  \item Transformer generate: $\approx$4 ms/token with cache.
+  \item Markov mintavételezés: $\approx$0.5 ms/token CPU-n.
+  \item VAE dekódolás: $\approx$2 ms/token GPU-n.
+  \item Transformer generálás: $\approx$4 ms/token cache-szel.
 \end{itemize}
 
 \newpage
-\section{Evaluation and Experiments}
+\section{Értékelés és kísérletek}
 
-\subsection{Objective Metrics}
+\subsection{Objektív metrikák}
 \begin{table}[ht]
   \centering
   \begin{tabular}{lcccc}
     \toprule
-    Model        & Perplexity & BLEU-4 & Self-BLEU & Time/Epoch \\
+    Modell        & Perplexitás & BLEU-4 & Self-BLEU & Idő/Epoch \\
     \midrule
     Markov       & 2.48       & 0.09   & 0.87      & 1 s        \\
     VAE          & 1.95       & 0.18   & 0.79      & 100 s      \\
     Transformer  & 1.60       & 0.30   & 0.65      & 450 s      \\
     \bottomrule
   \end{tabular}
-  \caption{Quantitative Results on Validation Set}
+  \caption{Kvantitatív eredmények validációs halmazon}
 \end{table}
 
-\subsection{Subjective Listening Study}
-Thirty participants (15 novice, 15 expert) rated 30 clips each on:
+\subsection{Szubjektív hallgatási vizsgálat}
+Harminc résztvevő (15 kezdő, 15 szakértő) értékelt 30 klippet mindegyikre:
 \begin{itemize}
-  \item \emph{Coherence} (1–5)
-  \item \emph{Creativity} (1–5)
+  \item \emph{Koherencia} (1–5)
+  \item \emph{Kreativitás} (1–5)
 \end{itemize}
 \begin{table}[ht]
   \centering
   \begin{tabular}{lcc}
     \toprule
-    Model        & Coherence & Creativity \\
+    Modell        & Koherencia & Kreativitás \\
     \midrule
     Markov       & 2.8       & 2.5        \\
     VAE          & 3.2       & 3.8        \\
     Transformer  & 4.4       & 3.9        \\
     \bottomrule
   \end{tabular}
-  \caption{Average Listening Test Scores (initial baseline)}
+  \caption{Átlagos hallgatási teszt pontszámok (kezdeti baseline)}
 \end{table}
 
-\subsection{System Architecture Visualization}
+\subsection{Rendszer-architektúra vizualizáció}
 
 \begin{figure}[ht]
   \centering
@@ -366,7 +365,7 @@ Thirty participants (15 novice, 15 expert) rated 30 clips each on:
   \label{fig:system_architecture}
 \end{figure}
 
-\subsection{End-to-End Generation Examples}
+\subsection{Végponttól-végpontig generálási példák}
 
 \begin{figure}[ht]
   \centering
@@ -375,7 +374,7 @@ Thirty participants (15 novice, 15 expert) rated 30 clips each on:
   \label{fig:generation_examples}
 \end{figure}
 
-\subsection{Combined Model Performance}
+\subsection{Kombinált modell teljesítménye}
 
 \begin{table}[ht]
   \centering
@@ -405,37 +404,37 @@ HC = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}\left[ (p_i \bmod 12) \in S_{\text{key
 \]
 ahol $p_i$ az $i$-edik generált hang pitch értéke, $S_{\text{key}}$ a detektált hangnem skálája, $N$ az összes hang száma.
 
-\subsection{Computational Cost Breakdown}
+\subsection{Számítási költség részletezése}
 
 \begin{table}[ht]
   \centering
   \begin{tabular}{lrrrr}
     \toprule
-    Pipeline Stage & GPU Memory (MB) & Inference Time (ms) & FLOPs (M) & Percentage \\
+    Pipeline szakasz & GPU memória (MB) & Inferencia idő (ms) & FLOPs (M) & Százalék \\
     \midrule
-    MIDI Parsing            & 0        & 5.2    & --    & 7\%  \\
-    Key/Scale Analysis      & 0        & 8.1    & --    & 11\% \\
+    MIDI elemzés            & 0        & 5.2    & --    & 7\%  \\
+    Hangnem/skála elemzés      & 0        & 8.1    & --    & 11\% \\
     \midrule
-    Markov Generation       & 12       & 0.5    & 0.8   & 1\%  \\
-    VAE Encode              & 256      & 1.2    & 45    & 2\%  \\
-    VAE Decode              & 256      & 0.8    & 38    & 1\%  \\
-    Transformer Forward     & 512      & 4.0    & 120   & 5\%  \\
+    Markov generálás       & 12       & 0.5    & 0.8   & 1\%  \\
+    VAE enkódolás              & 256      & 1.2    & 45    & 2\%  \\
+    VAE dekódolás              & 256      & 0.8    & 38    & 1\%  \\
+    Transformer forward     & 512      & 4.0    & 120   & 5\%  \\
     \midrule
-    Scale Filtering         & 0        & 0.3    & 0.1   & 0\%  \\
-    Weighted Combination    & 0        & 0.2    & 0.05  & 0\%  \\
+    Skála szűrés         & 0        & 0.3    & 0.1   & 0\%  \\
+    Súlyozott kombináció    & 0        & 0.2    & 0.05  & 0\%  \\
     \midrule
-    MIDI Export             & 0        & 12.5   & --    & 17\% \\
-    Audio Synthesis (opt.)  & 128      & 42.3   & --    & 56\% \\
+    MIDI export             & 0        & 12.5   & --    & 17\% \\
+    Audio szintézis (opt.)  & 128      & 42.3   & --    & 56\% \\
     \midrule
-    \textbf{Total (no audio)} & \textbf{780} & \textbf{32.8} & \textbf{204} & \textbf{44\%} \\
-    \textbf{Total (w/ audio)} & \textbf{908} & \textbf{75.1} & \textbf{204} & \textbf{100\%} \\
+    \textbf{Összesen (audio nélkül)} & \textbf{780} & \textbf{32.8} & \textbf{204} & \textbf{44\%} \\
+    \textbf{Összesen (audio-val)} & \textbf{908} & \textbf{75.1} & \textbf{204} & \textbf{100\%} \\
     \bottomrule
   \end{tabular}
   \caption{Számítási költség breakdown 30 másodperces generáláshoz RTX 3090 GPU-n. Az audio synthesis opcionális, FluidSynth alapú szintézist használ.}
   \label{tab:computational_cost}
 \end{table}
 
-\subsection{Extended Subjective Evaluation}
+\subsection{Kiterjesztett szubjektív értékelés}
 
 Harminchárom résztvevő (18 laikus, 15 zenész) értékelte a különböző modell-konfigurációkat generált 30 másodperces klippeken. Minden klip véletlenszerű kulccsal és kreativitási paraméterrel készült.
 
@@ -460,30 +459,30 @@ Harminchárom résztvevő (18 laikus, 15 zenész) értékelte a különböző mo
     \textbf{Combined}    & \textbf{4.6 ± 0.4} & \textbf{4.1 ± 0.5} & \textbf{4.3 ± 0.5} & \textbf{4.0 ± 0.6} \\
     Multi-track          & 4.5 ± 0.5 & 4.2 ± 0.6 & 4.4 ± 0.5 & 4.2 ± 0.5 \\
     \midrule
-    Human Reference*     & 4.7 ± 0.3 & 4.0 ± 0.7 & 4.6 ± 0.4 & 4.9 ± 0.2 \\
+    Emberi referencia*     & 4.7 ± 0.3 & 4.0 ± 0.7 & 4.6 ± 0.4 & 4.9 ± 0.2 \\
     \bottomrule
   \end{tabular}
-  \caption{Szubjektív értékelési eredmények (átlag ± szórás). *Human Reference: emberi zeneszerzők által készített 30s klippek Bach és Jazz standard korpuszból, kontroll csoportként.}
+  \caption{Szubjektív értékelési eredmények (átlag ± szórás). *Emberi referencia: emberi zeneszerzők által készített 30s klippek Bach és Jazz standard korpuszból, kontroll csoportként.}
   \label{tab:subjective_scores_extended}
 \end{table}
 
 \textbf{Statisztikai analízis:}
-Repeated-measures ANOVA kimutatta szignifikáns különbséget a modellek között mind a négy dimenzióban ($p < 0.001$). Post-hoc Tukey HSD teszt szerint a Combined modell szignifikánsan felülmúlja az egyedi modelleket koherenciában ($p < 0.01$) és musical quality-ben ($p < 0.05$). A Human Reference és Combined modellek közötti különbség nem szignifikáns koherenciában ($p = 0.18$) és kreativitásban ($p = 0.32$).
+Repeated-measures ANOVA kimutatta szignifikáns különbséget a modellek között mind a négy dimenzióban ($p < 0.001$). Post-hoc Tukey HSD teszt szerint a Combined modell szignifikánsan felülmúlja az egyedi modelleket koherenciában ($p < 0.01$) és musical quality-ben ($p < 0.05$). Az Emberi referencia és Combined modellek közötti különbség nem szignifikáns koherenciában ($p = 0.18$) és kreativitásban ($p = 0.32$).
 
-\subsection{A/B Preference Testing}
+\subsection{A/B preferencia tesztelés}
 
 \begin{figure}[ht]
   \centering
   \fbox{\textit{TODO: A/B preference teszt eredmények vizualizációja}}
-  \caption{Páros összehasonlítások eredménye: Résztvevők választhattak két modell kimenete között. Minden modell-pár összehasonlítva 50 párban. Vizualizáció: (1) Preference matrix heatmap (melyik modellt preferálták melyikkel szemben), (2) Bradley-Terry ranking (modell erősségi sorrend), (3) Confidence intervals. Várható eredmény: Combined > Multi-track > Transformer > VAE > Markov.}
+  \caption{Páros összehasonlítások eredménye: Résztvevők választhattak két modell kimenete között. Minden modell-pár összehasonlítva 50 párban. Vizualizáció: (1) Preferencia mátrix heatmap (melyik modellt preferálták melyikkel szemben), (2) Bradley-Terry rangsorolás (modell erősségi sorrend), (3) Konfidencia intervallumok. Várható eredmény: Combined > Multi-track > Transformer > VAE > Markov.}
   \label{fig:ab_preference}
 \end{figure}
 
-\section{Limitations and Future Work}
+\section{Korlátozások és jövőbeli munka}
 
-\subsection{Current Limitations}
+\subsection{Jelenlegi korlátozások}
 \begin{itemize}
-  \item The VAE occasionally experiences posterior collapse despite free‐bits regularization.
-  \item Transformer stage incurs high memory and compute costs, limiting real‐time use on consumer hardware.
-  \item Evaluation remains partly subjective; automatic metrics only approximate musical quality.
+  \item A VAE időnként posterior összeomlást tapasztal a free-bits regularizáció ellenére.
+  \item A Transformer szakasz magas memória és számítási költségekkel jár, korlátozva a valós idejű használatot fogyasztói hardveren.
+  \item Az értékelés részben szubjektív marad; az automatikus metrikák csak közelítik a zenei minőséget.
 \end{itemize}

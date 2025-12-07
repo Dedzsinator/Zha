@@ -17,6 +17,7 @@ from backend.models.markov_chain import MarkovChain
 from backend.util.midi_utils import parse_midi, create_midi_file, parse_key_context
 from backend.util.audio_utils import generate_audio
 from typing import List, Optional, Dict, Union
+from music21 import converter, analysis, scale, key
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -964,7 +965,7 @@ async def generate_multitrack_music(
     bass_temperature: float = Form(0.7),
     drum_temperature: float = Form(0.9),
     duration: float = Form(30.0),
-    generate_audio: bool = Form(True),
+    should_generate_audio: bool = Form(True),
     melody_instrument: str = Form("piano"),
     bass_instrument: str = Form("electric_bass_finger"),
 ):
@@ -989,25 +990,84 @@ async def generate_multitrack_music(
             if feature_vector is None:
                 raise HTTPException(status_code=400, detail="Could not parse MIDI file")
             
-            seed = torch.tensor(feature_vector, dtype=torch.float32).unsqueeze(0).to(device)
+            seed = torch.tensor(feature_vector, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
         else:
             # Random seed (C major chord as starting point)
-            seed = torch.zeros(1, 128, device=device)
-            seed[0, 60] = 1.0  # C
-            seed[0, 64] = 1.0  # E
-            seed[0, 67] = 1.0  # G
+            seed = torch.zeros(1, 1, 128, device=device)
+            seed[0, 0, 60] = 1.0  # C
+            seed[0, 0, 64] = 1.0  # E
+            seed[0, 0, 67] = 1.0  # G
         
-        # Generate multi-track output
+        # Generate multi-track output using all three models for each track
         with torch.no_grad():
-            multitrack_transformer.reset_memory()
+            if not (models_available['transformer'] and models_available['vae'] and models_available['markov']):
+                raise HTTPException(status_code=500, detail="Required models not available")
             
-            outputs = multitrack_transformer.generate_multitrack(
-                seed=seed,
-                steps=steps,
-                temperature=temperature,
-                bass_temperature=bass_temperature,
-                drum_temperature=drum_temperature
-            )
+            # Generate melody using all three models
+            melody_transformer = torch.nan_to_num(transformer_model.generate(seed, steps, temperature), nan=0.0)
+            melody_vae_sample = torch.nan_to_num(vae_model.sample(num_samples=1, temperature=temperature, device=device).squeeze(0), nan=0.0)
+            melody_vae_onehot = (melody_vae_sample > 0.3).float()
+            melody_vae_seq = melody_vae_onehot.unsqueeze(0).repeat(1, steps, 1)
+            melody_markov_seq = markov_model.generate_sequence(start_note=60, length=steps, key_context=None)
+            melody_markov_onehot = torch.zeros(1, steps, 128, device=device)
+            for i, note in enumerate(melody_markov_seq):
+                melody_markov_onehot[0, i, note] = 1.0
+            melody = torch.max(melody_transformer, torch.max(melody_vae_seq, melody_markov_onehot))
+            melody = torch.nan_to_num(melody, nan=0.0)
+            
+            # Add chord tones to melody for harmony
+            for step in range(steps):
+                active_notes = torch.where(melody[0, step] > 0.5)[0]
+                if len(active_notes) > 0:
+                    root = active_notes[0].item()
+                    third = min(127, ((root % 12 + 4) % 12) + (root // 12) * 12)
+                    fifth = min(127, ((root % 12 + 7) % 12) + (root // 12) * 12)
+                    melody[0, step, third] = 1.0
+                    melody[0, step, fifth] = 1.0
+            
+            # Generate bass using all three models
+            bass_transformer = torch.nan_to_num(transformer_model.generate(seed, steps, bass_temperature), nan=0.0)
+            bass_vae_sample = torch.nan_to_num(vae_model.sample(num_samples=1, temperature=bass_temperature, device=device).squeeze(0), nan=0.0)
+            bass_vae_onehot = (bass_vae_sample > 0.3).float()
+            bass_vae_seq = bass_vae_onehot.unsqueeze(0).repeat(1, steps, 1)
+            bass_markov_seq = markov_model.generate_sequence(start_note=48, length=steps, key_context=None)
+            bass_markov_onehot = torch.zeros(1, steps, 128, device=device)
+            for i, note in enumerate(bass_markov_seq):
+                bass_markov_onehot[0, i, note] = 1.0
+            bass = torch.max(bass_transformer, torch.max(bass_vae_seq, bass_markov_onehot))
+            bass = torch.nan_to_num(bass, nan=0.0)
+            
+            # Add chord tones to bass for harmony
+            for step in range(steps):
+                active_notes = torch.where(bass[0, step] > 0.5)[0]
+                if len(active_notes) > 0:
+                    root = active_notes[0].item()
+                    third = min(127, ((root % 12 + 4) % 12) + (root // 12) * 12)
+                    fifth = min(127, ((root % 12 + 7) % 12) + (root // 12) * 12)
+                    bass[0, step, third] = 1.0
+                    bass[0, step, fifth] = 1.0
+            
+            # Generate drums using all three models
+            drum_transformer = torch.nan_to_num(transformer_model.generate(seed, steps, drum_temperature), nan=0.0)
+            drum_vae_sample = torch.nan_to_num(vae_model.sample(num_samples=1, temperature=drum_temperature, device=device).squeeze(0), nan=0.0)
+            drum_vae_onehot = (drum_vae_sample > 0.3).float()
+            drum_vae_seq = drum_vae_onehot.unsqueeze(0).repeat(1, steps, 1)
+            drum_markov_seq = markov_model.generate_sequence(start_note=36, length=steps, key_context=None)
+            drum_markov_onehot = torch.zeros(1, steps, 128, device=device)
+            for i, note in enumerate(drum_markov_seq):
+                drum_markov_onehot[0, i, note] = 1.0
+            drums = torch.max(drum_transformer, torch.max(drum_vae_seq, drum_markov_onehot))
+            drums = torch.nan_to_num(drums, nan=0.0)
+            
+            # Add standard drum pattern to make it less monotone
+            for step in range(0, steps, 4):  # Every measure (assuming 4/4)
+                if step < steps:
+                    drums[0, step, 36] = 1.0  # Kick drum
+                if step + 2 < steps:
+                    drums[0, step + 2, 38] = 1.0  # Snare drum
+            for step in range(steps):
+                if step % 2 == 0:  # Every 8th note
+                    drums[0, step, 42] = 1.0  # Closed hi-hat
         
         # Create MIDI file with separate tracks
         unique_id = str(uuid.uuid4())[:8]
@@ -1035,7 +1095,7 @@ async def generate_multitrack_music(
         midi_file_obj.tracks.append(melody_track)
         melody_track.append(mido.Message('program_change', program=INSTRUMENT_MAP.get(melody_instrument, 0), time=0, channel=0))
         
-        melody_notes = one_hot_to_notes(outputs['melody'], "Melody")
+        melody_notes = one_hot_to_notes(melody, "Melody")
         current_time = 0
         for note_info in sorted(melody_notes, key=lambda x: x['time']):
             delta_time = int((note_info['time'] - current_time) * 480)  # Convert to ticks
@@ -1049,7 +1109,7 @@ async def generate_multitrack_music(
         midi_file_obj.tracks.append(bass_track)
         bass_track.append(mido.Message('program_change', program=INSTRUMENT_MAP.get(bass_instrument, 33), time=0, channel=1))
         
-        bass_notes = one_hot_to_notes(outputs['bass'], "Bass")
+        bass_notes = one_hot_to_notes(bass, "Bass")
         current_time = 0
         for note_info in sorted(bass_notes, key=lambda x: x['time']):
             delta_time = int((note_info['time'] - current_time) * 480)
@@ -1062,7 +1122,7 @@ async def generate_multitrack_music(
         drum_track.name = "Drums"
         midi_file_obj.tracks.append(drum_track)
         
-        drum_notes = one_hot_to_notes(outputs['drums'], "Drums")
+        drum_notes = one_hot_to_notes(drums, "Drums")
         current_time = 0
         for note_info in sorted(drum_notes, key=lambda x: x['time']):
             delta_time = int((note_info['time'] - current_time) * 480)
@@ -1079,7 +1139,7 @@ async def generate_multitrack_music(
         
         # Generate audio if requested
         audio_url = None
-        if generate_audio:
+        if should_generate_audio:
             audio_filename = f"multitrack_{unique_id}.wav"
             output_audio_path = tempfile.mktemp(suffix=".wav")
             
@@ -1129,6 +1189,29 @@ async def download_audio(filename: str):
         media_type="audio/wav",
         filename="generated_music.wav"
     )
+
+@app.get("/list_files")
+async def list_files():
+    """List all generated MIDI and audio files"""
+    try:
+        midi_files = []
+        audio_files = []
+        
+        # List MIDI files
+        if os.path.exists(MIDI_DIR):
+            midi_files = [f for f in os.listdir(MIDI_DIR) if f.endswith(('.mid', '.midi'))]
+        
+        # List audio files
+        if os.path.exists(AUDIO_DIR):
+            audio_files = [f for f in os.listdir(AUDIO_DIR) if f.endswith(('.wav', '.mp3', '.flac'))]
+        
+        return {
+            "midi_files": midi_files,
+            "audio_files": audio_files
+        }
+    except Exception as e:
+        logger.error(f"Error listing files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
 @app.get("/health")
 async def health_check():

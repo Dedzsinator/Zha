@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface SliderProps {
     min: number;
@@ -50,7 +50,7 @@ export default function Slider({
         updateValueFromEvent(e);
     };
 
-    const updateValueFromEvent = (e: React.MouseEvent | MouseEvent | React.TouchEvent | TouchEvent) => {
+    const updateValueFromEvent = useCallback((e: React.MouseEvent | MouseEvent | React.TouchEvent | TouchEvent) => {
         if (!sliderRef.current || disabled) return;
 
         const rect = sliderRef.current.getBoundingClientRect();
@@ -72,7 +72,7 @@ export default function Slider({
         newValue = Math.max(min, Math.min(newValue, max));
 
         onChange(newValue);
-    };
+    }, [min, max, step, disabled, onChange]);
 
     // Set up event listeners for mouse/touch interactions
     useEffect(() => {
@@ -89,17 +89,17 @@ export default function Slider({
         if (isDragging) {
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
-            document.addEventListener('touchmove', handleMouseMove as any);
+            document.addEventListener('touchmove', handleMouseMove as EventListener);
             document.addEventListener('touchend', handleMouseUp);
         }
 
         return () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
-            document.removeEventListener('touchmove', handleMouseMove as any);
+            document.removeEventListener('touchmove', handleMouseMove as EventListener);
             document.removeEventListener('touchend', handleMouseUp);
         };
-    }, [isDragging]);
+    }, [isDragging, updateValueFromEvent]);
 
     return (
         <div className={`w-full ${className}`}>
@@ -118,7 +118,7 @@ export default function Slider({
                 ref={sliderRef}
                 className={`relative h-2 rounded-md bg-gray-200 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
                 onMouseDown={handleMouseDown}
-                onTouchStart={handleMouseDown as any}
+                onTouchStart={handleMouseDown as unknown as React.TouchEventHandler<HTMLDivElement>}
             >
                 {/* Track fill */}
                 <div

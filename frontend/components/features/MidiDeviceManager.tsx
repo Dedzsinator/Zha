@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FaPlug, FaUnlink, FaMicrophone, FaMicrophoneSlash } from 'react-icons/fa';
 
 interface MidiDeviceManagerProps {
-    onDevicesUpdate: (inputs: WebMidi.MIDIInput[], outputs: WebMidi.MIDIOutput[]) => void;
-    onActiveNotesChange?: (notes: number[]) => void;
+    onDevicesUpdate: (inputs: MIDIInput[], outputs: MIDIOutput[]) => void;
     onInputDeviceChange?: (deviceId: string | null) => void;
     onOutputDeviceChange?: (deviceId: string | null) => void;
     isRecording?: boolean;
@@ -16,7 +15,6 @@ interface MidiDeviceManagerProps {
 
 export default function MidiDeviceManager({
     onDevicesUpdate,
-    onActiveNotesChange,
     onInputDeviceChange,
     onOutputDeviceChange,
     isRecording = false,
@@ -24,12 +22,26 @@ export default function MidiDeviceManager({
     selectedChannel = 1,
     onChannelChange = () => { }
 }: MidiDeviceManagerProps) {
-    const [inputDevices, setInputDevices] = useState<WebMidi.MIDIInput[]>([]);
-    const [outputDevices, setOutputDevices] = useState<WebMidi.MIDIOutput[]>([]);
+    const [inputDevices, setInputDevices] = useState<MIDIInput[]>([]);
+    const [outputDevices, setOutputDevices] = useState<MIDIOutput[]>([]);
     const [selectedInputId, setSelectedInputId] = useState<string | null>(null);
     const [selectedOutputId, setSelectedOutputId] = useState<string | null>(null);
-    const [midiAccess, setMidiAccess] = useState<WebMidi.MIDIAccess | null>(null);
     const [midiError, setMidiError] = useState<string | null>(null);
+
+    // Update device lists whenever MIDI access changes
+    const updateDeviceLists = useCallback((access: MIDIAccess) => {
+        const inputs: MIDIInput[] = [];
+        const outputs: MIDIOutput[] = [];
+
+        access.inputs.forEach(input => inputs.push(input));
+        access.outputs.forEach(output => outputs.push(output));
+
+        setInputDevices(inputs);
+        setOutputDevices(outputs);
+
+        // Notify parent component
+        onDevicesUpdate(inputs, outputs);
+    }, [onDevicesUpdate]);
 
     // Request MIDI access
     useEffect(() => {
@@ -37,13 +49,12 @@ export default function MidiDeviceManager({
             try {
                 if (navigator.requestMIDIAccess) {
                     const access = await navigator.requestMIDIAccess({ sysex: false });
-                    setMidiAccess(access);
 
                     // Update device lists
                     updateDeviceLists(access);
 
                     // Listen for device connection/disconnection
-                    access.onstatechange = (e) => {
+                    access.onstatechange = () => {
                         updateDeviceLists(access);
                     };
                 } else {
@@ -56,22 +67,7 @@ export default function MidiDeviceManager({
         }
 
         requestMidiAccess();
-    }, []);
-
-    // Update device lists whenever MIDI access changes
-    const updateDeviceLists = (access: WebMidi.MIDIAccess) => {
-        const inputs: WebMidi.MIDIInput[] = [];
-        const outputs: WebMidi.MIDIOutput[] = [];
-
-        access.inputs.forEach(input => inputs.push(input));
-        access.outputs.forEach(output => outputs.push(output));
-
-        setInputDevices(inputs);
-        setOutputDevices(outputs);
-
-        // Notify parent component
-        onDevicesUpdate(inputs, outputs);
-    };
+    }, [updateDeviceLists]);
 
     // Handle input device selection
     const handleInputChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

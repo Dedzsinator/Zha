@@ -292,7 +292,7 @@ A loss history elemzés trend analízissel azonosítja a túltanulás kezdeti je
 A model weight histogram tracking nyomon követi a súlyok eloszlásának változásait, segítve a konvergencia elemzését és a potential mode collapse detektálását VAE modellekben. Az attention weight visualization (Transformer modellekben) segít megérteni a modell figyelem mintázatait és azonosítani a potenciális attention head redundanciákat.
 
 \subsubsection{Automatikus hiba helyreállítás és fallback mechanizmusok}
-Robust hibakezelési rendszer biztosítja a képzés folytonosságát váratlan események esetén. Az automatic checkpoint recovery lehetővé teszi a képzés automatikus folytatását a legutóbbi sikeres checkpoint-ból. A graceful degradation mechanism automatikusan csökkenti a batch méretet vagy kapcsolja ki a mixed precision-t GPU memória hibák esetén.
+Megbízható hibakezelési rendszer biztosítja a képzés folytonosságát váratlan események esetén. Az automatic checkpoint recovery lehetővé teszi a képzés automatikus folytatását a legutóbbi sikeres checkpoint-ból. A graceful degradation mechanism automatikusan csökkenti a batch méretet vagy kapcsolja ki a mixed precision-t GPU memória hibák esetén.
 
 A dynamic learning rate adjustment automatikusan csökkenti a learning rate-et, ha túl nagy gradient normákat vagy instabil loss változásokat észlel. A emergency fallback mode egyszerűbb képzési stratégiára vált vissza kritikus hibák esetén, fenntartva a képzési folyamat alapvető funkcionalitását. A data corruption detection automatikusan kiszűri a sérült MIDI fájlokat a képzési folyamatból.
 

@@ -7,7 +7,7 @@ Az alapművelet lekérdezéseket ($\mathbf{Q}$), kulcsokat ($\mathbf{K}$) és é
 \[
 \text{Figyelem}(\mathbf{Q},\mathbf{K},\mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}
 \]
-ahol $d_k$ a kulcsdimenzió. Zene esetén ez lehetővé teszi tetszőleges hangjegyfüggőségek modellezését.
+ahol $d_k$ a kulcsdimenzió. Zene esetén ez tetszőleges hangjegyfüggőségek modellezését teszi lehetővé.
 
 \subsection{Többfejű figyelem}
 A párhuzamos figyelemfejek különféle kapcsolatokat rögzítenek:
@@ -64,7 +64,7 @@ A gradiens áramlás javulását formálisan is igazolhatjuk. A $\mathbf{Q}$ bem
 Az identitás tag ($\mathbf{I}$) garantálja hogy a gradiensek közvetlenül átáramlanak a reziduális kapcsolaton keresztül, megelőzve a gradiens eltűnést még akkor is, amikor $\frac{\partial \mathbf{A}\mathbf{V}}{\partial \mathbf{Q}} \rightarrow 0$.
 
 \subsection{Xavier inicializálási stratégia}
-A projekciós mátrixok megfelelő inicializálása kritikus a stabil tanításhoz. A továbbfejlesztett Xavier inicializálás a $\mathbf{W}_q, \mathbf{W}_k, \mathbf{W}_v \in \mathbb{R}^{d_{model} \times d_{model}}$ mátrixokat $\mathcal{N}(0, \frac{1}{\sqrt{2} \cdot d_{model}})$ normális eloszlásból, míg a kimeneti projekciót $\mathbf{W}_o$ a $\mathcal{N}(0, \frac{1}{d_{model}})$ eloszlásból inicializálja.
+A projekciós mátrixok megfelelő inicializálása fontos a stabil tanításhoz. A továbbfejlesztett Xavier inicializálás a $\mathbf{W}_q, \mathbf{W}_k, \mathbf{W}_v \in \mathbb{R}^{d_{model} \times d_{model}}$ mátrixokat $\mathcal{N}(0, \frac{1}{\sqrt{2} \cdot d_{model}})$ normális eloszlásból, míg a kimeneti projekciót $\mathbf{W}_o$ a $\mathcal{N}(0, \frac{1}{d_{model}})$ eloszlásból inicializálja.
 
 Ez az inicializálás egység varianciát tart fenn az előre és hátra irányú átmenetek során. Legyen $\mathbf{x} \in \mathbb{R}^{d_{model}}$ bemenet $\text{Var}[\mathbf{x}] = 1$ varianciával. Ekkor:
 \[

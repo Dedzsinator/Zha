@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { GenerationResponse } from '@/types';
-import { FaMusic, FaRandom, FaVolumeUp, FaMagic } from 'react-icons/fa';
+import { FaMusic, FaRandom, FaVolumeUp, FaMagic, FaLayerGroup } from 'react-icons/fa';
 
 interface GenerationFormProps {
     onMidiGenerated: (file: File, response: GenerationResponse) => void;
@@ -37,6 +37,13 @@ const MODELS = [
         description: 'Best of all worlds: structure, creativity, and theory combined',
         icon: FaVolumeUp,
         requiresInput: true
+    },
+    {
+        id: 'multitrack',
+        name: 'Multi-Track Ensemble',
+        description: 'Generate coordinated multi-track music with melody, bass, and drums',
+        icon: FaLayerGroup,
+        requiresInput: false
     }
 ];
 
@@ -63,6 +70,13 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
     const [midiFile, setMidiFile] = useState<File | null>(null);
     const [duration, setDuration] = useState(30);
     const [instrument, setInstrument] = useState('piano');
+
+    // Multi-track specific parameters
+    const [melodyInstrument, setMelodyInstrument] = useState('piano');
+    const [bassInstrument, setBassInstrument] = useState('electric_bass_finger');
+    const [bassTemperature, setBassTemperature] = useState(0.7);
+    const [drumTemperature, setDrumTemperature] = useState(0.9);
+    const [steps, setSteps] = useState(100);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
@@ -99,6 +113,15 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
             if (!midiFile) throw new Error('MIDI file is required');
             formData.append('midi_file', midiFile);
             formData.append('creativity', creativity.toString());
+        } else if (selectedModel === 'multitrack') {
+            formData.append('steps', steps.toString());
+            formData.append('temperature', temperature.toString());
+            formData.append('bass_temperature', bassTemperature.toString());
+            formData.append('drum_temperature', drumTemperature.toString());
+            formData.append('duration', duration.toString());
+            formData.append('generate_audio', 'true');
+            formData.append('melody_instrument', melodyInstrument);
+            formData.append('bass_instrument', bassInstrument);
         }
 
         return formData;
@@ -136,9 +159,10 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
                 // Notify parent component
                 onMidiGenerated(midiFile, response.data);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Generation error:', err);
-            setError(err.response?.data?.detail || err.message || 'An error occurred during generation');
+            const errorMessage = err instanceof Error ? err.message : 'An error occurred during generation';
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -165,8 +189,8 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
                                 type="button"
                                 onClick={() => setSelectedModel(model.id)}
                                 className={`p-3 rounded-lg border text-left transition-colors ${selectedModel === model.id
-                                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                        : 'border-gray-200 hover:bg-gray-50'
+                                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                    : 'border-gray-200 hover:bg-gray-50'
                                     }`}
                             >
                                 <div className="flex items-center">
@@ -346,6 +370,108 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
                     </div>
                 )}
 
+                {selectedModel === 'multitrack' && (
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Steps: {steps}
+                            </label>
+                            <input
+                                type="range"
+                                min="50"
+                                max="200"
+                                step="10"
+                                value={steps}
+                                onChange={(e) => setSteps(parseInt(e.target.value))}
+                                className="w-full"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Melody Temperature: {temperature.toFixed(1)}
+                            </label>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1.5"
+                                step="0.1"
+                                value={temperature}
+                                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                                className="w-full"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Bass Temperature: {bassTemperature.toFixed(1)}
+                            </label>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1.5"
+                                step="0.1"
+                                value={bassTemperature}
+                                onChange={(e) => setBassTemperature(parseFloat(e.target.value))}
+                                className="w-full"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Drum Temperature: {drumTemperature.toFixed(1)}
+                            </label>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1.5"
+                                step="0.1"
+                                value={drumTemperature}
+                                onChange={(e) => setDrumTemperature(parseFloat(e.target.value))}
+                                className="w-full"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Melody Instrument
+                            </label>
+                            <select
+                                value={melodyInstrument}
+                                onChange={(e) => setMelodyInstrument(e.target.value)}
+                                className="w-full p-2 border rounded-md"
+                            >
+                                <option value="piano">Piano</option>
+                                <option value="guitar">Guitar</option>
+                                <option value="violin">Violin</option>
+                                <option value="flute">Flute</option>
+                                <option value="trumpet">Trumpet</option>
+                                <option value="organ">Organ</option>
+                                <option value="choir">Choir</option>
+                                <option value="strings">Strings</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Bass Instrument
+                            </label>
+                            <select
+                                value={bassInstrument}
+                                onChange={(e) => setBassInstrument(e.target.value)}
+                                className="w-full p-2 border rounded-md"
+                            >
+                                <option value="electric_bass_finger">Electric Bass (Finger)</option>
+                                <option value="electric_bass_pick">Electric Bass (Pick)</option>
+                                <option value="acoustic_bass">Acoustic Bass</option>
+                                <option value="fretless_bass">Fretless Bass</option>
+                                <option value="slap_bass_1">Slap Bass 1</option>
+                                <option value="slap_bass_2">Slap Bass 2</option>
+                            </select>
+                        </div>
+                    </div>
+                )}
+
                 {/* Common parameters */}
                 <div className="mt-6 space-y-4">
                     <div>
@@ -363,26 +489,28 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
                         />
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Instrument
-                        </label>
-                        <select
-                            value={instrument}
-                            onChange={(e) => setInstrument(e.target.value)}
-                            className="w-full p-2 border rounded-md"
-                        >
-                            <option value="piano">Piano</option>
-                            <option value="guitar">Guitar</option>
-                            <option value="violin">Violin</option>
-                            <option value="cello">Cello</option>
-                            <option value="flute">Flute</option>
-                            <option value="trumpet">Trumpet</option>
-                            <option value="organ">Organ</option>
-                            <option value="choir">Choir</option>
-                            <option value="strings">Strings</option>
-                        </select>
-                    </div>
+                    {selectedModel !== 'multitrack' && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Instrument
+                            </label>
+                            <select
+                                value={instrument}
+                                onChange={(e) => setInstrument(e.target.value)}
+                                className="w-full p-2 border rounded-md"
+                            >
+                                <option value="piano">Piano</option>
+                                <option value="guitar">Guitar</option>
+                                <option value="violin">Violin</option>
+                                <option value="cello">Cello</option>
+                                <option value="flute">Flute</option>
+                                <option value="trumpet">Trumpet</option>
+                                <option value="organ">Organ</option>
+                                <option value="choir">Choir</option>
+                                <option value="strings">Strings</option>
+                            </select>
+                        </div>
+                    )}
                 </div>
 
                 {/* Error display */}

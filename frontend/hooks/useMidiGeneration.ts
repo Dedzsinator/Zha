@@ -23,15 +23,13 @@ export function useMidiGeneration() {
       setGenerationResponse(response.data);
       
       // Process response based on model type
-      if (response.data.midi_url || response.data.midi_file) {
-        const url = response.data.midi_url 
-          ? `http://localhost:8000${response.data.midi_url}`
-          : `http://localhost:8000/download/midi/${response.data.midi_file}`;
+      if (response.data.midi_url) {
+        const url = `http://localhost:8000${response.data.midi_url}`;
         
         const midiResponse = await axios.get(url, { responseType: 'blob' });
         const midiFile = new File(
           [midiResponse.data],
-          (response.data.midi_url?.split('/').pop() || response.data.midi_file || 'output.mid'),
+          (response.data.midi_url.split('/').pop() || 'output.mid'),
           { type: 'audio/midi' }
         );
         

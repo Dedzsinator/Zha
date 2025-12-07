@@ -1,558 +1,903 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { FaPlay, FaPause, FaStop } from 'react-icons/fa';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute, FaSave, FaTrash, FaClock, FaMicrophone, FaMicrophoneSlash } from 'react-icons/fa';
 import * as Tone from 'tone';
 import { Midi } from '@tonejs/midi';
+import Soundfont, { InstrumentName } from 'soundfont-player';
 
 interface MidiPlayerProps {
     midiData: Midi | null;
     onTimeUpdate: (time: number) => void;
-    inputDeviceId: string | null;
-    outputDeviceId: string | null;
-    selectedChannel: number;
-    duetMode: boolean;
+    inputDeviceId?: string;
+    outputDeviceId?: string;
+    selectedChannel?: number;
+    duetMode?: boolean;
     duetStyle?: 'simple' | 'chord' | 'melody';
     onActiveNotesChange?: (notes: number[]) => void;
 }
 
+interface TrackInfo {
+    id: number;
+    name: string;
+    instrument: InstrumentName;
+    volume: number;
+    muted: boolean;
+    solo: boolean;
+    channel: number;
+}
+
+const INSTRUMENT_OPTIONS: { value: InstrumentName; label: string }[] = [
+    { value: 'acoustic_grand_piano', label: 'Acoustic Grand Piano' },
+    { value: 'bright_acoustic_piano', label: 'Bright Acoustic Piano' },
+    { value: 'electric_grand_piano', label: 'Electric Grand Piano' },
+    { value: 'honkytonk_piano', label: 'Honky-tonk Piano' },
+    { value: 'electric_piano_1', label: 'Electric Piano 1' },
+    { value: 'electric_piano_2', label: 'Electric Piano 2' },
+    { value: 'harpsichord', label: 'Harpsichord' },
+    { value: 'clavinet', label: 'Clavinet' },
+    { value: 'celesta', label: 'Celesta' },
+    { value: 'glockenspiel', label: 'Glockenspiel' },
+    { value: 'music_box', label: 'Music Box' },
+    { value: 'vibraphone', label: 'Vibraphone' },
+    { value: 'marimba', label: 'Marimba' },
+    { value: 'xylophone', label: 'Xylophone' },
+    { value: 'tubular_bells', label: 'Tubular Bells' },
+    { value: 'dulcimer', label: 'Dulcimer' },
+    { value: 'violin', label: 'Violin' },
+    { value: 'viola', label: 'Viola' },
+    { value: 'cello', label: 'Cello' },
+    { value: 'contrabass', label: 'Contrabass' },
+    { value: 'flute', label: 'Flute' },
+    { value: 'piccolo', label: 'Piccolo' },
+    { value: 'recorder', label: 'Recorder' },
+    { value: 'pan_flute', label: 'Pan Flute' },
+    { value: 'trumpet', label: 'Trumpet' },
+    { value: 'trombone', label: 'Trombone' },
+    { value: 'tuba', label: 'Tuba' },
+    { value: 'french_horn', label: 'French Horn' },
+    { value: 'brass_section', label: 'Brass Section' },
+    { value: 'soprano_sax', label: 'Soprano Sax' },
+    { value: 'alto_sax', label: 'Alto Sax' },
+    { value: 'tenor_sax', label: 'Tenor Sax' },
+    { value: 'baritone_sax', label: 'Baritone Sax' },
+    { value: 'oboe', label: 'Oboe' },
+    { value: 'english_horn', label: 'English Horn' },
+    { value: 'bassoon', label: 'Bassoon' },
+    { value: 'clarinet', label: 'Clarinet' },
+];
+
+const NOTE_HEIGHT = 20;
+const NOTES_IN_OCTAVE = 12;
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const BLACK_KEY_INDICES = [1, 3, 6, 8, 10];
+const PIANO_KEYS_WIDTH = 60;
+
+// Reverse mapping from instrument number to name
+const INSTRUMENT_NUMBER_TO_NAME: { [key: number]: InstrumentName } = {
+    0: 'acoustic_grand_piano',
+    1: 'bright_acoustic_piano',
+    2: 'electric_grand_piano',
+    3: 'honkytonk_piano',
+    4: 'electric_piano_1',
+    5: 'electric_piano_2',
+    6: 'harpsichord',
+    7: 'clavinet',
+    8: 'celesta',
+    9: 'glockenspiel',
+    10: 'music_box',
+    11: 'vibraphone',
+    12: 'marimba',
+    13: 'xylophone',
+    14: 'tubular_bells',
+    15: 'dulcimer',
+    16: 'violin',
+    17: 'viola',
+    18: 'cello',
+    19: 'contrabass',
+    20: 'flute',
+    21: 'piccolo',
+    22: 'recorder',
+    23: 'pan_flute',
+    24: 'trumpet',
+    25: 'trombone',
+    26: 'tuba',
+    27: 'french_horn',
+    28: 'brass_section',
+    29: 'soprano_sax',
+    30: 'alto_sax',
+    31: 'tenor_sax',
+    32: 'baritone_sax',
+    33: 'oboe',
+    34: 'english_horn',
+    35: 'bassoon',
+    36: 'clarinet',
+    // Electric bass finger (program 37) - map to acoustic bass for now
+    37: 'acoustic_bass',
+    // Default to piano for unknown instruments
+    40: 'acoustic_grand_piano', // violin
+    41: 'acoustic_grand_piano', // viola
+    42: 'acoustic_grand_piano', // cello
+    43: 'acoustic_grand_piano', // contrabass
+};
+
+// Channel colors (16 MIDI channels)
+const CHANNEL_COLORS = [
+    { main: 'hsla(210, 70%, 60%, 0.75)', border: 'hsla(210, 70%, 40%, 1)' }, // Blue
+    { main: 'hsla(150, 70%, 55%, 0.75)', border: 'hsla(150, 70%, 35%, 1)' }, // Green
+    { main: 'hsla(30, 80%, 60%, 0.75)', border: 'hsla(30, 80%, 40%, 1)' },   // Orange
+    { main: 'hsla(280, 70%, 60%, 0.75)', border: 'hsla(280, 70%, 40%, 1)' }, // Purple
+    { main: 'hsla(0, 70%, 60%, 0.75)', border: 'hsla(0, 70%, 40%, 1)' },     // Red
+    { main: 'hsla(180, 60%, 55%, 0.75)', border: 'hsla(180, 60%, 35%, 1)' }, // Cyan
+    { main: 'hsla(50, 80%, 55%, 0.75)', border: 'hsla(50, 80%, 35%, 1)' },   // Yellow
+    { main: 'hsla(320, 70%, 60%, 0.75)', border: 'hsla(320, 70%, 40%, 1)' }, // Pink
+    { main: 'hsla(100, 60%, 55%, 0.75)', border: 'hsla(100, 60%, 35%, 1)' }, // Lime
+    { main: 'hsla(240, 60%, 60%, 0.75)', border: 'hsla(240, 60%, 40%, 1)' }, // Indigo
+    { main: 'hsla(20, 75%, 58%, 0.75)', border: 'hsla(20, 75%, 38%, 1)' },   // Coral
+    { main: 'hsla(160, 65%, 55%, 0.75)', border: 'hsla(160, 65%, 35%, 1)' }, // Teal
+    { main: 'hsla(300, 65%, 58%, 0.75)', border: 'hsla(300, 65%, 38%, 1)' }, // Magenta
+    { main: 'hsla(75, 60%, 55%, 0.75)', border: 'hsla(75, 60%, 35%, 1)' },   // Olive
+    { main: 'hsla(200, 65%, 58%, 0.75)', border: 'hsla(200, 65%, 38%, 1)' }, // Sky
+    { main: 'hsla(270, 60%, 58%, 0.75)', border: 'hsla(270, 60%, 38%, 1)' }, // Violet
+];
+
 export default function MidiPlayer({
     midiData,
-    onTimeUpdate,
-    inputDeviceId,
-    outputDeviceId,
-    selectedChannel,
-    duetMode,
-    duetStyle = 'simple',
-    onActiveNotesChange
+    onTimeUpdate
 }: MidiPlayerProps) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-    const synths = useRef<Tone.PolySynth[]>([]);
-    const scheduledNotes = useRef<number[]>([]);
-    const inputDevice = useRef<WebMidi.MIDIInput | null>(null);
-    const outputDevice = useRef<WebMidi.MIDIOutput | null>(null);
-    const recordedNotes = useRef<{ note: number, velocity: number, time: number, duration: number }[]>([]);
-    const activeNotes = useRef<Map<number, { startTime: number, velocity: number }>>(new Map());
-    const startTime = useRef<number | null>(null);
+    const [tracks, setTracks] = useState<TrackInfo[]>([]);
+    const [selectedTrack, setSelectedTrack] = useState<number>(0);
 
-    const triggerDuetResponse = (note: number, velocity: number) => {
-        // Get all recently played notes (last 2 seconds)
-        const recentNotes = recordedNotes.current
-            .filter(n => Tone.now() - (n.time + startTime.current!) < 2)
-            .map(n => n.note % 12); // Get just the pitch class
+    // Recording state
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordedMidi, setRecordedMidi] = useState<Midi | null>(null);
+    const [recordingTime, setRecordingTime] = useState(0);
 
-        // Add current note
-        recentNotes.push(note % 12);
+    // Piano roll state
+    const [zoom, setZoom] = useState(1);
+    const [verticalZoom, setVerticalZoom] = useState(1);
+    const [viewportRange, setViewportRange] = useState({ minNote: 36, maxNote: 96 });
+    const [autoScroll, setAutoScroll] = useState(true);
 
-        // Create a response based on selected style
-        setTimeout(() => {
-            // Different response styles
-            let responses: number[] = [];
+    // Audio components
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const instrumentsRef = useRef<Map<number, Soundfont.Player>>(new Map());
+    const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const scheduledEventsRef = useRef<number[]>([]);
+    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-            switch (duetStyle) {
-                case 'simple':
-                    // Simple responses: play a third above or a fifth above
-                    responses = [3, 7]; // Minor third and perfect fifth
-                    break;
-                case 'chord':
-                    // Chord response: play a triad
-                    responses = [3, 7, 12]; // Minor triad with octave
-                    break;
-                case 'melody':
-                    // Melody response: play a sequence
-                    playMelodyResponse(note, velocity);
-                    return; // Early return as we handle this separately
-                default:
-                    responses = [3, 7];
-            }
+    // Piano roll refs
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
-            for (const interval of responses) {
-                const responseNote = note + interval;
-                if (responseNote < 108) { // Stay in reasonable MIDI range
-                    playNoteOnOutput(responseNote, velocity, 0, 0.5); // Play with 0.5s duration
+    // Calculate effective values
+    const effectivePixelsPerSecond = 100 * zoom;
+    const effectiveNoteHeight = NOTE_HEIGHT * verticalZoom;
 
-                    // Also play on internal synth for feedback (use synth 16 for duet responses)
-                    const noteName = Tone.Frequency(responseNote, "midi").toNote();
-                    synths.current[16]?.triggerAttackRelease(
-                        noteName,
-                        0.5,
-                        undefined,
-                        velocity / 127
-                    );
-                }
-            }
-        }, 250); // Small delay to make it feel like a response
-    };
+    // Calculate canvas dimensions
+    const canvasWidth = midiData ? Math.max(2000, midiData.duration * effectivePixelsPerSecond + 200) : 2000;
+    const canvasHeight = (viewportRange.maxNote - viewportRange.minNote + 1) * effectiveNoteHeight;
 
-    // Connect to MIDI input device
+    // Get visible notes for piano roll
+    const visibleNotes = useMemo(() => midiData ? midiData.tracks.flatMap((track, trackIndex) =>
+        track.notes
+            .filter(note => note.midi >= viewportRange.minNote && note.midi <= viewportRange.maxNote)
+            .map(note => ({
+                midi: note.midi,
+                time: note.time,
+                duration: note.duration,
+                velocity: note.velocity,
+                channel: track.channel ?? 0,
+                trackIndex
+            }))
+    ) : [], [midiData, viewportRange]);
+
+    // Initialize tracks from MIDI data
     useEffect(() => {
-        if (!navigator.requestMIDIAccess) return;
-
-        const connectToInputDevice = async () => {
-            try {
-                const access = await navigator.requestMIDIAccess();
-
-                // Disconnect any existing input
-                if (inputDevice.current) {
-                    inputDevice.current.onmidimessage = null;
-                }
-
-                // Connect to new input if ID is provided
-                if (inputDeviceId) {
-                    const device = access.inputs.get(inputDeviceId);
-                    if (device) {
-                        inputDevice.current = device;
-                        device.onmidimessage = handleMidiMessage;
-                        console.log(`Connected to MIDI input: ${device.name}`);
-                    }
-                } else {
-                    inputDevice.current = null;
-                }
-            } catch (err) {
-                console.error("Failed to access MIDI devices:", err);
-            }
-        };
-
-        connectToInputDevice();
-
-        return () => {
-            if (inputDevice.current) {
-                inputDevice.current.onmidimessage = null;
-            }
-        };
-    }, [inputDeviceId]);
-
-    // Connect to MIDI output device
-    useEffect(() => {
-        if (!navigator.requestMIDIAccess) return;
-
-        const connectToOutputDevice = async () => {
-            try {
-                const access = await navigator.requestMIDIAccess();
-
-                // Connect to new output if ID is provided
-                if (outputDeviceId) {
-                    const device = access.outputs.get(outputDeviceId);
-                    if (device) {
-                        outputDevice.current = device;
-                        console.log(`Connected to MIDI output: ${device.name}`);
-                    }
-                } else {
-                    outputDevice.current = null;
-                }
-            } catch (err) {
-                console.error("Failed to access MIDI devices:", err);
-            }
-        };
-
-        connectToOutputDevice();
-    }, [outputDeviceId]);
-
-    const playMelodyResponse = (note: number, velocity: number) => {
-        // Play a simple melodic pattern in response
-        const baseNote = note;
-        const pattern = [0, 2, 4, 0]; // Simple pattern
-
-        pattern.forEach((interval, index) => {
-            const responseNote = baseNote + interval;
-            if (responseNote < 108) {
-                // Stagger the notes with increasing delay
-                const delay = 0.1 + (index * 0.15);
-
-                // Play note on output device
-                playNoteOnOutput(responseNote, velocity, delay, 0.3);
-
-                // Also play on internal synth
-                setTimeout(() => {
-                    const noteName = Tone.Frequency(responseNote, "midi").toNote();
-                    synths.current[16]?.triggerAttackRelease(
-                        noteName,
-                        0.3,
-                        undefined,
-                        velocity / 127
-                    );
-                }, delay * 1000);
-            }
-        });
-    };
-
-    // Handle incoming MIDI messages
-    const handleMidiMessage = (message: WebMidi.MIDIMessageEvent) => {
-        const data = message.data;
-        const cmd = data[0] >> 4;
-        const channel = (data[0] & 0xf) + 1;
-        const noteNumber = data[1];
-        const velocity = data[2];
-
-        // Only process messages for our selected channel
-        if (channel !== selectedChannel && selectedChannel !== 0) return;
-
-        // Note On message (with velocity > 0)
-        if (cmd === 9 && velocity > 0) {
-            handleNoteOn(noteNumber, velocity);
-        }
-        // Note Off message or Note On with velocity 0
-        else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
-            handleNoteOff(noteNumber);
-        }
-    };
-
-    // Handle Note On message
-    const handleNoteOn = (note: number, velocity: number) => {
-        // Record the start time for this note
-        const currentTimeInSec = Tone.now();
-        activeNotes.current.set(note, {
-            startTime: currentTimeInSec,
-            velocity: velocity / 127  // Normalize to 0-1 range
-        });
-
-        // Play the note on internal synth (use synth 0 for user input)
-        const midiNote = note;
-        const noteName = Tone.Frequency(midiNote, "midi").toNote();
-
-        synths.current[0]?.triggerAttack(
-            noteName,
-            undefined,
-            velocity / 127
-        );
-
-        // If in duet mode, trigger AI response
-        if (duetMode) {
-            // We'll implement this later
-            triggerDuetResponse(note, velocity);
-        }
-    };
-
-    // Handle Note Off message
-    const handleNoteOff = (note: number) => {
-        // Get the start info for this note
-        const startInfo = activeNotes.current.get(note);
-        if (startInfo) {
-            // Calculate duration
-            const endTime = Tone.now();
-            const duration = endTime - startInfo.startTime;
-
-            // Add to recorded notes if we're recording
-            if (startTime.current !== null) {
-                recordedNotes.current.push({
-                    note,
-                    velocity: startInfo.velocity,
-                    time: startInfo.startTime - startTime.current,
-                    duration
-                });
-            }
-
-            // Remove from active notes
-            activeNotes.current.delete(note);
-
-            // Release the note on internal synth
-            const midiNote = note;
-            const noteName = Tone.Frequency(midiNote, "midi").toNote();
-            synths.current[0]?.triggerRelease(noteName);
-        }
-    };
-
-    // Play a note on the MIDI output device
-    const playNoteOnOutput = (note: number, velocity: number, delay: number, duration: number) => {
-        if (!outputDevice.current) return;
-
-        // Create MIDI messages for note on and note off
-        const noteOnMessage = [0x90 + (selectedChannel - 1), note, velocity];
-        const noteOffMessage = [0x80 + (selectedChannel - 1), note, 0];
-
-        // Send note on with delay
-        setTimeout(() => {
-            outputDevice.current?.send(noteOnMessage);
-
-            // Send note off after duration
-            setTimeout(() => {
-                outputDevice.current?.send(noteOffMessage);
-            }, duration * 1000);
-        }, delay * 1000);
-    };
-
-    // Handler functions with useCallback to prevent re-creation
-    const handleStop = useCallback(() => {
-        // Stop all scheduled notes
-        scheduledNotes.current.forEach(id => {
-            Tone.Transport.clear(id);
-        });
-        scheduledNotes.current = [];
-
-        // Stop all active synths
-        synths.current.forEach(synth => {
-            synth.releaseAll();
-        });
-
-        // Reset transport
-        Tone.Transport.stop();
-        Tone.Transport.seconds = 0;
-
-        // Reset state
-        setCurrentTime(0);
-        setIsPlaying(false);
-
-        // Notify parent
-        if (onTimeUpdate) onTimeUpdate(0);
-        if (onActiveNotesChange) onActiveNotesChange([]);
-    }, [onTimeUpdate, onActiveNotesChange]);
-
-    // Clean up and initialize midi player
-    useEffect(() => {
-        // Clean up previous synths
-        synths.current.forEach(synth => {
-            synth.dispose();
-        });
-        synths.current = [];
-
-        scheduledNotes.current.forEach(id => {
-            Tone.Transport.clear(id);
-        });
-        scheduledNotes.current = [];
-
-        if (!midiData) return;
-
-        // Update duration
-        setDuration(midiData.duration);
-        setCurrentTime(0);
-
-        console.log(`MIDI loaded: ${midiData.tracks.length} tracks, duration: ${midiData.duration.toFixed(2)}s`);
-        midiData.tracks.forEach((track, idx) => {
-            console.log(`  Track ${idx}: ${track.notes.length} notes, channel: ${track.channel !== undefined ? track.channel : 'undefined'}, instrument: ${track.instrument?.name || 'none'}`);
-        });
-
-        // Reset transport position
-        Tone.Transport.seconds = 0;        // Create a synth for each of the 16 MIDI channels + 1 for duet responses
-        for (let i = 0; i < 17; i++) {
-            const synth = new Tone.PolySynth(Tone.Synth, {
-                oscillator: {
-                    type: 'triangle'
-                },
-                envelope: {
-                    attack: 0.005,
-                    decay: 0.1,
-                    sustain: 0.3,
-                    release: 1
-                }
-            }).toDestination();
-
-            synth.volume.value = -6; // Set volume to -6dB
-            synths.current.push(synth);
-        }
-
-        console.log(`Synths created: ${synths.current.length} (one per MIDI channel + duet)`);
-
-        // Schedule all notes for playback
-        let totalNotesScheduled = 0;
-        let tracksProcessed = 0;
-
-        midiData.tracks.forEach((track) => {
-            // If a specific channel is selected (not 0 = all), only play that channel
-            if (selectedChannel !== 0 && track.channel !== undefined && track.channel !== selectedChannel - 1) {
-                return;
-            }
-
-            tracksProcessed++;
-            const trackChannel = track.channel !== undefined ? track.channel : 0;
-
-            track.notes.forEach(note => {
-                const id = Tone.Transport.schedule((time) => {
-                    // Use the appropriate synth for this track's channel
-                    const synthIndex = Math.min(trackChannel, 15); // Ensure we don't exceed array bounds
-                    synths.current[synthIndex]?.triggerAttackRelease(
-                        note.name,
-                        note.duration,
-                        time,
-                        note.velocity
-                    );
-
-                    // Also send to MIDI output if connected
-                    if (outputDevice.current) {
-                        const noteNumber = note.midi;
-                        const noteOnVelocity = Math.floor(note.velocity * 127);
-                        const midiChannel = selectedChannel !== 0 ? selectedChannel - 1 : trackChannel;
-
-                        // Note On
-                        outputDevice.current.send([0x90 + midiChannel, noteNumber, noteOnVelocity]);
-
-                        // Schedule Note Off
-                        setTimeout(() => {
-                            outputDevice.current?.send([0x80 + midiChannel, noteNumber, 0]);
-                        }, note.duration * 1000);
-                    }
-                }, note.time);
-
-                scheduledNotes.current.push(id);
-                totalNotesScheduled++;
-            });
-        });
-
-        console.log(`Scheduled ${totalNotesScheduled} notes from ${tracksProcessed} tracks (duration: ${midiData.duration}s)`);
-
-        return () => {
-            // Only dispose synths on unmount or when midiData changes
-            synths.current.forEach(synth => {
-                synth.dispose();
-            });
-            scheduledNotes.current.forEach(id => {
-                Tone.Transport.clear(id);
-            });
-        };
-    }, [midiData, selectedChannel]);
-
-    // Separate effect for time updates to prevent re-initialization
-    useEffect(() => {
-        if (!midiData) return;
-
-        // Set up loop to update current time
-        const interval = setInterval(() => {
-            if (isPlaying) {
-                const newTime = Tone.Transport.seconds;
-                setCurrentTime(newTime);
-                if (onTimeUpdate) onTimeUpdate(newTime);
-
-                // Stop playback when we reach the end
-                if (newTime >= midiData.duration) {
-                    handleStop();
-                }
-            }
-        }, 16); // Update ~60fps
-
-        return () => {
-            clearInterval(interval);
-        };
-    }, [isPlaying, midiData, onTimeUpdate, handleStop]);
-
-    // Start recording
-    const startRecording = () => {
-        recordedNotes.current = [];
-        startTime.current = Tone.now();
-        console.log("Recording started");
-    };
-
-    // Stop recording and create MIDI file
-    const stopRecording = () => {
-        if (startTime.current === null || recordedNotes.current.length === 0) {
-            console.log("No notes recorded");
-            return null;
-        }
-
-        // Create a new MIDI file
-        const midi = new Midi();
-        const track = midi.addTrack();
-
-        // Set channel
-        track.channel = selectedChannel - 1;
-
-        // Add recorded notes
-        recordedNotes.current.forEach(noteData => {
-            track.addNote({
-                midi: noteData.note,
-                time: noteData.time,
-                duration: noteData.duration,
-                velocity: noteData.velocity
-            });
-        });
-
-        // Reset recording state
-        startTime.current = null;
-
-        console.log(`Recording completed with ${recordedNotes.current.length} notes`);
-        return midi;
-    };
-
-    const handlePlay = async () => {
-        try {
-            // Ensure Tone.js is started (required for browser audio policy)
-            await Tone.start();
-            console.log('Audio context started');
-
-            // Start or resume the transport
-            if (Tone.Transport.state !== "started") {
-                Tone.Transport.start();
-            } else {
-                // If already started but paused, just update state
-                Tone.Transport.start();
-            }
-
-            setIsPlaying(true);
-        } catch (error) {
-            console.error('Failed to start playback:', error);
-            alert('Failed to start audio playback. Please check your browser permissions.');
-        }
-    };
-
-    const handlePause = () => {
-        Tone.Transport.pause();
-        setIsPlaying(false);
-    };
-
-    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const seekTime = parseFloat(e.target.value);
-
-        // Validate the seek time
-        if (isNaN(seekTime) || seekTime < 0 || seekTime > duration) {
+        if (!midiData) {
+            setTracks([]);
+            setDuration(0);
+            setCurrentTime(0);
             return;
         }
 
-        // Update transport position
-        Tone.Transport.seconds = seekTime;
+        const trackInfos: TrackInfo[] = midiData.tracks.map((track, index) => {
+            // Get instrument from MIDI track or default to piano
+            const instrumentNumber = track.instrument?.number ?? 0;
+            const instrumentName = INSTRUMENT_NUMBER_TO_NAME[instrumentNumber] || 'acoustic_grand_piano';
 
-        // Update state
-        setCurrentTime(seekTime);
+            return {
+                id: index,
+                name: track.name || `Track ${index + 1}`,
+                instrument: instrumentName,
+                volume: 0.8,
+                muted: false,
+                solo: false,
+                channel: track.channel ?? index
+            };
+        });
+        setTracks(trackInfos);
+        setDuration(midiData.duration);
+        setCurrentTime(0);
 
-        // Notify parent
-        if (onTimeUpdate) onTimeUpdate(seekTime);
-    };
+        // Adjust viewport based on MIDI content
+        let minNote = 127;
+        let maxNote = 0;
+        midiData.tracks.forEach(track => {
+            track.notes.forEach(note => {
+                minNote = Math.min(minNote, note.midi);
+                maxNote = Math.max(maxNote, note.midi);
+            });
+        });
 
-    const formatTime = (seconds: number): string => {
-        // Handle invalid values
-        if (isNaN(seconds) || !isFinite(seconds)) {
-            return '0:00';
+        if (minNote < 127 && maxNote > 0) {
+            minNote = Math.max(0, minNote - 6);
+            maxNote = Math.min(127, maxNote + 6);
+            if (maxNote - minNote < 24) {
+                const center = Math.floor((minNote + maxNote) / 2);
+                minNote = Math.max(0, center - 12);
+                maxNote = Math.min(127, center + 12);
+            }
+            setViewportRange({ minNote, maxNote });
+        }
+    }, [midiData]);
+
+    // Load instruments for tracks
+    useEffect(() => {
+        const loadInstruments = async () => {
+            if (!audioContextRef.current) return;
+
+            for (const track of tracks) {
+                // Check if we need to load a new instrument (either not loaded or instrument changed)
+                const currentInstrument = instrumentsRef.current.get(track.id);
+                const needsNewInstrument = !currentInstrument ||
+                    (currentInstrument && 'name' in currentInstrument && currentInstrument.name !== track.instrument);
+
+                if (needsNewInstrument) {
+                    // Stop and remove old instrument if it exists
+                    if (currentInstrument && typeof currentInstrument.stop === 'function') {
+                        currentInstrument.stop();
+                    }
+                    instrumentsRef.current.delete(track.id);
+
+                    try {
+                        const instrument = await Soundfont.instrument(audioContextRef.current, track.instrument);
+                        instrumentsRef.current.set(track.id, instrument);
+                        console.log(`Loaded instrument: ${track.instrument} for track ${track.id}`);
+                    } catch (error) {
+                        console.error(`Failed to load instrument ${track.instrument} for track ${track.id}:`, error);
+                        // Fallback to piano
+                        try {
+                            const fallbackInstrument = await Soundfont.instrument(audioContextRef.current, 'acoustic_grand_piano');
+                            instrumentsRef.current.set(track.id, fallbackInstrument);
+                        } catch (fallbackError) {
+                            console.error('Failed to load fallback piano instrument:', fallbackError);
+                        }
+                    }
+                }
+            }
+        };
+
+        loadInstruments();
+    }, [tracks]);
+
+    // Schedule MIDI playback
+    useEffect(() => {
+        if (!midiData) return;
+
+        // Clear any existing scheduled events
+        scheduledEventsRef.current.forEach(eventId => Tone.Transport.clear(eventId));
+        scheduledEventsRef.current = [];
+
+        // Schedule notes for playback
+        midiData.tracks.forEach((track, trackIndex) => {
+            const trackInfo = tracks[trackIndex];
+            if (!trackInfo || trackInfo.muted) return;
+
+            // Check if solo mode is active
+            const soloActive = tracks.some(t => t.solo);
+            if (soloActive && !trackInfo.solo) return;
+
+            track.notes.forEach(note => {
+                const eventId = Tone.Transport.schedule((time) => {
+                    const instrument = instrumentsRef.current.get(trackIndex);
+                    if (instrument) {
+                        const noteName = Tone.Frequency(note.midi, 'midi').toNote();
+                        instrument.play(noteName, time, {
+                            gain: note.velocity * trackInfo.volume,
+                            duration: note.duration
+                        });
+                    }
+                }, note.time);
+                scheduledEventsRef.current.push(eventId);
+            });
+        });
+
+        return () => {
+            scheduledEventsRef.current.forEach(eventId => Tone.Transport.clear(eventId));
+            scheduledEventsRef.current = [];
+        };
+    }, [midiData, tracks]);
+
+    // Draw piano roll
+    const draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) return;
+
+        // Clear with background
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw grid
+        drawGrid(ctx, canvas.width, canvas.height);
+
+        // Draw MIDI notes
+        drawMidiNotes(ctx);
+
+        // Draw playhead
+        drawPlayhead(ctx, canvas.height);
+
+        function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number) {
+            // Draw horizontal lines for each note
+            for (let note = viewportRange.minNote; note <= viewportRange.maxNote; note++) {
+                const y = (viewportRange.maxNote - note) * effectiveNoteHeight;
+                const noteInOctave = note % NOTES_IN_OCTAVE;
+
+                // Alternate colors for white and black keys
+                if (BLACK_KEY_INDICES.includes(noteInOctave)) {
+                    ctx.fillStyle = '#252525';
+                } else {
+                    ctx.fillStyle = '#1f1f1f';
+                }
+                ctx.fillRect(0, y, width, effectiveNoteHeight);
+
+                // Highlight C notes
+                if (noteInOctave === 0) {
+                    ctx.fillStyle = 'rgba(70, 130, 180, 0.1)';
+                    ctx.fillRect(0, y, width, effectiveNoteHeight);
+                }
+
+                // Draw horizontal grid line
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            // Draw vertical grid lines (beats and measures)
+            ctx.strokeStyle = '#333';
+
+            // Beat lines
+            for (let beat = 0; beat * effectivePixelsPerSecond < width; beat++) {
+                const x = beat * effectivePixelsPerSecond;
+
+                if (beat % 4 === 0) {
+                    // Measure line
+                    ctx.strokeStyle = '#555';
+                    ctx.lineWidth = 1.5;
+                } else {
+                    // Beat line
+                    ctx.strokeStyle = '#3a3a3a';
+                    ctx.lineWidth = 0.8;
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
         }
 
+        function drawMidiNotes(ctx: CanvasRenderingContext2D) {
+            visibleNotes.forEach(note => {
+                const x = note.time * effectivePixelsPerSecond;
+                const y = (viewportRange.maxNote - note.midi) * effectiveNoteHeight;
+                const noteWidth = Math.max(2, note.duration * effectivePixelsPerSecond);
+
+                // Get color based on channel
+                const channelColors = CHANNEL_COLORS[note.channel % CHANNEL_COLORS.length];
+
+                // Draw note rectangle
+                ctx.fillStyle = channelColors.main;
+                ctx.fillRect(x, y + 1, noteWidth, effectiveNoteHeight - 2);
+
+                // Draw border
+                ctx.strokeStyle = channelColors.border;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, y + 1, noteWidth, effectiveNoteHeight - 2);
+
+                // Draw velocity indicator (brightness variation)
+                if (noteWidth > 5) {
+                    const velocityAlpha = note.velocity * 0.5;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${velocityAlpha})`;
+                    ctx.fillRect(x + 1, y + 2, Math.min(3, noteWidth - 2), effectiveNoteHeight - 4);
+                }
+            });
+        }
+
+        function drawPlayhead(ctx: CanvasRenderingContext2D, height: number) {
+            const x = currentTime * effectivePixelsPerSecond;
+            ctx.strokeStyle = '#ff4444';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+    }, [visibleNotes, currentTime, effectivePixelsPerSecond, effectiveNoteHeight, viewportRange]);
+
+    // Auto-scroll
+    useEffect(() => {
+        if (!autoScroll || !containerRef.current || currentTime <= 0) return;
+
+        const container = containerRef.current;
+        const playheadX = currentTime * effectivePixelsPerSecond;
+        const containerWidth = container.clientWidth - PIANO_KEYS_WIDTH;
+        const scrollLeft = container.scrollLeft;
+
+        // Auto-scroll if playhead is near the right edge
+        if (playheadX > scrollLeft + containerWidth * 0.8) {
+            container.scrollLeft = playheadX - containerWidth * 0.3;
+        } else if (playheadX < scrollLeft + containerWidth * 0.2) {
+            container.scrollLeft = Math.max(0, playheadX - containerWidth * 0.7);
+        }
+    }, [currentTime, effectivePixelsPerSecond, autoScroll]);
+
+    // Render piano roll
+    useEffect(() => {
+        draw();
+    }, [draw]);
+
+    // Handle play/pause
+    const handlePlay = useCallback(async () => {
+        if (!midiData) return;
+
+        try {
+            // Initialize audio context on first play
+            if (!audioContextRef.current) {
+                audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            }
+
+            // Ensure audio context is running
+            if (audioContextRef.current.state === 'suspended') {
+                await audioContextRef.current.resume();
+            }
+
+            // Load instruments for all tracks
+            for (const track of tracks) {
+                if (!instrumentsRef.current.has(track.id)) {
+                    const instrument = await Soundfont.instrument(audioContextRef.current, track.instrument);
+                    instrumentsRef.current.set(track.id, instrument);
+                }
+            }
+
+            if (isPlaying) {
+                Tone.Transport.pause();
+                setIsPlaying(false);
+                if (playbackIntervalRef.current) {
+                    clearInterval(playbackIntervalRef.current);
+                }
+            } else {
+                Tone.Transport.start();
+                setIsPlaying(true);
+
+                // Update time
+                playbackIntervalRef.current = setInterval(() => {
+                    const time = Tone.Transport.seconds;
+                    setCurrentTime(time);
+                    onTimeUpdate(time);
+                }, 100);
+            }
+        } catch (error) {
+            console.error('Playback error:', error);
+        }
+    }, [isPlaying, midiData, onTimeUpdate, tracks]);
+
+    // Handle stop
+    const handleStop = useCallback(() => {
+        Tone.Transport.stop();
+        Tone.Transport.position = 0;
+        setIsPlaying(false);
+        setCurrentTime(0);
+        onTimeUpdate(0);
+        if (playbackIntervalRef.current) {
+            clearInterval(playbackIntervalRef.current);
+        }
+    }, [onTimeUpdate]);
+
+    // Recording functions
+    const startRecording = useCallback(() => {
+        setIsRecording(true);
+        setRecordingTime(0);
+        setRecordedMidi(null);
+
+        // Start timer
+        recordingIntervalRef.current = setInterval(() => {
+            setRecordingTime(time => time + 0.1);
+        }, 100);
+    }, []);
+
+    const stopRecording = useCallback(() => {
+        setIsRecording(false);
+        if (recordingIntervalRef.current) {
+            clearInterval(recordingIntervalRef.current);
+        }
+        // For now, just create a simple recorded MIDI
+        // In a real implementation, you'd capture actual MIDI input
+        if (midiData) {
+            setRecordedMidi(midiData);
+        }
+    }, [midiData]);
+
+    const saveRecording = useCallback(() => {
+        if (recordedMidi) {
+            // Create download link
+            const data = recordedMidi.toArray();
+            const blob = new Blob([data as unknown as BlobPart], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'recording.mid';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    }, [recordedMidi]);
+
+    const clearRecording = useCallback(() => {
+        setRecordedMidi(null);
+        setRecordingTime(0);
+    }, []);
+
+    // Track management functions
+    const updateTrackInstrument = useCallback((trackId: number, instrument: InstrumentName) => {
+        setTracks(prev => prev.map(track =>
+            track.id === trackId ? { ...track, instrument } : track
+        ));
+    }, []);
+
+    const updateTrackVolume = useCallback((trackId: number, volume: number) => {
+        setTracks(prev => prev.map(track =>
+            track.id === trackId ? { ...track, volume } : track
+        ));
+    }, []);
+
+    const toggleTrackMute = useCallback((trackId: number) => {
+        setTracks(prev => prev.map(track =>
+            track.id === trackId ? { ...track, muted: !track.muted } : track
+        ));
+    }, []);
+
+    const toggleTrackSolo = useCallback((trackId: number) => {
+        setTracks(prev => prev.map(track =>
+            track.id === trackId ? { ...track, solo: !track.solo } : track
+        ));
+    }, []);
+
+    // Cleanup
+    useEffect(() => {
+        const instruments = instrumentsRef.current;
+        const audioContext = audioContextRef.current;
+        const interval = playbackIntervalRef.current;
+        const recordingInterval = recordingIntervalRef.current;
+
+        return () => {
+            // Stop all instruments
+            instruments.forEach(instrument => {
+                instrument.stop();
+            });
+            instruments.clear();
+
+            if (audioContext) {
+                audioContext.close();
+            }
+            if (interval) {
+                clearInterval(interval);
+            }
+            if (recordingInterval) {
+                clearInterval(recordingInterval);
+            }
+        };
+    }, []);
+
+    const formatTime = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
     return (
-        <div className="w-full p-4 bg-gray-50 border border-gray-200 rounded-md my-4">
-            <div className="flex items-center mb-4">
-                <button
-                    className={`flex items-center justify-center w-10 h-10 rounded-full mr-2 ${!midiData ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'
-                        }`}
-                    onClick={isPlaying ? handlePause : handlePlay}
-                    disabled={!midiData}
-                >
-                    {isPlaying ? <FaPause size={14} /> : <FaPlay size={14} />}
-                </button>
-                <button
-                    className={`flex items-center justify-center w-10 h-10 rounded-full mr-2 ${!midiData ? 'bg-gray-300 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white'
-                        }`}
-                    onClick={handleStop}
-                    disabled={!midiData}
-                >
-                    <FaStop size={14} />
-                </button>
+        <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
+            {/* Controls */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                    <button
+                        onClick={handlePlay}
+                        className="p-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                        disabled={!midiData}
+                    >
+                        {isPlaying ? <FaPause /> : <FaPlay />}
+                    </button>
+                    <button
+                        onClick={handleStop}
+                        className="p-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                        disabled={!midiData}
+                    >
+                        <FaStop />
+                    </button>
+                </div>
 
-                <div className="ml-auto font-mono">
-                    {formatTime(currentTime)} / {formatTime(duration)}
+                {/* Recording Controls */}
+                <div className="flex items-center space-x-2">
+                    {!isRecording ? (
+                        <button
+                            onClick={startRecording}
+                            className="p-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                        >
+                            <FaMicrophone />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={stopRecording}
+                            className="p-2 bg-red-700 text-white rounded hover:bg-red-800 transition-colors animate-pulse"
+                        >
+                            <FaMicrophoneSlash />
+                        </button>
+                    )}
+                    {recordedMidi && (
+                        <>
+                            <button
+                                onClick={saveRecording}
+                                className="p-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                            >
+                                <FaSave />
+                            </button>
+                            <button
+                                onClick={clearRecording}
+                                className="p-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                            >
+                                <FaTrash />
+                            </button>
+                        </>
+                    )}
+                </div>
+
+                {/* Track Selector and Instrument */}
+                <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                        <label className="text-sm font-medium">Track:</label>
+                        <select
+                            value={selectedTrack}
+                            onChange={(e) => setSelectedTrack(parseInt(e.target.value))}
+                            className="px-3 py-1 border border-gray-300 rounded text-sm"
+                        >
+                            {tracks.map(track => (
+                                <option key={track.id} value={track.id}>
+                                    {track.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                        <label className="text-sm font-medium">Instrument:</label>
+                        <select
+                            value={tracks[selectedTrack]?.instrument || 'acoustic_grand_piano'}
+                            onChange={(e) => updateTrackInstrument(selectedTrack, e.target.value as InstrumentName)}
+                            className="px-3 py-1 border border-gray-300 rounded text-sm"
+                        >
+                            {INSTRUMENT_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
             </div>
 
-            <input
-                type="range"
-                min="0"
-                max={duration || 1}
-                step="0.01"
-                value={currentTime}
-                onChange={handleSeek}
-                disabled={!midiData}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
-            />
+            {/* Recording Status */}
+            {isRecording && (
+                <div className="flex items-center space-x-2 p-2 bg-red-50 border border-red-200 rounded">
+                    <FaClock className="text-red-500" />
+                    <span className="text-red-700 font-medium">Recording: {formatTime(recordingTime)}</span>
+                </div>
+            )}
+
+            {recordedMidi && !isRecording && (
+                <div className="flex items-center space-x-2 p-2 bg-green-50 border border-green-200 rounded">
+                    <FaSave className="text-green-500" />
+                    <span className="text-green-700 font-medium">Recording saved: recording.mid</span>
+                </div>
+            )}
+
+            {/* Progress Bar */}
+            {midiData && (
+                <div className="space-y-2">
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                            className="bg-blue-500 h-2 rounded-full transition-all duration-100"
+                            style={{ width: `${(currentTime / duration) * 100}%` }}
+                        />
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600">
+                        <span>{currentTime.toFixed(1)}s</span>
+                        <span>{duration.toFixed(1)}s</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Piano Roll */}
+            <div className="border border-gray-300 rounded bg-gray-900 overflow-x-auto">
+                {/* Piano Roll Controls */}
+                <div className="flex items-center justify-between p-2 bg-gray-800 border-b border-gray-700 text-white text-sm">
+                    <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                            <span>H-Zoom:</span>
+                            <input
+                                type="range"
+                                min="0.5"
+                                max="3"
+                                step="0.1"
+                                value={zoom}
+                                onChange={(e) => setZoom(parseFloat(e.target.value))}
+                                className="w-24"
+                            />
+                            <span className="w-12">{zoom.toFixed(1)}x</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <span>V-Zoom:</span>
+                            <input
+                                type="range"
+                                min="0.5"
+                                max="3"
+                                step="0.1"
+                                value={verticalZoom}
+                                onChange={(e) => setVerticalZoom(parseFloat(e.target.value))}
+                                className="w-24"
+                            />
+                            <span className="w-12">{verticalZoom.toFixed(1)}x</span>
+                        </div>
+                        <button
+                            onClick={() => setAutoScroll(!autoScroll)}
+                            className={`px-3 py-1 rounded text-xs ${autoScroll ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+                        >
+                            Auto-scroll
+                        </button>
+                        <button
+                            onClick={() => { setZoom(1); setVerticalZoom(1); }}
+                            className="px-3 py-1 bg-gray-700 text-gray-300 rounded text-xs hover:bg-gray-600"
+                        >
+                            Reset Zoom
+                        </button>
+                    </div>
+                </div>
+
+                {/* Piano Roll Canvas */}
+                <div className="flex" style={{ height: 1000, minHeight: 600 }}>
+                    {/* Piano keys sidebar */}
+                    <div
+                        className="flex-shrink-0 bg-gray-800 border-r border-gray-700 overflow-hidden"
+                        style={{ width: PIANO_KEYS_WIDTH }}
+                    >
+                        <div className="flex flex-col-reverse">
+                            {Array.from({ length: viewportRange.maxNote - viewportRange.minNote + 1 }).map((_, i) => {
+                                const note = viewportRange.minNote + i;
+                                const noteInOctave = note % NOTES_IN_OCTAVE;
+                                const octave = Math.floor(note / NOTES_IN_OCTAVE) - 1;
+                                const isBlackKey = BLACK_KEY_INDICES.includes(noteInOctave);
+                                const noteName = NOTE_NAMES[noteInOctave];
+                                const isC = noteInOctave === 0;
+
+                                return (
+                                    <div
+                                        key={note}
+                                        className={`flex items-center justify-end px-2 text-xs border-t border-gray-700
+                                            ${isBlackKey ? 'bg-gray-700 text-gray-400' : 'bg-gray-800 text-gray-300'}
+                                            ${isC ? 'font-bold' : ''}`}
+                                        style={{ height: effectiveNoteHeight, minHeight: effectiveNoteHeight }}
+                                    >
+                                        {isC && <span>{noteName}{octave}</span>}
+                                        {!isC && !isBlackKey && <span className="opacity-50">{noteName}</span>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Canvas container */}
+                    <div
+                        ref={containerRef}
+                        className="flex-grow overflow-auto relative"
+                    >
+                        <canvas
+                            ref={canvasRef}
+                            width={canvasWidth}
+                            height={canvasHeight}
+                            className="block"
+                        />
+                    </div>
+                </div>
+
+                {/* Channel legend */}
+                {midiData && (
+                    <div className="flex flex-wrap gap-2 p-2 bg-gray-800 border-t border-gray-700 text-xs">
+                        <span className="text-gray-400">Tracks:</span>
+                        {midiData.tracks.map((track, index) => {
+                            const channel = track.channel ?? 0;
+                            const trackName = track.name || `Channel ${channel + 1}`;
+                            return (
+                                <div key={index} className="flex items-center gap-1 px-2 py-1 bg-gray-700 text-gray-300 rounded">
+                                    <div
+                                        className="w-3 h-3 rounded border border-gray-600"
+                                        style={{ backgroundColor: CHANNEL_COLORS[channel % CHANNEL_COLORS.length].main }}
+                                    />
+                                    <span>{trackName}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Track Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {tracks.map(track => (
+                    <div key={track.id} className="border border-gray-200 rounded p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <h4 className="font-medium text-sm">{track.name}</h4>
+                            <div className="flex items-center space-x-1">
+                                <button
+                                    onClick={() => toggleTrackMute(track.id)}
+                                    className={`p-1 rounded text-xs ${track.muted ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}
+                                >
+                                    {track.muted ? <FaVolumeMute /> : <FaVolumeUp />}
+                                </button>
+                                <button
+                                    onClick={() => toggleTrackSolo(track.id)}
+                                    className={`p-1 rounded text-xs ${track.solo ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-600'}`}
+                                >
+                                    S
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                                <span>Volume:</span>
+                                <span>{Math.round(track.volume * 100)}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.1"
+                                value={track.volume}
+                                onChange={(e) => updateTrackVolume(track.id, parseFloat(e.target.value))}
+                                className="w-full"
+                            />
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Status */}
+            <div className="text-sm text-gray-600 text-center">
+                {midiData ? (
+                    <span>Loaded: {midiData.tracks.length} tracks, {duration.toFixed(1)}s duration</span>
+                ) : (
+                    <span>No MIDI data loaded</span>
+                )}
+            </div>
         </div>
     );
 }

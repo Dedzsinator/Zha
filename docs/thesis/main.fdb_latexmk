@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1762879340.58528 "/home/deginandor/Documents/Programming/Zha/docs/thesis/main.tex" "main.pdf" "main" 1762879340.81846 2
+["pdflatex"] 1762880768.70146 "/home/deginandor/Documents/Programming/Zha/docs/thesis/main.tex" "main.pdf" "main" 1762880768.98874 2
   "/home/deginandor/Documents/Programming/Zha/docs/thesis/main.tex" 1762812932.01009 6462 733af31486482a0c117a5c47f56dfd6a ""
   "/usr/share/texmf-dist/fonts/tfm/public/cm/cmr12.tfm" 1755987285 1288 655e228510b4c2a1abe905c368440826 ""
   "/usr/share/texmf-dist/tex/generic/catchfile/catchfile.sty" 1755987285 8622 63834878edeb14dd71d58d8f22bc3e06 ""
@@ -103,7 +103,7 @@
   "/usr/share/texmf-dist/web2c/texmf.cnf" 1755987285 42087 b0f9697c952c8f5a8eede4134282cb0d ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1756852641 3459355 afcc4e35fbe00d674d46bdacfe56c33f ""
   "algorithm.sty" 0 -1 0 ""
-  "main.aux" 1762879340.585 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "main.aux" 1762880768.70078 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
   "main.tex" 1762812932.01009 6462 733af31486482a0c117a5c47f56dfd6a ""
   "ubb_dolgozat.cls" 1762812931.8185 25170 b610ed8d16095f5a6376f5d27ada9ce5 ""
   (generated)

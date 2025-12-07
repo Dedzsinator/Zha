@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Midi } from '@tonejs/midi';
 import { FaSave, FaTrash, FaClock } from 'react-icons/fa';
 
@@ -12,7 +12,6 @@ interface MidiRecorderProps {
     onSave: (name: string) => void;
     onClear: () => void;
     inputDeviceId: string | null;
-    selectedChannel: number;
     recordingTimeSeconds: number;
 }
 
@@ -24,7 +23,6 @@ export default function MidiRecorder({
     onSave,
     onClear,
     inputDeviceId,
-    selectedChannel,
     recordingTimeSeconds
 }: MidiRecorderProps) {
     const [name, setName] = useState('My Recording');
