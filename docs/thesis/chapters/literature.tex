@@ -1,14 +1,19 @@
 \chapter{Irodalom áttekintés}
-\section{Történelmi megközelítések}
-Szabályalapú rendszerek (Xenakis), Markov-láncok \cite{carvalho2019markov}, RNN-ek \cite{eck2002learning}.
+\section{Korábbi megközelítések}
 
-\section{Modern fejlemények}
+A számítógépes zenegenerálás története szabályalapú rendszerekkel kezdődött, mint például Xenakis munkái. Később megjelentek a Markov láncok \cite{carvalho2019markov} és a rekurrens neurális hálózatok \cite{eck2002learning}, amelyek már tanulni tudtak zenei adatokból.
+
+\section{Modern fejlesztések}
+
+Az elmúlt években több jelentős előrelépés történt:
+
 \begin{itemize}
-    \item \textbf{VAE-k}: MusicVAE hierarchikus latensei \cite{roberts2018hierarchical}.
-    \item \textbf{Transformerek}: Music Transformer \cite{huang2018music}, MuseNet.
-    \item \textbf{GAN-ok}: MuseGAN \cite{dong2017musegan} több sávos generáláshoz.
+    \item \textbf{Variációs autoenkóderek}: A MusicVAE hierarchikus látens reprezentációkat használ \cite{roberts2018hierarchical}.
+    \item \textbf{Transformer modellek}: A Music Transformer \cite{huang2018music} és a MuseNet új lehetőségeket nyitott a hosszú szekvenciák generálásában.
+    \item \textbf{Generatív adverszariális hálózatok}: A MuseGAN \cite{dong2017musegan} többsávos generálást tesz lehetővé.
 \end{itemize}
 
-\section{Hiányosságok és kihívások}
-Hierarchikus szerkezet, polifónikus modellezés és a perplexity-n túli értékelés.
+\section{Nyitott kérdések}
+
+Több kihívás még mindig megoldásra vár: a hierarchikus zenei szerkezet megfelelő modellezése, a polifónikus zenei szövetek kezelése, és az értékelési módszerek javítása a perplexity mérőszámon túl.
 

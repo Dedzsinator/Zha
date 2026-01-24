@@ -640,7 +640,7 @@ def create_final_merged_file(output_file, output_dir, cached_sequences=None):
         return 0
 
 
-def main(midi_dir="dataset/midi", output_file="dataset/processed/markov_sequences.pt", cache_dir="output/trained_models", max_files=None):
+def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt", cache_dir="output/trained_models", max_files=None):
     """
     Scans a directory for MIDI files, processes them in parallel using a robust
     multiprocessing pool, and saves the extracted note sequences to a PyTorch file

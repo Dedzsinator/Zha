@@ -102,13 +102,19 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     )
     
     # --- 1. Load Pre-processed Data ---
-    processed_data_path = "dataset/processed/markov_sequences.pt"
+    processed_data_path = "dataset/processed/full_dataset.pt"
     logger.info(f"💾 Loading pre-processed data from '{processed_data_path}' (track: {track_type})...")
 
     if not os.path.exists(processed_data_path):
-        logger.error(f"❌ Processed data file not found at '{processed_data_path}'.")
-        logger.error("Please run the preprocessing script first: python scripts/preprocess_dataset.py")
-        return None
+        # Fallback to old path if new one doesn't exist
+        old_path = "dataset/processed/markov_sequences.pt"
+        if os.path.exists(old_path):
+            logger.warning(f"⚠️ '{processed_data_path}' not found, falling back to '{old_path}'")
+            processed_data_path = old_path
+        else:
+            logger.error(f"❌ Processed data file not found at '{processed_data_path}'.")
+            logger.error("Please run the preprocessing script first: python scripts/preprocess_dataset.py")
+            return None
 
     try:
         data = torch.load(processed_data_path)

@@ -181,3 +181,12 @@ output/
 trained_models/
 generated_files/
 docs/thesis/*.aux
+**/*.aux
+**/*.log
+**/*.out
+**/*.toc
+**/*.lof
+**/*.lot
+**/*.fls
+**/*.fdb_latexmk
+**/*.bbl

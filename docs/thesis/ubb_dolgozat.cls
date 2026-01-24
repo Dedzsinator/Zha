@@ -106,8 +106,7 @@
     {\fontsize{18}{20}\selectfont\scshape\noindent\@uniHU\par}%
     \vspace{25mm}
     \begin{center}%
-      \fontsize{18}{20}\usefont{OT1}{phv}{bc}{n}\selectfont
-      \bfseries
+      \fontsize{18}{20}\sffamily\bfseries\selectfont
       \@doctypeHU\par
       \vspace*{2mm}
       \fontsize{26}{28}\selectfont\@titleHU \par%
@@ -144,7 +143,7 @@
     {\fontsize{18}{20}\selectfont\scshape\noindent\@uniEN\par}%
     \vspace{25mm}
     \begin{center}%
-  	  \fontsize{18}{20}\usefont{OT1}{phv}{bc}{n}\selectfont\bfseries
+  	  \fontsize{18}{20}\sffamily\bfseries\selectfont
       \@doctypeEN\par
       \vspace*{2mm}
       \fontsize{26}{28}\selectfont\@titleEN \par%
@@ -181,8 +180,7 @@
     {\fontsize{18}{20}\selectfont\scshape\noindent\@uniRO\par}%
     \vspace{25mm}
     \begin{center}%
-  	  \fontsize{18}{20}\usefont{OT1}{phv}{bc}{n}\selectfont
-      \bfseries
+  	  \fontsize{18}{20}\sffamily\bfseries\selectfont
       \@doctypeRO\par
       \vspace*{2mm}
       \fontsize{26}{28}\selectfont\@titleRO \par%
@@ -325,15 +323,15 @@
   \vspace*{30\p@}%
   {\parindent \z@ \raggedright \reset@font
     \ifnum \c@secnumdepth >\m@ne
-    		{\fontsize{18}{20}\usefont{OT1}{phv}{bc}{n}\selectfont
-         \Large \bfseries \thechapter. \@chapapp{}
+    		{\fontsize{18}{20}\sffamily\bfseries\selectfont
+         \Large \thechapter. \@chapapp{}
         %  \Large \bfseries \@chapapp{}\ \thechapter
         }
          \par
          \vskip 10\p@
        \fi
-    {\fontsize{18}{20}\usefont{OT1}{phv}{bc}{n}\selectfont
-      \huge \bfseries #1\par
+    {\fontsize{18}{20}\sffamily\bfseries\selectfont
+      \huge #1\par
     }
     %\nobreak
     \vskip 45\p@
@@ -346,8 +344,8 @@
   {\parindent \z@ \raggedright
     \reset@font
     %\huge \bfseries 
-    \fontsize{18}{20}\usefont{OT1}{phv}{bc}{n}\selectfont 
-    \huge \bfseries
+    \fontsize{18}{20}\sffamily\bfseries\selectfont
+    \huge
     #1\par
     %\nobreak
     \vskip 30\p@
@@ -817,7 +815,7 @@
 % a következő szükséges, hogy a minted együttműködjön a magyar babel-lel
 % ld. https://github.com/gpoore/minted/issues/158
 \makeatletter
-% \minted@checkstyle{} % Commented out - may not exist in newer minted versions
+\minted@checkstyle{}
 \renewcommand{\fps@listing}{t}
 \SetupFloatingEnvironment{listing}{name=kódrészlet}
 \makeatother

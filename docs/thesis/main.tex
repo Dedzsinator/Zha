@@ -1,27 +1,12 @@
 \documentclass[final,12pt]{ubb_dolgozat}
+\usepackage[T1]{fontenc} % Better font encoding
+\usepackage[utf8]{inputenc} % UTF-8 encoding for Hungarian characters
+\usepackage{fix-cm} % Allow arbitrary font sizes for Computer Modern
 \usepackage{amsmath, amssymb, graphicx, subcaption}
 % hyperref is loaded in definitions.sty with proper options
 \usepackage{amsthm}
 \usepackage{listings}
 \usepackage{booktabs} % For table rules
-\usepackage{algorithm}
-\usepackage{algpseudocode} % For algorithmic environment
-
-% Simple algorithm environment using listings
-\lstnewenvironment{algoritmus}[1][]
-{
-    \lstset{
-        mathescape=true,
-        frame=tb,
-        numbers=left,
-        numberstyle=\tiny,
-        basicstyle=\small\ttfamily,
-        keywordstyle=\bfseries,
-        #1
-    }
-}
-{}
-
 % Define theorem environments
 \newtheorem{definition}{Definition}
 \newtheorem{theorem}{Theorem}
@@ -61,15 +46,8 @@
 % ezt be lehet tenni MINDEGYIK megjelenítendő kód elé opcióként
 \lstset{language=Python}
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%!!          EZT KELL VÁLTOZTATNI       !!%%%%
-%%     A DOLGOZAT CÍMOLDALÁNAK ELEMEI        %%
-
-% Az alábbi sorokat ki kell tölteni!!
-
 % mikor védünk
-\submityear{2024}
+\submityear{2026}
 
 % dolgozattípus
 \doctypeHU{Szakdolgozat}
@@ -113,15 +91,11 @@
 
 \maketitle
 
-\begin{abstractEN}
-
 % a lenti részt értelemszerûen ki kell tölteni a dolgozat angol kivonatával.
 % A BEGIN ... END között CSAK A SAJÁT SZÖVEG kell, hogy legyen.
 % Az utolsó mondatot benne kell hagyni, mely által kijelentitek, hogy a munkátok SAJÁT.
-
+\begin{abstractEN}
 {
-
-	\vfill
   
   \center{
   
@@ -130,17 +104,7 @@
 	
 	{\Large
  
-       
-	
-	\vspace{0.5cm}
-  
-  }
-	
-	\vfill
-}
-\vspace*{.5cm}
-	{\Large
-This thesis investigates the application of deep learning methods in symbolic music generation, with particular focus on the integration of Markov chains, Variational Autoencoders (VAE), and Transformer models. The research centers on the Zha system, which applies a hybrid architecture to model the musical creative process.
+       This thesis investigates the application of deep learning methods in symbolic music generation, with particular focus on the integration of Markov chains, Variational Autoencoders (VAE), and Transformer models. The research centers on the Zha system, which applies a hybrid architecture to model the musical creative process.
 
 This thesis investigates the application of deep learning methods in symbolic music generation, with particular focus on the integration of Markov chains, Variational Autoencoders (VAE), and Transformer models. The research centers on the Zha system, which applies a hybrid architecture to model the musical creative process.
 
@@ -149,8 +113,13 @@ The thesis provides detailed analysis of the theoretical foundations and practic
 The Zha system's innovative approach is based on a multi-layered AI architecture that combines advanced training infrastructure and sophisticated model integration mechanisms. Empirical evaluation shows that the hybrid approach significantly improves the quality and diversity of generated music compared to traditional single-model approaches.
 
 This research contributes to the field of computational musical creativity by demonstrating the effective integration of different deep learning paradigms and solving complex modeling challenges of musical structure.
+
+  
+  }
 	
-	\vspace{0.5cm}
+	\vfill
+}
+\vspace*{.5cm}
   
   }
 
@@ -172,7 +141,6 @@ This work is the result of my own activity. I have neither given nor received un
   \clearpage
 }
 
-
 % számozás kezdődik innen
 \pagenumbering{arabic}
 \setcounter{page}{1}
@@ -192,9 +160,6 @@ This work is the result of my own activity. I have neither given nor received un
 % CHAPTER 2: BACKGROUND AND THEORY
 \include{chapters/theory}
 
-% CHAPTER 3: LITERATURE REVIEW
-% \include{chapters/literature}
-
 % CHAPTER 4: MARKOV CHAINS
 \include{chapters/markov}
 
@@ -210,6 +175,9 @@ This work is the result of my own activity. I have neither given nor received un
 % CHAPTER 9: ZHA SYSTEM DESIGN
 \include{chapters/zha}
 
+% CHAPTER 10: CONCLUSION AND FUTURE WORK
+\include{chapters/conclusion}
+
 % APPENDIX
 \include{chapters/appendix}
 
@@ -221,7 +189,6 @@ This work is the result of my own activity. I have neither given nor received un
   \setlength{\bibspacing}{0.67\baselineskip}
   \bibliographystyle{abbrvnat_hu}
   \bibliography{dolgozat}
-  \nocite{*}
 }
 
 \end{document}

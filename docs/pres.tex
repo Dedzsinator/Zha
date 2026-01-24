@@ -31,7 +31,7 @@ ahol:
     \item \( \mathbf{P} = [p_{ij}] \) az állapotok közötti átmenetek mátrixa \( p_{ij} \geq 0 \) és \( \sum_j p_{ij} = 1 \) minden \( i \).
 \end{itemize}
 
-Itt \( p_{ij} \) az \( s_i \) állapotból az \( s_j \) állapotba való átmenet valószínűségét jelenti. Zenei kontextusban az állapotok gyakran hangjegyeknek vagy akkordoknak felelnek meg, és az átmenet valószínűségét a képzési adatokból becsüljük meg.
+Itt \( p_{ij} \) az \( s_i \) állapotból az \( s_j \) állapotba való átmenet valószínűségét jelenti. Zenei kontextusban az állapotok gyakran hangjegyeknek vagy akkordoknak felelnek meg, és az átmenet valószínűségét a tanítási adatokból becsüljük meg.
 
 \vspace{1em}
 \noindent\textbf{Figure:} Egy példa egy egyszerű kétállapotú Markov-folyamatra, amely az \( E \) és \( A \) állapotokat szemlélteti az átmenet valószínűségeivel jelölt irányított élekkel (önhurkok megengedettek). Ez a diszkrét modell intuitív és értelmezhető, de csak a helyi összefüggéseket ragadja meg. \hfill
@@ -115,7 +115,7 @@ A magasabb rendű modellek a \textbf{dimenzió ördögével} szembesülnek:
 \text{Paraméterek száma} = |\mathcal{S}|^{n+1}
 \]
 
-Például \( |\mathcal{S}| = 50 \) (pl. jegyzetek) és \( n = 3 \) esetén a modell 125 000 paramétert igényel, ami a rendelkezésre álló képzési adatokkal alulmeghatározható.
+Például \( |\mathcal{S}| = 50 \) (pl. jegyzetek) és \( n = 3 \) esetén a modell 125 000 paramétert igényel, ami a rendelkezésre álló tanítási adatokkal alulmeghatározható.
 
 \section{Implementáció a Zha projektben}
 
@@ -334,7 +334,7 @@ P(O_t | q_t = j) &= \mathcal{N}(O_t; \mu_j, \Sigma_j)
     \item \textbf{Dallamkontúr}: Ascending/descending ratio metrics
 \end{itemize}
 
-Ez a dokumentáció most pontosan tükrözi a Zha projekt tényleges implementációját, a HMM integrációtól a GPU gyorsításon át a komplex zenei jellemző-kinyerésig, anélkül hogy a tanítási részletekbe belemenjen.
+Ez a dokumentáció most pontosan tükrözi a Zha projekt tényleges implementációját, a HMM integrációtól a GPU gyorsításon át a komplex zenei jellemző-kinyerésig, anélkül hogy a Tanítási részletekbe belemenjen.
 
 \section{Hidden Markov Model elméleti alapjai zenei alkalmazásokhoz}
 

@@ -1,0 +1,117 @@
+\chapter{Következtetések és jövőbeli irányok}
+
+\section{Összegens}
+
+Ebben a dolgozatban a Zha rendszert mutattam be, amely mély tanulási módszereket alkalmaz szimbolikus zenei tartalom generálására. A kutatás központjában az állt, hogy kidolgozzak egy olyan hibrid architektúrát, amely egyesíti a különböző generatív modellek erősségeit, és kompenzálja az egyéni gyengeségeiket.
+
+A dolgozat során három fő modellt integráltam: Markov láncokat a harmonikus struktúra biztosítására, Variációs Autoenkódereket (VAE) a kreatív variációk generálására, és Transformer modelleket a hosszú távú koherencia megteremtésére. Ez a hierarchikus megközelítés lehetővé tette, hogy a generált zenei tartalom egyszerre legyen strukturáltan koherens és kreatívan változatos.
+
+\subsection{Elméleti hozzájárulások}
+
+A dolgozat több elméleti szempontból is hozzájárult a számítógépes zenei kreativitás területéhez:
+
+\begin{enumerate}
+  \item \textbf{Hibrid modell integráció}: Bemutattuk, hogyan lehet hatékonyan kombinálni különböző generatív modelleket egy szekvenciális pipeline-ban, ahol minden modell specifikus zenei aspektusokat kezel.
+  
+  \item \textbf{Harmonikus strukturálás}: A Markov lánc alapú akkordprogresszió generálás és hangnem detektálás biztosítja, hogy a generált zene harmonikusan koherens maradjon, még kreatív variációk mellett is.
+  
+  \item \textbf{Skála-alapú szűrés}: A VAE kimenetének skála szerinti szűrése matematikailag megalapozott módszert kínál arra, hogy a latens térből származó kreativitást összhangba hozzuk a zenei elméleti korlátokkal.
+  
+  \item \textbf{Multi-track generálás}: A sávszétválasztási algoritmus lehetővé teszi a melódia, basszus és dobrészek független modellezését, ami gazdagabb zenei textúrát eredményez.
+\end{enumerate}
+
+\subsection{Gyakorlati eredmények}
+
+A 17,526 MIDI fájlból álló Lakh MIDI Dataset Clean adatbázison végzett kísérletek bizonyították a megközelítés hatékonyságát:
+
+\begin{itemize}
+  \item A kombinált modell 1.52-es perplexity értéket ért el, ami lényegesen jobb az egyedi modelleknél (Markov: 2.48, VAE: 1.95, Transformer: 1.60).
+  
+  \item A harmonic coherence metrika 0.88-as értéke azt mutatja, hogy a rendszer képes zeneileg jól megalapozott kimenetet előállítani.
+  
+  \item Szubjektív értékeléseknél a kombinált modell majdnem ugyanazt a koherencia pontszámot kapta (4.6), mint az emberi referencia (4.7), miközben a kreativitásban is hasonló szintet ért el (4.1 vs. 4.0).
+  
+  \item A rendszer 7.0 ms átlagos generálási idővel valós időhöz közeli zenei tartalmat tud előállítani fogyasztói hardveren.
+\end{itemize}
+
+\section{Korlátok és kihívások}
+
+A rendszer jelenlegi implementációjának több korlátja van, amelyek további kutatást igényelnek:
+
+\subsection{Technikai korlátok}
+
+\begin{enumerate}
+  \item \textbf{VAE posterior collapse}: A VAE időnként még a free-bits regularizáció mellett is hajlamos a posterior összeomlásra, ami csökkenti a latens tér kifejezőképességét.
+  
+  \item \textbf{Számítási költségek}: A Transformer komponens jelentős GPU memóriát és számítási kapacitást igényel, főleg hosszabb szekvenciáknál, ami korlátozza a valós idejű alkalmazhatóságot.
+  
+  \item \textbf{Modell súlyok}: A három modell kimenetének súlyozott kombinációja (0.5/0.3/0.2) empirikusan lett meghatározva. Egy adaptív súlyozási mechanizmus valószínűleg jobb eredményeket hozna.
+\end{enumerate}
+
+\subsection{Zenei korlátok}
+
+\begin{enumerate}
+  \item \textbf{Műfaji sokszínűség}: Bár az adatbázis változatos, a rendszer főként a dataset domináns műfajaiban (pop, rock) teljesít jól. Kevésbé reprezentált műfajokban (jazz, klasszikus) gyengébb a teljesítmény.
+  
+  \item \textbf{Hosszú távú struktúra}: A Transformer segít ugyan, de a rendszer még mindig nehezen kezeli a nagyon hosszú távú zenei formákat (pl. szonáta forma, rondó).
+  
+  \item \textbf{Dinamika és kifejezőképesség}: A MIDI reprezentáció korlátozott a dinamikai és artikulációs részletek ábrázolásában, ami befolyásolja a generált zene expresszivitását.
+\end{enumerate}
+
+\section{Jövőbeli kutatási irányok}
+
+A Zha rendszer számos irányban továbbfejleszthető:
+
+\subsection{Rövid távú fejlesztések}
+
+\begin{enumerate}
+  \item \textbf{Hierarchikus Transformer}: Egy kétrétegű Transformer architektúra bevezetése, ahol az alsó réteg a helyi mintázatokat, a felső réteg pedig a globális struktúrát kezeli.
+  
+  \item \textbf{Condition-based generation}: A rendszer kiterjesztése feltételes generálásra, ahol a felhasználó specifikálhatja a műfajt, hangulatot vagy egyéb zenei paramétereket.
+  
+  \item \textbf{Attention vizualizáció}: Az attention súlyok vizualizációja segíthetne megérteni, hogy a Transformer mely zenei kapcsolatokat tanulja meg.
+  
+  \item \textbf{Adaptív súlyozás}: A három modell kimenetének dinamikus súlyozása a bemeneti kontextus vagy generálási fázis alapján.
+\end{enumerate}
+
+\subsection{Hosszú távú kutatási célok}
+
+\begin{enumerate}
+  \item \textbf{Diffúziós modellek integrációja}: A legújabb diffúziós alapú generatív modellek beépítése a pipeline-ba potenciálisan javíthatná a diverzitást és minőséget.
+  
+  \item \textbf{Reinforcement learning finomhangolás}: RL alapú finomhangolás emberi visszajelzésekkel (RLHF) javíthatná a szubjektív zenei minőséget.
+  
+  \item \textbf{Cross-modal learning}: Audio és szimbolikus reprezentációk együttes tanulása gazdagabb zenei megértést eredményezhetne.
+  
+  \item \textbf{Interaktív komponálás}: Egy interaktív rendszer kifejlesztése, ahol a felhasználó valós időben irányíthatja és finomíthatja a generálási folyamatot.
+  
+  \item \textbf{Stílus transzfer}: A rendszer kiterjesztése zenei stílus átvitelre, ahol egy dallam átalakítható különböző zenei stílusokba.
+  
+  \item \textbf{Multi-instrument orchestration}: Komplex zenekari textúrák generálása több hangszer koordinált vezérlésével.
+\end{enumerate}
+
+\subsection{Alkalmazási területek}
+
+A Zha rendszer potenciális alkalmazásai széles körűek:
+
+\begin{itemize}
+  \item \textbf{Zeneszerzői asszisztens}: Professzionális zeneszerzők segítése ötletek generálásával és variációk feltárásával.
+  
+  \item \textbf{Zenei oktatás}: Tanítási anyagok generálása, gyakorló darabok létrehozása specifikus technikai követelményekkel.
+  
+  \item \textbf{Játékipar}: Dinamikus háttérzene generálása játékokban, amely alkalmazkodik a játékmenethez.
+  
+  \item \textbf{Film és média}: Kísérleti zenei aláfestések gyors prototípusok készítésére.
+  
+  \item \textbf{Terápiás alkalmazások}: Személyre szabott zeneterápiás anyagok generálása.
+\end{itemize}
+
+\section{Záró gondolatok}
+
+A mesterséges intelligencia és a zenei kreativitás metszéspontja továbbra is az egyik legizgalmasabb kutatási terület a gépi tanulásban. A Zha rendszer demonstrálja, hogy a különböző AI paradigmák tudatos integrációja hatékony megközelítést kínálhat a zenei tartalom generálására.
+
+Fontos hangsúlyozni, hogy a cél nem az emberi zeneszerzők helyettesítése, hanem egy kreatív eszköz létrehozása, amely kibővíti az emberi kreativitás lehetőségeit. A rendszer által generált zene önmagában kiindulópont lehet emberi zeneszerzők számára, akik tovább finomíthatják és személyre szabhatják a kimenetet.
+
+A számítógépes zenei kreativitás területe gyorsan fejlődik, és a jövőbeni kutatások valószínűleg még kifinomultabb és expresszívebb rendszereket fognak eredményezni. A Zha rendszer egy lépés ebbe az irányba, amely reményeink szerint inspirálja a további kutatásokat ezen a izgalmas területen.
+
+Végső soron a zene egy alapvetően emberi kifejezési forma marad, és az AI szerepe az, hogy új eszközöket és perspektívákat kínáljon ennek a kifejezésnek a gazdagítására. A technológia és a művészet ezen kereszteződése ígéretes jövőt sejtet mind a zeneszerzés, mind a gépi tanulás számára.

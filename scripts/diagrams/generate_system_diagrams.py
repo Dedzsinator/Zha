@@ -361,7 +361,7 @@ def generate_system_performance_metrics():
     
     bars = ax.barh(models, training_hours, color=colors_models, alpha=0.7, edgecolor='black')
     ax.set_xlabel('Tanítási idő (órák)', fontsize=11)
-    ax.set_title('Modell tanítási idő', fontsize=12, weight='bold')
+    ax.set_title('Modell Tanítási idő', fontsize=12, weight='bold')
     ax.grid(axis='x', alpha=0.3)
     
     for bar, hours in zip(bars, training_hours):
