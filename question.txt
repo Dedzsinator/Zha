@@ -1,0 +1,1 @@
+does the preprocessing take care about the new bass and drums addition? if not add it. also enhance the preprocesser to automatically load off preprocessed midi from memory when done to be more efficient

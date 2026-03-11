@@ -29,57 +29,37 @@ except Exception as e:
     HAS_CUPY = False
 
 class CUDAOptimizer:
-    """GPU-accelerated tensor operations for Markov chains with robust error handling"""
+    """PyTorch-based GPU acceleration for Markov chains"""
     
-    @staticmethod
-    def to_gpu(array):
-        """Convert numpy array to GPU array if possible"""
-        if HAS_CUPY and isinstance(array, np.ndarray):
-            try:
-                return cp.asarray(array)
-            except Exception as e:
-                logger.warning(f"GPU conversion failed: {e}")
-                return array
-        return array
+    def __init__(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"🔥 CUDA Optimizer initialized on device: {self.device}")
     
-    @staticmethod
-    def to_cpu(array):
-        """Convert GPU array back to numpy if needed"""
-        if HAS_CUPY and hasattr(array, 'get'):
-            try:
-                return cp.asnumpy(array)
-            except Exception as e:
-                logger.warning(f"CPU conversion failed: {e}")
-                return array
-        return array
+    def to_gpu(self, array):
+        """Convert numpy array to torch tensor on GPU"""
+        if isinstance(array, torch.Tensor):
+            return array.to(self.device)
+        return torch.from_numpy(array.astype(np.float32)).to(self.device)
     
-    @staticmethod
-    def zeros_like_gpu(shape, dtype=np.float32):
-        """Create zeros array on GPU if available"""
-        if HAS_CUPY:
-            try:
-                return cp.zeros(shape, dtype=dtype)
-            except Exception as e:
-                logger.warning(f"GPU zeros creation failed: {e}, using CPU")
-                return np.zeros(shape, dtype=dtype)
-        return np.zeros(shape, dtype=dtype)
+    def to_cpu(self, tensor):
+        """Convert torch tensor to numpy array"""
+        if isinstance(tensor, torch.Tensor):
+            return tensor.cpu().numpy()
+        return tensor
     
-    @staticmethod
-    def normalize_gpu(matrix, axis=1):
-        """GPU-accelerated matrix normalization with fallback"""
-        try:
-            if HAS_CUPY and hasattr(matrix, 'sum'):
-                sums = cp.sum(matrix, axis=axis, keepdims=True)
-                sums = cp.where(sums == 0, 1.0, sums)
-                return matrix / sums
-            else:
-                sums = np.sum(matrix, axis=axis, keepdims=True)
-                sums = np.where(sums == 0, 1.0, sums)
-                return matrix / sums
-        except Exception as e:
-            logger.warning(f"GPU normalization failed: {e}, using CPU")
-            if hasattr(matrix, 'get'):
-                matrix = cp.asnumpy(matrix)
+    def zeros_like_gpu(self, shape, dtype=None):
+        """Create zeros tensor on GPU"""
+        # Ignore dtype parameter for PyTorch compatibility
+        return torch.zeros(shape, dtype=torch.float32, device=self.device)
+    
+    def normalize_gpu(self, matrix, axis=1):
+        """GPU-accelerated matrix normalization"""
+        if isinstance(matrix, torch.Tensor):
+            sums = matrix.sum(dim=axis, keepdim=True)
+            sums = torch.where(sums == 0, torch.ones_like(sums), sums)
+            return matrix / sums
+        else:
+            # CPU fallback
             sums = np.sum(matrix, axis=axis, keepdims=True)
             sums = np.where(sums == 0, 1.0, sums)
             return matrix / sums
@@ -94,19 +74,22 @@ class MarkovChain:
         self.max_interval = max_interval
         self.interval_range = 2 * max_interval + 1
         self.n_hidden_states = n_hidden_states
-        self.use_gpu = use_gpu and HAS_CUPY
+        self.use_gpu = use_gpu and torch.cuda.is_available()
         self.trained = False
         
         # Initialize GPU optimizer
         self.gpu_opt = CUDAOptimizer()
+        self.device = self.gpu_opt.device
         
-        # Enhanced transition matrices with GPU support
+        # Enhanced transition matrices with PyTorch GPU support
         if self.use_gpu:
-            self.transitions = self.gpu_opt.zeros_like_gpu((128, 128), dtype=np.float32)
-            self.higher_order_transitions = {}  # Will store GPU arrays
+            self.transitions = self.gpu_opt.zeros_like_gpu((128, 128))
+            self.higher_order_transitions = {}  # Will store torch tensors
+            logger.info(f"✅ Using GPU ({self.device}) for transition matrices")
         else:
             self.transitions = np.zeros((128, 128), dtype=np.float32)
             self.higher_order_transitions = {}
+            logger.info("⚠️ Using CPU for transition matrices")
             
         # Sparse interval transitions for memory efficiency
         self.interval_transitions = {}
@@ -416,15 +399,26 @@ class MarkovChain:
                 else:
                     notes.append(note_data)
             
-            # Calculate features
-            pitch_mean = np.mean(notes)
-            pitch_std = np.std(notes) if len(notes) > 1 else 0
-            pitch_range = max(notes) - min(notes) if len(notes) > 1 else 0
+            # Flatten the list of pitches to handle chords
+            flat_pitches = []
+            for p in notes:
+                if isinstance(p, (list, tuple)):
+                    flat_pitches.extend(p)
+                else:
+                    flat_pitches.append(p)
             
-            # Interval features
-            intervals = [notes[j+1] - notes[j] for j in range(len(notes)-1)]
-            interval_mean = np.mean(intervals) if intervals else 0
-            interval_std = np.std(intervals) if len(intervals) > 1 else 0
+            if not flat_pitches:
+                return features # Return empty if no notes were found
+
+            pitch_mean = np.mean(flat_pitches)
+            pitch_std = np.std(flat_pitches) if len(flat_pitches) > 1 else 0.0
+            duration_mean = np.mean(durations)
+            velocity_mean = np.mean(velocities) if velocities else 80.0
+            
+            # Calculate interval features
+            intervals = np.diff(flat_pitches)
+            interval_mean = np.mean(intervals) if len(intervals) > 0 else 0.0
+            interval_std = np.std(intervals) if len(intervals) > 1 else 0.0
             
             # Contour
             ascending = sum(1 for x in intervals if x > 0)
@@ -609,44 +603,50 @@ class MarkovChain:
         features = []
         
         for sequence in sequences[:min(len(sequences), 1000)]:  # Limit for performance
-            pitches = []
-            durations = []
+            if len(sequence) < 5:
+                continue
+                
+            # Extract raw data from sequence
+            pitches_raw = [item[0] for item in sequence]
+            durations = [item[1] for item in sequence]
+            velocities = [item[2] for item in sequence]
             
-            for note_data in sequence:
-                if isinstance(note_data, (list, tuple)) and len(note_data) >= 2:
-                    pitches.append(note_data[0])
-                    durations.append(note_data[1])
-                elif isinstance(note_data, int):
-                    pitches.append(note_data)
-                    durations.append(0.25)  # Default duration
-                    
-            if len(pitches) >= 4:  # Minimum sequence length
-                # Extract statistical features
-                pitch_mean = np.mean(pitches)
-                pitch_std = np.std(pitches)
-                pitch_range = max(pitches) - min(pitches)
-                duration_mean = np.mean(durations) if durations else 0.25
-                
-                # Interval features
-                intervals = [pitches[i+1] - pitches[i] for i in range(len(pitches)-1)]
-                interval_mean = np.mean(intervals) if intervals else 0
-                interval_std = np.std(intervals) if intervals else 0
-                
-                # Contour features
-                ascending = sum(1 for i in intervals if i > 0)
-                descending = sum(1 for i in intervals if i < 0)
-                contour_ratio = ascending / max(len(intervals), 1)
-                
-                feature_vector = [
-                    pitch_mean, pitch_std, pitch_range,
-                    duration_mean, interval_mean, interval_std,
-                    contour_ratio
-                ]
-                features.append(feature_vector)
+            # --- FIX: Flatten pitches to handle chords ---
+            pitches = []
+            for p in pitches_raw:
+                if isinstance(p, (list, tuple)):
+                    pitches.extend(p)
+                else:
+                    pitches.append(p)
+            # --- END FIX ---
+
+            if not pitches:
+                continue
+
+            # Calculate features
+            pitch_mean = np.mean(pitches) if pitches else 60.0
+            pitch_std = np.std(pitches) if pitches else 0.0
+            duration_mean = np.mean(durations) if durations else 0.5
+            velocity_mean = np.mean(velocities) if velocities else 80.0
+            
+            # Calculate interval features
+            intervals = np.diff([p for p in pitches if isinstance(p, int)])
+            interval_mean = np.mean(intervals) if len(intervals) > 0 else 0.0
+            interval_std = np.std(intervals) if len(intervals) > 0 else 0.0
+            
+            # Note density (notes per quarter length)
+            total_duration = sum(durations)
+            note_density = len(pitches) / total_duration if total_duration > 0 else 0.0
+            
+            feature_vector = [
+                pitch_mean, pitch_std, duration_mean, velocity_mean,
+                interval_mean, interval_std, note_density
+            ]
+            features.append(feature_vector)
                 
         return features
         
-    def train(self, midi_sequences, progress_callback=None):
+    def train(self, midi_sequences, chord_sequences=None, progress_callback=None):
         """Enhanced training with HMM initialization and GPU acceleration - memory efficient"""
         logger.info("Starting enhanced model training with HMM and GPU acceleration...")
         
@@ -747,7 +747,7 @@ class MarkovChain:
         
         if use_gpu_for_this:
             try:
-                gpu_transitions = self.gpu_opt.zeros_like_gpu((128, 128), dtype=np.float32)
+                gpu_transitions = self.gpu_opt.zeros_like_gpu((128, 128))
                 logger.info("🚀 GPU arrays initialized successfully")
             except Exception as e:
                 logger.warning(f"⚠️ GPU array initialization failed: {e}, falling back to CPU")
@@ -755,7 +755,11 @@ class MarkovChain:
                 gpu_transitions = None
         
         if not use_gpu_for_this:
-            gpu_transitions = self.transitions.copy()
+            # Handle both PyTorch tensors and NumPy arrays
+            if isinstance(self.transitions, torch.Tensor):
+                gpu_transitions = self.transitions.clone()
+            else:
+                gpu_transitions = self.transitions.copy()
             
         multi_order_counts = defaultdict(Counter)
         total_processed = 0
@@ -768,7 +772,10 @@ class MarkovChain:
                 if isinstance(note_data, int):
                     pitches.append(note_data)
                 elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    pitches.append(note_data[0])
+                    # Extract first element from chord
+                    first_note = note_data[0]
+                    if isinstance(first_note, int):
+                        pitches.append(first_note)
                     
             if len(pitches) < 2:
                 continue
@@ -777,6 +784,9 @@ class MarkovChain:
             try:
                 for i in range(len(pitches) - 1):
                     prev_note, next_note = pitches[i], pitches[i + 1]
+                    # Ensure both are integers for comparison
+                    if not isinstance(prev_note, int) or not isinstance(next_note, int):
+                        continue
                     if 0 <= prev_note < 128 and 0 <= next_note < 128:
                         if use_gpu_for_this and gpu_transitions is not None:
                             try:
@@ -818,13 +828,23 @@ class MarkovChain:
                 self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
             else:
                 logger.info("💻 Normalizing matrices on CPU...")
-                row_sums = gpu_transitions.sum(axis=1, keepdims=True)
-                np.divide(gpu_transitions, np.where(row_sums == 0, 1.0, row_sums), out=gpu_transitions)
-                self.transitions = gpu_transitions
+                # Handle both PyTorch tensors and NumPy arrays
+                if isinstance(gpu_transitions, torch.Tensor):
+                    # PyTorch tensor normalization
+                    row_sums = gpu_transitions.sum(dim=1, keepdim=True)
+                    row_sums = torch.where(row_sums == 0, torch.ones_like(row_sums), row_sums)
+                    gpu_transitions = gpu_transitions / row_sums
+                    self.transitions = gpu_transitions.cpu().numpy()
+                else:
+                    # NumPy array normalization
+                    row_sums = gpu_transitions.sum(axis=1, keepdims=True)
+                    np.divide(gpu_transitions, np.where(row_sums == 0, 1.0, row_sums), out=gpu_transitions)
+                    self.transitions = gpu_transitions
         except Exception as e:
-            logger.warning(f"GPU normalization failed: {e}, using CPU")
-            if hasattr(gpu_transitions, 'get'):
-                gpu_transitions = self.gpu_opt.to_cpu(gpu_transitions)
+            logger.warning(f"Normalization failed: {e}, using CPU fallback")
+            # Convert to numpy if it's a tensor
+            if isinstance(gpu_transitions, torch.Tensor):
+                gpu_transitions = gpu_transitions.cpu().numpy()
             row_sums = gpu_transitions.sum(axis=1, keepdims=True)
             np.divide(gpu_transitions, np.where(row_sums == 0, 1.0, row_sums), out=gpu_transitions)
             self.transitions = gpu_transitions
@@ -859,7 +879,10 @@ class MarkovChain:
                 if isinstance(note_data, int):
                     pitches.append(note_data)
                 elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    pitches.append(note_data[0])
+                    # Extract first element from chord
+                    first_note = note_data[0]
+                    if isinstance(first_note, int):
+                        pitches.append(first_note)
                     
             if len(pitches) < 2:
                 continue
@@ -868,6 +891,9 @@ class MarkovChain:
                 prev_note = pitches[i]
                 next_note = pitches[i + 1]
                 
+                # Ensure both are integers for comparison
+                if not isinstance(prev_note, int) or not isinstance(next_note, int):
+                    continue
                 if 0 <= prev_note < 128 and 0 <= next_note < 128:
                     interval_val = next_note - prev_note
                     if -self.max_interval <= interval_val <= self.max_interval:
@@ -913,7 +939,10 @@ class MarkovChain:
                     if isinstance(note_data, int):
                         pitches.append(note_data)
                     elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                        pitches.append(note_data[0])
+                        # Extract first element from chord
+                        first_note = note_data[0]
+                        if isinstance(first_note, int):
+                            pitches.append(first_note)
                         
                 if len(pitches) <= order:
                     continue
@@ -922,6 +951,11 @@ class MarkovChain:
                     context = tuple(pitches[i:i+order])
                     next_note = pitches[i+order]
                     
+                    # Ensure all elements are integers before comparison
+                    if not isinstance(next_note, int):
+                        continue
+                    if not all(isinstance(n, int) for n in context):
+                        continue
                     if all(0 <= n < 128 for n in context) and 0 <= next_note < 128:
                         transition_counts[context][next_note] += 1
                         
@@ -1301,7 +1335,10 @@ class MarkovChain:
                 if isinstance(note_data, int):
                     pitches.append(note_data)
                 elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    pitches.append(note_data[0])
+                    # Extract first element from chord
+                    first_note = note_data[0]
+                    if isinstance(first_note, int):
+                        pitches.append(first_note)
                     
             if len(pitches) < 2:
                 continue
@@ -1309,6 +1346,9 @@ class MarkovChain:
             # Single-order transitions
             for i in range(len(pitches) - 1):
                 prev_note, next_note = pitches[i], pitches[i + 1]
+                # Ensure both are integers
+                if not isinstance(prev_note, int) or not isinstance(next_note, int):
+                    continue
                 if 0 <= prev_note < 128 and 0 <= next_note < 128:
                     self.transitions[prev_note, next_note] += 1
             
@@ -1317,6 +1357,11 @@ class MarkovChain:
                 for i in range(len(pitches) - self.order):
                     context = tuple(pitches[i:i+self.order])
                     next_note = pitches[i+self.order]
+                    # Ensure all are integers
+                    if not isinstance(next_note, int):
+                        continue
+                    if not all(isinstance(n, int) for n in context):
+                        continue
                     if all(0 <= n < 128 for n in context) and 0 <= next_note < 128:
                         multi_order_counts[context][next_note] += 1
                         
@@ -1351,7 +1396,10 @@ class MarkovChain:
                 if isinstance(note_data, int):
                     pitches.append(note_data)
                 elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    pitches.append(note_data[0])
+                    # Extract first element from chord
+                    first_note = note_data[0]
+                    if isinstance(first_note, int):
+                        pitches.append(first_note)
                     
             if len(pitches) < 2:
                 continue
@@ -1360,6 +1408,9 @@ class MarkovChain:
                 prev_note = pitches[i]
                 next_note = pitches[i + 1]
                 
+                # Ensure both are integers
+                if not isinstance(prev_note, int) or not isinstance(next_note, int):
+                    continue
                 if 0 <= prev_note < 128 and 0 <= next_note < 128:
                     interval_val = next_note - prev_note
                     if -self.max_interval <= interval_val <= self.max_interval:
@@ -1848,36 +1899,42 @@ class MarkovChain:
             num_chords = max(8, length // 4)
             chords = self.generate_chord_progression(key_context=cleaned_key, num_chords=num_chords)
             
+            if not chords:
+                logger.warning(f"No chords generated for key {cleaned_key}, using default progression")
+                chords = ["C major", "G major", "A minor", "F major"] * (num_chords // 4 + 1)
+                chords = chords[:num_chords]
+            
             # Determine starting note
             start_note = self._determine_start_note(cleaned_key)
             
             # Handle time signature
             if time_signature not in self.musical_features['time_signatures']:
-                time_signature = "4/4"
-                if self.musical_features['time_signatures']:
-                    time_signature = max(self.musical_features['time_signatures'].items(), key=lambda x: x[1])[0]
-                    
-            # Calculate appropriate measures and note density
-            target_density = self.musical_features['note_density'].get(time_signature, 4)
-            target_measures = max(1, round(length / target_density))
-            actual_length = int(target_measures * target_density) or length
+                logger.debug(f"Time signature {time_signature} not in trained signatures, using 4/4")
+                time_signature = "4/4"  # Default to 4/4 if not found
             
-            # Generate notes with rhythm
-            notes_with_timings = self.generate_rhythmic_sequence(
+            # Generate notes with rhythm awareness
+            rhythmic_sequence = self.generate_rhythmic_sequence(
                 start_note=start_note,
                 key_context=cleaned_key,
-                length=actual_length,
+                length=length,
                 time_signature=time_signature,
-                measures=target_measures,
+                measures=length // 8,
                 use_interval_generation=True
             )
             
-            # Process and harmonize the sequence
-            notes = [n for n, _, _ in notes_with_timings]
-            durations = [d for _, d, _ in notes_with_timings]
-            beat_positions = [p for _, _, p in notes_with_timings]
+            # Unpack the rhythmic sequence (returns list of (note, duration, beat_position) tuples)
+            if rhythmic_sequence:
+                notes = [item[0] for item in rhythmic_sequence]
+                durations = [item[1] for item in rhythmic_sequence]
+                beat_positions = [item[2] for item in rhythmic_sequence]
+            else:
+                # Fallback if generation fails
+                logger.warning("Rhythmic sequence generation failed, using defaults")
+                notes = [start_note] * length
+                durations = [0.5] * length
+                beat_positions = [0.0] * length
             
-            # Map notes to appropriate chords
+            # Map notes to chord progression
             chord_sequence = self._map_notes_to_chords(notes, durations, chords)
             
             # Apply chord-aware pitch correction
@@ -1894,7 +1951,7 @@ class MarkovChain:
             }
             
         except Exception as e:
-            logger.error(f"Error in generate_with_chords: {e}")
+            logger.error(f"Error in generate_with_chords: {e}", exc_info=True)
             return None
 
     def _parse_chord_name(self, chord_name):
@@ -2080,7 +2137,7 @@ class MarkovChain:
     # Enhanced generation methods with HMM and higher-order transitions
     
     def generate_with_hmm(self, length=64, key_context=None, use_hidden_states=True):
-        """Generate sequence using HMM and higher-order transitions"""
+        """Generate sequence using HMM and higher-order transitions with anti-repetition"""
         if not self.trained or not self.hmm_model:
             logger.warning("HMM not available, falling back to standard generation")
             return self.generate_expressive_sequence(key_context, length)
@@ -2107,9 +2164,22 @@ class MarkovChain:
                     hidden_states[i] if i < len(hidden_states) else 0,
                     key_context
                 )
+                
+                # Safety check: if we're getting too repetitive, force variety
+                if len(sequence) >= 4:
+                    recent_4 = sequence[-4:]
+                    if len(set(recent_4)) == 1:  # All the same note!
+                        logger.warning(f"Detected repetition at step {i}, forcing variety")
+                        scale_pitches = self._get_scale_pitches(key_context)
+                        if scale_pitches:
+                            # Pick a different note from scale
+                            different_notes = [n for n in scale_pitches if n != next_note and 48 <= n <= 84]
+                            if different_notes:
+                                next_note = random.choice(different_notes)
+                
                 sequence.append(next_note)
                 
-            # Generate timing and rhythm
+            # Generate timing and rhythm with variety
             durations = self._generate_hmm_durations(sequence, hidden_states[:len(sequence)])
             
             return {
@@ -2135,7 +2205,7 @@ class MarkovChain:
             return [i % self.n_hidden_states for i in range(length)]
     
     def _predict_next_note_hmm(self, context_notes, hidden_state, key_context):
-        """Predict next note using HMM state and higher-order context"""
+        """Predict next note using HMM state and higher-order context with repetition avoidance"""
         try:
             # Try highest order first
             for order in range(min(len(context_notes), 6), 0, -1):
@@ -2144,9 +2214,9 @@ class MarkovChain:
                     if context in self.higher_order_transitions[order]:
                         transitions = self.higher_order_transitions[order][context]
                         
-                        # Weight by hidden state preference
+                        # Weight by hidden state preference AND penalize repetition
                         weighted_transitions = self._weight_by_hidden_state(
-                            transitions, hidden_state, key_context
+                            transitions, hidden_state, key_context, context_notes
                         )
                         
                         if weighted_transitions:
@@ -2154,17 +2224,44 @@ class MarkovChain:
                             probs = list(weighted_transitions.values())
                             return random.choices(notes, weights=probs)[0]
             
-            # Fallback to standard transition
+            # Fallback to standard transition with repetition penalty
             if len(context_notes) > 0:
                 current_note = context_notes[-1]
                 if 0 <= current_note < 128:
-                    probs = self.transitions[current_note]
+                    probs = self.transitions[current_note].copy()
+                    
+                    # Penalize recent notes to avoid repetition
+                    recent_notes = context_notes[-min(8, len(context_notes)):]
+                    note_counts = Counter(recent_notes)
+                    for note, count in note_counts.items():
+                        if 0 <= note < 128:
+                            # Exponentially decay repeated notes
+                            probs[note] *= (0.3 ** count)
+                    
+                    # Boost melodic intervals (steps and small leaps)
+                    for note in range(128):
+                        interval = abs(note - current_note)
+                        if interval == 0:
+                            probs[note] *= 0.1  # Strongly discourage exact repetition
+                        elif 1 <= interval <= 2:
+                            probs[note] *= 1.5  # Prefer steps
+                        elif 3 <= interval <= 5:
+                            probs[note] *= 1.2  # Allow small leaps
+                        elif interval > 12:
+                            probs[note] *= 0.5  # Discourage large jumps
+                    
                     if probs.sum() > 0:
+                        probs = probs / probs.sum()
                         return np.random.choice(128, p=probs)
             
-            # Final fallback
+            # Final fallback - ensure variety
             scale_pitches = self._get_scale_pitches(key_context)
             if scale_pitches:
+                # Filter out recently used notes
+                recent_set = set(context_notes[-4:]) if len(context_notes) >= 4 else set()
+                available = [n for n in scale_pitches if 48 <= n <= 84 and n not in recent_set]
+                if available:
+                    return random.choice(available)
                 return random.choice([n for n in scale_pitches if 48 <= n <= 84])
             else:
                 return random.randint(48, 84)
@@ -2173,35 +2270,66 @@ class MarkovChain:
             logger.warning(f"HMM note prediction failed: {e}")
             return random.randint(48, 84)
     
-    def _weight_by_hidden_state(self, transitions, hidden_state, key_context):
-        """Weight note transitions by hidden state preferences"""
+    def _weight_by_hidden_state(self, transitions, hidden_state, key_context, context_notes=None):
+        """Weight note transitions by hidden state preferences with anti-repetition"""
         try:
             # Get scale pitches for the key
             scale_pitches = self._get_scale_pitches(key_context)
+            
+            # Track recent notes to avoid repetition
+            recent_notes = context_notes[-min(8, len(context_notes)):] if context_notes else []
+            note_counts = Counter(recent_notes)
+            last_note = recent_notes[-1] if recent_notes else None
             
             weighted = {}
             for note, prob in transitions.items():
                 weight = prob
                 
+                # ANTI-REPETITION: Strongly penalize recently used notes
+                repeat_count = note_counts.get(note, 0)
+                if repeat_count > 0:
+                    weight *= (0.2 ** repeat_count)  # Exponential decay
+                
+                # Extra penalty for exact same note repetition
+                if note == last_note:
+                    weight *= 0.05
+                
+                # Boost melodic movement (stepwise and small leaps)
+                if last_note is not None:
+                    interval = abs(note - last_note)
+                    if interval == 0:
+                        weight *= 0.1  # Discourage staying on same note
+                    elif interval <= 2:
+                        weight *= 1.8  # Strong preference for steps
+                    elif interval <= 5:
+                        weight *= 1.3  # Allow small leaps
+                    elif interval <= 7:
+                        weight *= 0.9  # Neutral on medium leaps
+                    else:
+                        weight *= 0.4  # Discourage large jumps
+                
                 # Boost notes in the current key
                 if scale_pitches and note in scale_pitches:
-                    weight *= 1.5
+                    weight *= 1.4
                 
-                # Hidden state preferences (simplified model)
+                # Hidden state preferences for musical expression
                 state_mod = hidden_state % 4
                 if state_mod == 0:  # Stable state - prefer consonant intervals
                     if note % 12 in [0, 4, 7]:  # Root, third, fifth
-                        weight *= 1.3
+                        weight *= 1.2
                 elif state_mod == 1:  # Ascending state
-                    weight *= (1.2 if note > max(transitions.keys()) * 0.5 else 0.8)
+                    if last_note and note > last_note:
+                        weight *= 1.3
+                    elif last_note and note < last_note:
+                        weight *= 0.7
                 elif state_mod == 2:  # Descending state
-                    weight *= (1.2 if note < max(transitions.keys()) * 0.5 else 0.8)
+                    if last_note and note < last_note:
+                        weight *= 1.3
+                    elif last_note and note > last_note:
+                        weight *= 0.7
                 else:  # Transitional state - prefer stepwise motion
-                    prev_notes = list(transitions.keys())
-                    if prev_notes:
-                        avg_note = sum(prev_notes) / len(prev_notes)
-                        if abs(note - avg_note) <= 2:  # Within step
-                            weight *= 1.4
+                    if last_note and abs(note - last_note) <= 2:
+                        weight *= 1.5
                 
                 if weight > 0:
                     weighted[note] = weight

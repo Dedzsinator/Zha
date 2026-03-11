@@ -1,9 +1,16 @@
 \chapter{Bevezetés}
 \section{Motiváció}
-Algorithmic composition bridges creativity and computation, enabling novel tools for musicians and insights into musical structure. We explore how deep learning advances have transformed symbolic music generation.
+
+A mesterséges intelligencia és a zenei alkotás találkozása talán a számítástechnika egyik legizgalmasabb területe manapság. Évszázadokon át a zeneszerzés kizárólag emberi tevékenység volt, ami intuíciót, érzelmi intelligenciát és mély kulturális tudást igényelt. Az elmúlt években azonban a mély tanulási módszerek fejlődése azt mutatja, hogy a számítógépek képesek olyan zenét létrehozni, amely nemcsak szerkezetileg helyes, hanem esztétikailag is vonzó.
+
+Az algoritmikus zeneszerzés hidat épít a kreativitás és a számítás között. Új eszközöket ad a zenészek kezébe, miközben segít megérteni, hogyan működik alapvetően a zene. A hagyományos automatizált zeneszerzési módszerek gyakran merev szabályokon alapultak, amelyekből hiányzott az emberi zeneszerzők rugalmassága és finomsága. A mély tanulás megjelenése azonban teljesen megváltoztatta ezt a képet: lehetővé teszi a modellek számára, hogy közvetlenül a zeneművekből tanuljanak komplex mintázatokat, ahelyett hogy előre megírt szabályokat követnének.
+
+Ebben a kutatásban azt vizsgálom, hogyan lehet három különböző mély tanulási módszert összekapcsolni, hogy megragadják a zenei alkotás különböző oldalait. Markov láncokat használok rejtett Markov modellekkel kiegészítve, variációs autoenkódereket és Transformer hálózatokat. Mindegyiknek megvannak a saját előnyei: a Markov modellek jól kezelik a helyi statisztikai mintázatokat, és be lehet építeni beléjük zeneelméleti ismereteket. A VAE-k a rejtett tér manipulálásával teszik lehetővé a kreatív felfedezést. A Transformerek pedig kiválóan kezelik a hosszú távú kapcsolatokat és a globális szerkezeteket. Ezeket a kiegészítő technikákat kombinálva olyan rendszert szeretnék létrehozni, ami egyszerre figyel a helyi részletekre és a nagy egészre.
 
 \section{Kutatási célok}
-\begin{itemize}
-    \item Markov-láncok, VAE-k és transzformátorok elemzése a zene generálásban.
-    \item A Zha projekt architektúrájának és megvalósításának értékelése.
-\end{itemize}
+
+Ennek a dolgozatnak az elsődleges célja a Zha rendszer kidolgozása és elemzése, egy vegyes mély tanulási architektúra szimbolikus zenék előállítására. Több egymással összefüggő kérdést vizsgálok. Először is, hogyan lehet hatékonyan kombinálni a különböző generatív modelleket úgy, hogy kihasználjuk az erősségeiket, miközben csökkentjük a gyengeségeiket. Másodszor, milyen gyakorlati kihívások merülnek fel ezeknek a modelleknek a nagy léptekű megvalósításánál, a számítási hatékonyságtól a tanulás stabilitásáig és a memória kezeléséig. Harmadszor, hogyan lehet zeneelméleti tudást beépíteni az adatvezérelt modellekbe, hogy javítsam a generált kompozíciók minőségét és érthetőségét.
+
+Ez a kutatás részletesen elemzi a Markov láncokat, a variációs autoenkódereket és a Transformer modelleket zenegenerálási szempontból. Minden megközelítés elméleti hátterét és gyakorlati implementációját bemutatom, illetve azt is, hogyan illeszkednek egy egységes architektúrába. A Zha projekt konkrét megvalósítása ezeknek a koncepcióknak: nemcsak gyakorlati eszköz a zenegeneráláshoz, hanem kísérleti platform is, ahol tesztelni lehet a hibrid generatív modellek lehetőségeit és korlátait.
+
+A technikai eredményeken kívül ez a munka segít jobban megérteni a zenei struktúrát gépi tanulási szemszögből. Amikor megnézzük, hogy mit tanulnak meg ezek a modellek és milyen hibákat követnek el, betekintést nyerhetünk azokba az alapvető mintázatokba, amelyek a zenei koherenciát és kreativitást meghatározzák. Ez a kettős nézőpont (számítási és zeneelméleti) segít jobb generatív rendszereket tervezni, és mélyebb megértést ad a zenéről.

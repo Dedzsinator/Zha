@@ -1,391 +1,226 @@
-\chapter{Variációs autoenkóderek zene generáláshoz}
+\chapter{Variációs autoenkóderek csoport-orbitális konzisztenciával}
 \label{chap:vae}
 
-\section{Elméleti Alapok}
-\subsection{Látens változó modellek}
-A VAE alapgondolata, hogy a megfigyelt zenei adatok (pl. MIDI sorozatok) mögött rejtett, alacsony dimenziós jellemzők (látens változók) állnak. Ezek a jellemzők leírják a zene esszenciális tulajdonságait (pl. dallamvonal, ritmusképlet, hangnem). A generatív folyamat formálisan:
+\section{Bevezetés}
 
+A variációs autoenkóder (VAE) az egyik legfontosabb generatív modell a mélytanulásban, amely lehetővé teszi komplex adateloszlások megtanulását egy alacsony dimenziós látens reprezentáció segítségével \cite{kingma2014auto}. Zenei alkalmazásokban a VAE azért különösen hasznos, mert a látens tér manipulálásával új zenei lehetőségeket fedezhetünk fel, dallamok között interpolálhatunk, és finoman szabályozhatjuk a generálás különböző aspektusait.
+
+A klasszikus VAE azonban figyelmen kívül hagy egy alapvető zenei tulajdonságot: a \textit{transzpozíciós invarianciát}. Egy dallam akkor is ugyanaz marad, ha más hangnembe transzponáljuk, a mélyebb zenei struktúra nem változik. A standard VAE viszont minden transzponált változatot külön reprezentációként kezel, ami felesleges redundanciát és adatpazarlást eredményez.
+
+Ebben a fejezetben bemutatjuk a \textit{Csoport-Orbitális Látens Konzisztencia} (GOLC) módszert, amellyel explicit módon beépítjük a zenei szimmetriákat a VAE tanítási folyamatába.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.75\textwidth]{figures/architecture/vae_architecture.png}
+\caption{A VAE architektúra általános felépítése a kódoló és dekódoló rétegekkel, valamint a látens tér reprezentációval.}
+\label{fig:vae_architecture}
+\end{figure}
+
+\section{A VAE elméleti alapjai}
+
+\subsection{Generatív folyamat és ELBO}
+
+A VAE alapgondolata az, hogy a megfigyelt adatok $\mathbf{x}$ (például MIDI szekvenciák) mögött rejtett látens változók $\mathbf{z}$ állnak, amelyek leírják a zene lényegi jellemzőit. A generatív modell így néz ki:
 \[
 p_\theta(\mathbf{x}) = \int p_\theta(\mathbf{x}|\mathbf{z})p(\mathbf{z})d\mathbf{z}
 \]
 
-ahol:
-\begin{itemize}
-    \item $p(\mathbf{z})$: A látens változó előzetes eloszlása (általában standard normális eloszlás)
-    \item $p_\theta(\mathbf{x}|\mathbf{z})$: Generatív modell (dekóder), ami a látens változóból rekonstruálja a bemenetet
-\end{itemize}
+ahol $p(\mathbf{z}) = \mathcal{N}(0, \mathbf{I})$ az előzetes eloszlás, $p_\theta(\mathbf{x}|\mathbf{z})$ pedig a dekódoló.
 
-A modell célja a megfigyelt adatok $\mathbf{x}$ valószínűségének maximalizálása. A képlet mögötti intuíció: a zene generálása úgy történik, hogy először mintavételezünk a látens térből ($\mathbf{z}$), majd ebből a dekóder generálja a zenei sorozatot.
-
-\subsection{Variációs következtetés és ELBO}
-A valódi utólagos eloszlás $p_\theta(\mathbf{z}|\mathbf{x})$ számításigényes, ezért egy $q_\phi(\mathbf{z}|\mathbf{x})$ variációs eloszlással közelítjük (kódoló). A bizonyíték alsó határa (ELBO) levezetése a Jensen-egyenlőtlenségből származik:
-
+A posterior $p_\theta(\mathbf{z}|\mathbf{x})$ sajnos intraktábilis, ezért variációs közelítést alkalmazunk $q_\phi(\mathbf{z}|\mathbf{x})$ kódolóval. A bizonyíték alsó határa (ELBO) \cite{kingma2014auto}:
 \[
-\log p_\theta(\mathbf{x}) \geq \underbrace{\mathbb{E}_{q_\phi}[\log p_\theta(\mathbf{x}|\mathbf{z})]}_{\text{Rekonstrukciós veszteség}} - \underbrace{D_{\text{KL}}(q_\phi(\mathbf{z}|\mathbf{x}) \parallel p(\mathbf{z}))}_{\text{Regularizációs tag}}
+\log p_\theta(\mathbf{x}) \geq \mathbb{E}_{q_\phi}[\log p_\theta(\mathbf{x}|\mathbf{z})] - D_{\text{KL}}(q_\phi(\mathbf{z}|\mathbf{x}) \parallel p(\mathbf{z}))
 \]
 
-\begin{itemize}
-    \item \textbf{Rekonstrukciós veszteség}: Méri, hogy a dekóder mennyire képes pontosan rekonstruálni a bemenetet a látens változóból
-    \item \textbf{KL-divergencia}: Méri a kódoló által tanult eloszlás és az előzetes eloszlás távolságát, elősegítve a jól strukturált látens teret
-\end{itemize}
+A bal oldali tag a \textit{rekonstrukciós veszteség}, a jobb oldali pedig a \textit{KL-regularizáció}, amely strukturált látens teret biztosít.
 
-A KL-divergencia szerepe kulcsfontosságú: ha túl kicsi, a modell nem tanul hasznos reprezentációt; ha túl nagy, a rekonstrukció pontatlanná válik. Az optimális egyensúly megtalálása a VAE képzés legnagyobb kihívása.
+\subsection{Reparametrizációs trükk}
 
-\section{Zene-specifikus Architektúra}
-\subsection{Kódoló tervezés}
-Zenei szekvenciák feldolgozására a kétirányú LSTM optimális, mert képes figyelembe venni a jövőbeli és múltbeli kontextust is:
-
-\[
-\begin{aligned}
-\overrightarrow{\mathbf{h}}_t &= \text{LSTM}(\mathbf{x}_t, \overrightarrow{\mathbf{h}}_{t-1}) \quad \text{(előrefelé haladó állapot)} \\
-\overleftarrow{\mathbf{h}}_t &= \text{LSTM}(\mathbf{x}_t, \overleftarrow{\mathbf{h}}_{t+1}) \quad \text{(hátrafelé haladó állapot)} \\
-[\boldsymbol{\mu}, \boldsymbol{\sigma}] &= \text{MLP}([\overrightarrow{\mathbf{h}}_T; \overleftarrow{\mathbf{h}}_1]) \quad \text{(látens paraméterek)}
-\end{aligned}
-\]
-
-Az utolsó lépésben az MLP (többrétegű perceptron) állítja elő a látens eloszlás paramétereit. Ez az architektúra különösen hatékony dallamok és akkordmenetek esetén.
-
-\subsection{Dekódoló architektúrák}
-\begin{itemize}
-    \item \textbf{Autoregresszív dekóder}: Sorozatot generál lépésről lépésre:
-    \[
-    p_\theta(x_t|\mathbf{z}, x_{<t}) = \text{LSTM}(\mathbf{z}, x_{t-1}, \mathbf{h}_{t-1})
-    \]
-    \item \textbf{Hierarchikus dekóder (MusicVAE)}: Kétszintű reprezentáció \cite{roberts2018hierarchical}:
-    \begin{align*}
-        \mathbf{z}_{\text{master}} & \sim \mathcal{N}(0, \mathbf{I}) \quad \text{(globális szerkezet)} \\
-        \mathbf{z}_{\text{note}} & \sim p(\mathbf{z}_{\text{note}}|\mathbf{z}_{\text{master}}) \quad \text{(egyedi hangjegyek)}
-    \end{align*}
-\end{itemize}
-
-A hierarchikus megközelítés lehetővé teszi hosszabb távú szerkezetek modellezését, mint például versszak-refrén átmenetek.
-
-\section{Matematikai alapelvek}
-\subsection{Átparaméterezési trükk}
-A kihívás: a mintavételezés nem differenciálható művelet, ami megakadályozná a gradiensszámítást. Megoldásként a sztochasztikus változót determinisztikus és véletlen komponensekre bontjuk \cite{kingma2014auto}:
-
-\[
-\mathbf{z} = \underbrace{\boldsymbol{\mu}}_{\text{differenciálható}} + \boldsymbol{\sigma} \odot \underbrace{\boldsymbol{\epsilon}}_{\boldsymbol{\epsilon} \sim \mathcal{N}(0, \mathbf{I})}
-\]
-
-Ez lehetővé teszi, hogy a gradiens a $\boldsymbol{\mu}$ és $\boldsymbol{\sigma}$ paramétereken keresztül áramoljon vissza a kódolóba, miközben a véletlenszerűséget a $\boldsymbol{\epsilon}$ mintavételezés biztosítja.
-
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.8\textwidth]{images/reparameterization_trick.png}
-\caption{Átparaméterezési trükk a VAE képzésben}
-\label{fig:reparam}
+\includegraphics[width=0.6\textwidth]{figures/vae/reparameterization_trick.png}
+\caption{A reparametrizációs trükk ábrázolása: a sztochasztikus mintavételezés szétválasztása determinisztikus és véletlen komponensekre.}
+\label{fig:reparameterization}
 \end{figure}
 
-\subsection{Beta-VAE és regularizáció}
-A standard VAE gyakran "posterior collapse" problémával küzd, ahol a KL term túl gyorsan nullához konvergál. A Beta-VAE megoldás \cite{brunner2018midivae}:
-
+A mintavételezés $\mathbf{z} \sim q_\phi(\mathbf{z}|\mathbf{x})$ nem differenciálható, ami megakadályozná a visszaterjesztést. A megoldás a reparametrizáció:
 \[
-\mathcal{L}_{\beta} = \mathbb{E}_{q_\phi}[\log p_\theta(\mathbf{x}|\mathbf{z})] - \beta \cdot D_{\text{KL}}(q_\phi(\mathbf{z}|\mathbf{x}) \parallel p(\mathbf{z}))
+\mathbf{z} = \boldsymbol{\mu}_\phi(\mathbf{x}) + \boldsymbol{\sigma}_\phi(\mathbf{x}) \odot \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(0, \mathbf{I})
 \]
 
-ahol $\beta > 1$ erősebb regularizációt eredményez, elősegítve a disentangled reprezentációkat.
+Ezzel szétválasztjuk a determinisztikus ($\boldsymbol{\mu}, \boldsymbol{\sigma}$) és sztochasztikus ($\boldsymbol{\epsilon}$) komponenseket, így a gradiens visszaáramolhat a kódoló paramétereihez. Ezt kiegészítettük egy hőmérséklet-paraméterrel, amellyel szabályozhatjuk a generált minták változatosságát.
 
-\subsection{KL-divergencia analízis}
-Gauss eloszlás esetén a KL-divergencia zárt alakban kifejezhető:
+\section{Csoport-orbitális konzisztencia}
 
-\[
-D_{\text{KL}} = -\frac{1}{2} \sum_{j=1}^J \left(1 + \log\sigma_j^2 - \mu_j^2 - \sigma_j^2\right)
-\]
+\subsection{Motiváció}
 
-ahol $J$ a látens tér dimenziója. A képlet szemléletes jelentése: 
-\begin{itemize}
-    \item $\mu_j^2$ minimalizálása a látens átlag nullára tolását eredményezi
-    \item $\log\sigma_j^2 - \sigma_j^2$ minimalizálása a szórás egységnyi érték felé mozdítja
-\end{itemize}
+A klasszikus VAE nem veszi figyelembe a zenei szimmetriákat, különösen a transzpozíciós invarianciát. Egy dallam zeneileg ugyanaz marad, ha más hangnembe transzponáljuk, de a VAE különböző reprezentációkat tanul nekik.
 
-\section{Kihívások a zenegenerációban}
-\subsection{Posterior collapse}
-A gyakorlatban előfordul, hogy a KL-divergencia dominál, és a kódoló minden bemenethez hasonló látens reprezentációt hoz létre. Ennek két fő oka:
-\begin{enumerate}
-    \item A dekóder elég erős ahhoz, hogy a látens változó nélkül is jól rekonstruáljon
-    \item A látens tér dimenziója túl nagy a feladathoz képest
-\end{enumerate}
+\subsection{GOLC módszer}
 
-Megoldási stratégiák:
-\begin{itemize}
-    \item \textbf{KL-lágyítás}: $\beta$ súly fokozatos növelése
-    \[
-    \mathcal{L} = \mathbb{E}_{q}[\log p(\mathbf{x}|\mathbf{z})] - \beta_t D_{\text{KL}}
-    \]
-    \item \textbf{Szabad bitek}: KL-költség dimenziónkénti korlátozása
-\end{itemize}
+A Csoport-Orbitális Látens Konzisztencia (GOLC) explicit módon beépíti a zenei szimmetriákat:
 
-\subsection{Diszkrét adatok kezelése}
-A zenei tokenek (hangmagasság, időtartam) diszkrét jellege problémát okoz, mert a VAE alapvetően folytonos eloszlásokat feltételez. Hatékony megoldások:
-
-\begin{itemize}
-    \item \textbf{Gumbel-Softmax}: Folytonos relaxáció diszkrét eloszlásokra
-    \[
-    y_i = \frac{\exp((\log\pi_i + g_i)/\tau)}{\sum_j \exp((\log\pi_j + g_j)/\tau)}, \quad g_i \sim \text{Gumbel}(0,1)
-    \]
-    \item \textbf{VQ-VAE}: Diszkrét kódtár bevezetése
-    \[
-    \mathbf{z}_q = \arg\min_{\mathbf{e}_k \in \mathcal{C}} \|\mathbf{z}_e - \mathbf{e}_k\|_2
-    \]
-\end{itemize}
-
-\section{Speciális VAE architektúrák}
-\subsection{Hierarchikus VAE}
-Hosszabb zenei darabok generálásához több szintű reprezentációt vezetünk be:
+- \textbf{Orbit definíció}: Egy dallam összes transzponált változata
+- \textbf{Kanonikus reprezentáció}: Az orbit átlaga a látens térben  
+- \textbf{Orbitális veszteség}: Kényszeríti, hogy minden transzponált változat ugyanarra a pontra képeződjön
 
 \[
-p(\mathbf{z}) = p(\mathbf{z}_L) \prod_{l=1}^{L-1} p(\mathbf{z}_l|\mathbf{z}_{l+1}), \quad q(\mathbf{z}|\mathbf{x}) = q(\mathbf{z}_1|\mathbf{x}) \prod_{l=2}^L q(\mathbf{z}_l|\mathbf{z}_{l-1})
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{recon}} + \beta \cdot \mathcal{L}_{\text{KL}} + \beta_{\text{orbit}} \cdot \mathcal{L}_{\text{orbit}}
 \]
 
-\begin{itemize}
-    \item Felső szintek: Globális szerkezet (pl. A-B-A forma)
-    \item Alsó szintek: Helyi jellemzők (pl. egyedi hangjegyek)
-\end{itemize}
+\section{Implementáció és architektúra}
 
-\subsection{Transformer-VAE}
-Hosszú távú függőségek kezelésére:
-\[
-\mathbf{H} = \text{MultiHeadAttention}(\mathbf{X}), \quad \boldsymbol{\mu}, \boldsymbol{\sigma} = \text{MLP}(\mathbf{H}_{\text{[CLS]}})
-\]
+\subsection{Kódoló és dekódoló}
 
-Az önfigyelem mechanizmus lehetővé teszi, hogy bármely két időpont közötti függőséget közvetlenül modellezni lehessen, nem csak szomszédos elemeket.
+A modell architektúrájában reziduális blokkokat és réteg normalizációt alkalmazunk, hogy stabil legyen a gradiens áramlása:
 
-\section{Csoport-orbitális konzisztencia a zenei VAE-modellekben}
-
-\subsection{Motiváció és elméleti háttér}
-
-A zenei struktúrák egyik legfontosabb sajátossága az ismétlődő mintázatok és szimmetrikus szerkezetek jelenléte. Egy adott motívum felismerhető marad akkor is, ha transzponálva, inverzióval, vagy más zenei művelettel módosítjuk — ez a jelenség a hangnemi invariancia. A legtöbb mélytanulási modell, különösen a klasszikus Variációs Autoencoder nem kezeli explicit módon ezt az invarianciát, minden variánst külön mintaként tanul, ezzel redundanciát és információveszteséget okozva.
-
-Ebből adódott a kutatás vezérkérdése: hogyan építhető be a zene szimmetriacsoportjainak szerkezete egy VAE-modell tanulási folyamatába oly módon, hogy a latens tér invariáns legyen a zenei transzformációkkal szemben?
-
-\subsection{Az alapötlet: csoport-orbitális konzisztencia}
-
-Az alapötlet az, hogy minden zenei motívumhoz nemcsak önmagát, hanem az általa generált teljes csoportorbitot ($G \cdot x$) is figyelembe vesszük. Ahelyett, hogy a modell minden orbit-elemhez külön latens vektort rendelne, az encoder-t úgy tanítjuk, hogy azok azonos reprezentációt eredményezzenek. Ezt a jelenséget csoport-orbitális konzisztenciának (Group-Orbit Latent Consistency, GOLC) nevezzük.
-
-Formálisan: ha $G$ egy transzformációs csoport (például hangnemi transzpozíciók), akkor az encodernek teljesülnie kell a következő feltételnek:
-\[
-Enc_\phi(g \cdot x) \approx Enc_\phi(x), \quad \forall g \in G.
-\]
-Ez biztosítja, hogy a latens térben a zenei struktúrák formája megmarad, míg a felszíni változások (például hangmagasság-eltolások) eltűnnek. Ennek következményeként a modell strukturálisan generalizál — nem konkrét dallamokat, hanem zenei viszonyokat tanul.
-
-\subsection{Elméleti megalapozás}
-
-A VAE-architektúra természetes módon képes latens absztrakciókat tanulni, azonban ezek nincsenek kötve semmilyen szimmetriafeltételhez. A zene esetében ez különösen hátrányos, hiszen a kompozíciós logika nagyrészt a transzformációkon alapul (transzpozíció, augmentáció, retrográd). A csoportelmélet kínálta a legtermészetesebb formalizmust ennek az invarianciának a modellezésére.
-
-A fejlesztés során felismerésre került, hogy a VAE encoder és decoder párosa egy nemlineáris leképezésrendszerként felfogható, ahol az encoder egy $\mathcal{X}$ térből egy $\mathcal{Z}$ latens térbe képez. Ha a $\mathcal{X}$-en egy csoport $G$ hat, akkor a cél az, hogy az $\mathcal{Z}$-ben ez a hatás invariánssá váljon:
-\[
-Enc_\phi(g \cdot x) = Enc_\phi(x), \quad \forall g \in G.
-\]
-Ezt az invarianciát regularizáló taggal vezetjük be a veszteségfüggvénybe.
-
-\subsection{Formális definíciók}
-
-\begin{definition}[Orbitális konzisztencia]
-Egy encoder $Enc_\phi$ orbitálisan konzisztens, ha bármely $x \in \mathcal{X}$ és $g \in G$ esetén:
-\[
-Enc_\phi(g \cdot x) = Enc_\phi(x).
-\]
-\end{definition}
-
-\begin{definition}[Kanonikus reprezentáció]
-Az orbit reprezentációinak átlaga:
-\[
-z_c(x) = \frac{1}{|G|} \sum_{g\in G} Enc_\phi(g\cdot x).
-\]
-\end{definition}
-
-\begin{definition}[Orbitális konzisztencia veszteség]
-\[
-L_{\text{orbit}} = \frac{1}{|G|} \sum_{g\in G} \|Enc_\phi(g\cdot x) - z_c(x)\|^2.
-\]
-\end{definition}
-
-\begin{definition}[Teljes veszteségfüggvény GOLC-VAE esetén]
-\[
-L_{\text{total}} = L_{\text{recon}} + \beta_{\text{KL}} L_{\text{KL}} + \beta_{\text{orbit}} L_{\text{orbit}}.
-\]
-\end{definition}
-
-\subsection{Formális igazolások}
-
-\begin{proposition}[Orbitális invariancia feltétele]
-Ha $L_{\text{orbit}} = 0$, akkor az encoder invariáns az orbiton.
-\end{proposition}
-\begin{proof}
-A $L_{\text{orbit}}$ tag definíció szerint nemnegatív. A nullpontban minden orbit-elem reprezentációja azonos a kanonikus vektorral, tehát az encoder invariáns a csoporthatásra.
-\end{proof}
-
-\begin{proposition}[Posterior disztribúciós stabilitás]
-Ha az encoder posteriorjai normáleloszlásúak $q_\phi(z|x) = \mathcal{N}(\mu_x, \Sigma_x)$, és $L_{\text{orbit}}$ kiterjed mindkét paraméterre, akkor:
-\[
-\mu_{g\cdot x} = \mu_x, \quad \Sigma_{g\cdot x} = \Sigma_x, \quad \forall g\in G.
-\]
-\end{proposition}
-\begin{proof}
-A Frobenius-norm minimalizálása konvex a kovarianciákra, így a minimumot az egyenlőség adja. Ez ekvivalens azzal, hogy a posterior eloszlások invariánsak a csoporthatásra.
-\end{proof}
-
-\begin{proposition}[Tanulási stabilitás]
-Az orbitális regularizáció csökkenti a $L_{\text{KL}}$ gradiensének orbiton belüli varianciáját:
-\[
-Var_G(\nabla_\phi L_{\text{KL}}) \to 0.
-\]
-\end{proposition}
-\begin{proof}
-Ha minden orbit-elem ugyanazt a latens eloszlást adja, a veszteségfüggvény gradiensének értéke minden transzformációra azonos lesz. Ez kiegyenlíti a gradiens-fluktuációkat, gyorsabb és stabilabb konvergenciát eredményezve, hasonlóan a data-augmentation regularizáció hatásához.
-\end{proof}
-
-\begin{proposition}[Dekódolási kompatibilitás]
-Ha $Enc_\phi$ invariáns és $Dec_\theta$ folytonos, akkor
-\[
-Dec_\theta(Enc_\phi(g\cdot x)) \approx g\cdot Dec_\theta(Enc_\phi(x)).
-\]
-\end{proposition}
-\begin{proof}
-Az encoder invarianciája miatt a dekóder bemenete invariáns a csoporthatásra. A folytonosság biztosítja, hogy a dekódolási térben a kimenetek közel equivariánsak legyenek a csoporttranszformációkra.
-\end{proof}
-
-\subsection{Empirikus következmények és várakozások}
-
-Elméleti megfontolásaink alapján a GOLC bevezetése négy fő előnyt nyújt a zenei generálás területén. Először is csökkenti a redundanciát, hiszen azonos orbit-elemeket egyetlen reprezentációba tömörít, így a modell hatékonyabban használja fel a latens tér kapacitását. Másodszor javítja az általánosítást, mert a modell zenei transzformációkra invariáns struktúrát tanul, nem pedig konkrét hangnemi változatokat memorizál. Harmadszor stabilizálja a tanulást, mivel a regularizáció kisimítja a latens tér topológiáját és csökkenti a gradiens-fluktuációkat. Végül zeneileg interpretálhatóbb reprezentációt hoz létre, mivel a latens tér dimenziói közvetlenül megfeleltethetők zenei transzformációknak és invariáns zenei tulajdonságoknak.
-
-A GOLC megközelítés gyakorlati alkalmazása során várhatóan jelentősen javul a modell képessége különböző hangnemekben történő generálásra, miközben megőrzi a zenei struktúra lényegi jellemzőit. Ez különösen fontos olyan feladatoknál, mint a stílus-transzfer vagy a zenei variációk generálása, ahol az eredeti zenei gondolat megőrzése kritikus.
-
-\subsection{Összegzés}
-
-A csoport-orbitális konzisztencia elve a VAE-architektúrák természetes kiterjesztése, amely a zene transzformációs szimmetriáit explicit módon integrálja a tanulási folyamatba. A módszer elméletileg igazolt, és gyakorlatban várhatóan javítja a zenei kohéziót, csökkenti az adatigényt és növeli a modell robusztusságát. Az itt bemutatott formális keretek lehetővé teszik a GOLC-VAE implementációját és empirikus validálását, amely jelentős előrelépést jelenthet a zenei generatív modellek területén.
-
-\section{Korlátozások és jövőbeli irányok}
-\subsection{Fő kihívások}
-\begin{itemize}
-    \item \textbf{Hosszú távú koherencia}: 16 ütemen túl gyakran elveszik a szerkezeti egység
-    \item \textbf{Polifónia}: Egyidejű hangszínek harmonikus viszonyának modellezése
-    \item \textbf{Dinamikus tartomány}: Hangerő-gradációk természetes modellezése
-\end{itemize}
-
-\section{Zha VAE implementációs részletek}
-
-\subsection{ResidualBlock architektúra}
-A Zha VAE speciális ResidualBlock architektúrát alkalmaz a gradiens áramlás javítására \cite{brunner2018midivae}.
-
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.7\textwidth]{images/residual_block_vae.png}
-\caption{ResidualBlock architektúra a Zha VAE-ben}
+\includegraphics[width=0.6\textwidth]{figures/architecture/residual_block.png}
+\caption{Reziduális blokk felépítése normalizációval és skip connectionnel a stabil gradiens áramlás biztosítására.}
 \label{fig:residual_block}
 \end{figure}
 
-A ResidualBlock algoritmus komponensei:
-\begin{enumerate}
-\item \textbf{Layer Normalization}: Stabil képzés biztosítása
-\item \textbf{SiLU aktiváció}: Smooth, non-monotonic activation function
-\item \textbf{Skip connections}: Gradiens áramlás javítása
-\item \textbf{Dropout regularizáció}: Overfitting csökkentése
-\end{enumerate}
+\begin{lstlisting}[language=Python]
+class ResidualBlock(nn.Module):
+    def __init__(self, dim):
+        self.linear = nn.Linear(dim, dim)
+        self.norm = nn.LayerNorm(dim)
+    
+    def forward(self, x):
+        return x + activation(self.norm(self.linear(x)))
+\end{lstlisting}
 
-A ResidualBlock matematikai formája:
+A kódoló fokozatosan csökkenti a dimenziót a bemenettől a látens térig, míg a dekódoló ennek fordítottját végzi, rekonstruálva az eredeti reprezentációt. A reziduális kapcsolatok különösen fontosak a mélyebb rétegekben, segítik az információáramlást és csökkentik az eltűnő gradiens problémát.
+
+\subsection{Orbitális konzisztencia számítása}
+
+Tanítás közben minden batch esetén véletlenszerűen választunk néhány transzformációt a csoportból, jellemzően félhangos eltolásokat egy zeneileg értelmes tartományban. Ezeket az orbit-elemeket ez után a látens térbe kódoljuk:
+
+\begin{lstlisting}[language=Python]
+def compute_orbit_loss(self, x, transformations):
+    encodings = []
+    for transform in transformations:
+        x_t = apply_transform(x, transform)
+        z = self.encode(x_t)
+        encodings.append(z)
+    
+    z_canonical = mean(encodings)
+    loss = mean([distance(z, z_canonical) for z in encodings])
+    return loss
+\end{lstlisting}
+
+A konzisztencia veszteség azt méri, mennyire térnek el az egyes orbit-elemek kódolásai a kanonikus vektortól. Így a modell nem az abszolút hangmagasságot tanulja meg, hanem a dallam mögötti invariáns struktúrát.
+
+\section{Elméleti tulajdonságok}
+
+\subsection{Állítás 1: Invariancia feltétele}
+
+Ha $\mathcal{L}_{\text{orbit}} = 0$, akkor a kódoló invariáns az orbiton.
+
+\textit{Bizonyítás:} A $\mathcal{L}_{\text{orbit}}$ definíciójából következően nemnegatív. Ha értéke 0, akkor minden tag nulla, vagyis $Enc_\phi(g \cdot x) = \mathbf{z}_c(x)$ minden $g \in G$-re. Mivel a kanonikus vektor az orbit-elemek átlaga, ez azt jelenti, hogy minden elem ugyanazt az értéket adja, tehát az encoder invariáns. $\square$
+
+\subsection{Állítás 2: Posterior stabilitás}
+
+Ha a kódoló posterior Gauss-eloszlásokat ad $q_\phi(\mathbf{z}|x) = \mathcal{N}(\boldsymbol{\mu}_x, \boldsymbol{\Sigma}_x)$, és $\mathcal{L}_{\text{orbit}}$ mindkét paraméterre kiterjed, akkor:
 \[
-h_{out} = h_{in} + \text{SiLU}(\text{LayerNorm}(\text{Linear}(h_{in})))
+\boldsymbol{\mu}_{g \cdot x} = \boldsymbol{\mu}_x, \quad \boldsymbol{\Sigma}_{g \cdot x} = \boldsymbol{\Sigma}_x, \quad \forall g \in G
 \]
 
-\subsection{Temperature-controlled sampling}
-A Zha rendszer kifinomult temperature sampling mechanizmust alkalmaz a generálás során:
+\textit{Intuíció:} A Frobenius-norma konvex függvény a kovariancia mátrixokon, így a minimum az egyenlőségnél van. Ez ekvivalens azzal, hogy a posterior eloszlások invariánsak a csoporthatásra \cite{cohen2016group}.
 
+\subsection{Állítás 3: Tanulási stabilitás}
+
+Az orbitális regularizáció csökkenti a KL-divergencia gradiensének varianciáját az orbiton belül:
 \[
-\mathbf{z}_{\text{sampled}} = \boldsymbol{\mu} + \frac{\boldsymbol{\sigma}}{\text{temperature}} \odot \boldsymbol{\epsilon}
+\text{Var}_G(\nabla_\phi \mathcal{L}_{\text{KL}}) \to 0
 \]
 
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{images/temperature_sampling.png}
-\caption{Temperature kontrollos sampling hatása a generált zenére}
-\label{fig:temperature}
-\end{figure}
+\textit{Intuíció:} Ha minden orbit-elem ugyanazt a látens eloszlást eredményezi, akkor a veszteségfüggvény gradiense is azonos lesz minden transzformációra. Ez kisimítja a gradiens-fluktuációkat, így gyorsabb és stabilabb a konvergencia, hasonlóan a data augmentation hatásához \cite{hadjeres2017deepbach}.
 
-A temperature paraméter hatásai:
+\section{Empirikus hatások}
+
+A GOLC regularizáció több szempontból is javíthatja a modell teljesítményét. Csökkenti a redundanciát, mivel az azonos orbit-elemeket egyetlen reprezentációba tömöríti, így hatékonyabban használjuk ki a látens kapacitást. A modell zenei transzformációkra invariáns struktúrát tanul meg, nem pedig konkrét hangmagasságokat, ami jobb általánosítást eredményez. 
+
+A regularizáció stabilizálja is a tanítást, simítja a látens tér topológiáját és csökkenti a posterior collapse kockázatát. Ráadásul a látens dimenziók értelmezhetőbbek lesznek, közvetlenebben kapcsolódnak zenei fogalmakhoz, mint a ritmus vagy a dallami ív, nem pedig hangmagasság-specifikus részletekhez.
+
+\section{Implementációs részletek}
+
+A tanítás azzal kezdődik, hogy betöltjük a zenei adathalmazt, majd inicializáljuk a GOLC-VAE modellt megfelelő súlyozási paraméterekkel a regularizációs tagokhoz. Adam optimalizálót használunk, amely adaptív tanulási rátával kezeli a paraméterfrissítéseket. A tanítási ciklusban párhuzamosan számoljuk a rekonstrukciós, KL és GOLC veszteségeket, közben követjük a modell teljesítményét különböző metrikákkal. A transzpozíciós csoport félhangos eltolásokat tartalmaz egy zeneileg értelmes tartományban, azokat a transzformációkat, amelyek a zenei invariancia szempontjából gyakorlatilag fontosak.
+
+\section{Implementációs részletek}
+
+\subsection{VAE architektúra}
+
+A VAE implementáció a \texttt{backend/models/vae.py} fájlban található. A modell két fő komponensből áll: enkóder és dekóder.
+
+\subsubsection{Enkóder}
+
+Az enkóder egy bidirekcionális LSTM hálózat, amely a teljes szekvenciát feldolgozza:
+
+\[
+  h_t = \mathrm{BiLSTM}(x_t, h_{t-1}),\quad
+  \mu = W_\mu \, h_{T},\quad
+  \log\sigma^2 = W_\sigma \, h_{T}.
+\]
+
+\subsubsection{Dekóder}
+
+A dekóder autoregresszív módon működik. Minden időlépésben $t$:
+
+\[
+  \hat{x}_t = \mathrm{Softmax}\bigl(W_o [e_{t-1} \,\|\, z]\bigr),
+\]
+
+ahol $e_{t-1}$ az előző token beágyazása és $z$ a mintavételezett latens vektor.
+
+\subsubsection{Tanítási trükkök}
+
+A tanítás során több trükköt alkalmazunk:
+
 \begin{itemize}
-\item \textbf{Alacsony temperature (< 1.0)}: Konzervatívabb, előre láthatóbb generálás
-\item \textbf{Magas temperature (> 1.0)}: Kreatívabb, változatosabb output
-\item \textbf{Adaptive temperature}: Dinamikus beállítás a kontextus alapján
+\item \textbf{KL-annealing}: $\beta(e) = \min(1, e/E_{\text{warmup}})$
+\item \textbf{Free Bits}: KL dimenziónként minimum 0,1 értékre korlátozódik az összeomlás elkerülése érdekében
+\item \textbf{Gradiens vágás}: végtelen norma maximum 1,0
 \end{itemize}
 
-\subsection{Consistency loss mechanizmus}
-A Zha VAE egy további consistency loss termet alkalmaz a stabil rekonstrukció érdekében:
+\subsection{Tanítási folyamat}
 
-\[
-\mathcal{L}_{\text{consistency}} = \|\text{Encoder}(\text{Decoder}(\mathbf{z})) - \mathbf{z}\|_2^2
-\]
+A VAE tanítása a rekonstrukciós veszteség és a KL-divergencia egyensúlyára épül. A tanítási ciklus minden epochban végigmegy a batch-eken:
 
-Ez biztosítja, hogy a kódoló-dekóder pár ciklikusan konzisztens maradjon.
+\begin{lstlisting}[language=Python]
+for epoch in range(num_epochs):  # Iteráció az epochokon keresztül
+    for batch in dataloader:  # Batch-ek feldolgozása
+        recon, mu, logvar = model(batch)  # Modell elorejelzese: rekonstrukcio es latens parameterek
+        recon_loss = F.cross_entropy(recon, batch)  # Rekonstrukciós veszteség számítása
+        kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())  # KL-divergencia
+        loss = recon_loss + beta(epoch)*kl  # Teljes veszteségfüggvény súlyozással
+        optimizer.zero_grad()  # Gradiensek nullázása
+        loss.backward()  # Visszafelé terjesztés
+        clip_grad_norm_(model.parameters(), 1.0)  # Gradiens vágás
+        optimizer.step()  # Paraméter frissítés
+\end{lstlisting}
 
-\subsection{Mixed precision training optimalizáció}
-A VAE képzés során automatikus mixed precision technológiát alkalmaz \cite{torch2023}:
+Korai leállítást aktiválok, ha a validációs veszteség nem javul öt epoch alatt, ezzel elkerülve a túltanítást.
 
-\begin{figure}[h]
+\section{Kapcsolat korábbi munkákhoz}
+
+A GOLC koncepció több korábbi kutatási irányhoz kapcsolódik. Az ekvivariáns neurális hálózatok \cite{cohen2016group} strukturálisan tartják tiszteletben a csoport-hatásokat, a GOLC viszont regularizációval éri el ugyanezt, így rugalmasabban alkalmazható standard architektúrákra. Az orbit-elemek együttes kezelése rokon a data augmentation regularizációs értelmezésével \cite{shorten2019survey}, amely implicit módon bővíti a tanítóhalmazt szimmetriák mentén. A disentangled reprezentációk terén \cite{higgins2017beta} pedig a GOLC elősegíti a tartalmi (struktúra) és stílus (hangmagasság) faktorok szétválasztását, explicit formalizmussal támogatva ezt.
+
+\section{Összefoglalás}
+
+A GOLC-VAE a klasszikus VAE kiterjesztése, amely explicit módon kezeli a zenei szimmetriákat. Az orbitális konzisztencia veszteség biztosítja, hogy a látens tér invariáns maradjon a transzpozíciókra és más zenei transzformációkra. Az elméleti analízis és a várható empirikus előnyök alapján ez a módszer ígéretes lehet a zenei reprezentációtanulás területén.
+
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.8\textwidth]{images/mixed_precision_vae.png}
-\caption{Mixed precision training a VAE képzésben}
-\label{fig:mixed_precision}
+\includegraphics[width=0.8\textwidth]{figures/vae/latent_kl_distribution.png}
+\caption{A látens tér KL divergenciájának eloszlása dimenziók szerint, mutatva a regularizáció hatását.}
+\label{fig:latent_kl}
 \end{figure}
 
-A mixed precision algoritmus előnyei:
-\begin{enumerate}
-\item \textbf{Memória megtakarítás}: ~50\% GPU memória csökkentés
-\item \textbf{Sebesség növelés}: 1.5-2x gyorsabb képzés moderne GPU-kon
-\item \textbf{Numerikus stabilitás}: Loss scaling a gradient underflow ellen
-\end{enumerate}
-
-\subsection{Latent space interpoláció}
-A VAE latent terében történő interpoláció lehetővé teszi smooth zenei átmeneteket:
-
-\[
-\mathbf{z}_{\text{interp}}(t) = (1-t) \cdot \mathbf{z}_1 + t \cdot \mathbf{z}_2, \quad t \in [0,1]
-\]
-
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.9\textwidth]{images/latent_interpolation.png}
-\caption{Latent space interpoláció két zenei stílus között}
-\label{fig:interpolation}
+\includegraphics[width=0.8\textwidth]{figures/vae/temperature_ablation.png}
+\caption{Hőmérséklet paraméter hatása a generálás diverzitására és minőségére.}
+\label{fig:temperature_ablation}
 \end{figure}
-
-Az interpolációs algoritmus lépései:
-\begin{enumerate}
-\item Két zenei minta encoding-ja a latent térbe
-\item Lineáris interpoláció a latent reprezentációk között
-\item Interpolált pontok dekódolása zenei szekvenciákká
-\item Smooth átmenet generálása a két stílus között
-\end{enumerate}
-
-\subsection{Beta-scheduling stratégia}
-A Zha implementáció kifinomult beta-scheduling algoritmont alkalmaz:
-
-\[
-\beta(t) = \begin{cases}
-0 & \text{ha } t < t_{\text{warmup}} \\
-\beta_{\text{max}} \cdot \frac{t - t_{\text{warmup}}}{t_{\text{total}} - t_{\text{warmup}}} & \text{ha } t_{\text{warmup}} \leq t \leq t_{\text{total}} \\
-\beta_{\text{max}} & \text{ha } t > t_{\text{total}}
-\end{cases}
-\]
-
-Ez lehetővé teszi a modell számára, hogy először a rekonstrukciós képességeket tanuljon meg, majd fokozatosan beépítse a regularizációt.
-
-\subsection{ONNX export és deployment optimalizáció}
-A produkciós használatra a modell ONNX formátumba exportálható \cite{torch2023}:
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{images/onnx_pipeline.png}
-\caption{VAE ONNX export és deployment pipeline}
-\label{fig:onnx}
-\end{figure}
-
-Az ONNX export algoritmus:
-\begin{enumerate}
-\item Modell előkészítése inference módba
-\item Dummy input generálás a graph tracing-hez
-\item Statikus graph export ONNX formátumba
-\item Optimalizáció és quantization opcionalisan
-\item Cross-platform deployment támogatás
-\end{enumerate}

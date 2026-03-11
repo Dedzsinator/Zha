@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="1200" height="400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .box { fill: #4A90E2; stroke: #2E5C8A; stroke-width: 2; }
+      .process-box { fill: #50C878; stroke: #2E7D4E; stroke-width: 2; }
+      .decision-box { fill: #F5A623; stroke: #C17D11; stroke-width: 2; }
+      .output-box { fill: #E74C3C; stroke: #A93226; stroke-width: 2; }
+      .cache-box { fill: #9B59B6; stroke: #6C3483; stroke-width: 2; }
+      .text { fill: white; font-family: Arial, sans-serif; font-size: 11px; text-anchor: middle; }
+      .small-text { fill: white; font-family: Arial, sans-serif; font-size: 9px; text-anchor: middle; }
+      .title { fill: #2C3E50; font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; text-anchor: middle; }
+      .arrow { stroke: #2C3E50; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .label { fill: #2C3E50; font-family: Arial, sans-serif; font-size: 9px; text-anchor: middle; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#2C3E50" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="600" y="25" class="title">MIDI Előfeldolgozási Folyamat</text>
+  
+  <!-- Input: MIDI Files -->
+  <rect x="30" y="160" width="100" height="50" rx="5" class="box"/>
+  <text x="80" y="182" class="text">MIDI Fájlok</text>
+  <text x="80" y="195" class="small-text">(17 526 db)</text>
+  
+  <!-- Arrow -->
+  <path d="M 130 185 L 160 185" class="arrow"/>
+  
+  <!-- Cache Check -->
+  <polygon points="160,165 200,185 160,205 120,185" class="decision-box"/>
+  <text x="160" y="188" class="small-text">Cache?</text>
+  
+  <!-- Cached branch (top) -->
+  <path d="M 200 185 L 230 185 L 230 90 L 1020 90 L 1020 160" class="arrow"/>
+  <text x="250" y="85" class="label">Van</text>
+  
+  <!-- Not cached branch (bottom) -->
+  <path d="M 160 205 L 160 230 L 270 230" class="arrow"/>
+  <text x="200" y="220" class="label">Nincs</text>
+  
+  <!-- Parse MIDI -->
+  <rect x="270" y="210" width="100" height="40" rx="5" class="process-box"/>
+  <text x="320" y="227" class="text">MIDI</text>
+  <text x="320" y="239" class="text">értelmezés</text>
+  
+  <path d="M 370 230 L 400 230" class="arrow"/>
+  
+  <!-- Track Separation -->
+  <rect x="400" y="210" width="100" height="40" rx="5" class="process-box"/>
+  <text x="450" y="227" class="text">Sávok</text>
+  <text x="450" y="239" class="text">szétválasztása</text>
+  
+  <path d="M 500 230 L 530 230" class="arrow"/>
+  
+  <!-- Drum Detection -->
+  <rect x="530" y="210" width="90" height="40" rx="5" class="process-box"/>
+  <text x="575" y="227" class="text">Dob</text>
+  <text x="575" y="239" class="text">felismerés</text>
+  
+  <path d="M 620 230 L 650 230" class="arrow"/>
+  
+  <!-- Note Extraction -->
+  <rect x="650" y="210" width="100" height="40" rx="5" class="process-box"/>
+  <text x="700" y="227" class="text">Hangjegyek</text>
+  <text x="700" y="239" class="text">kinyerése</text>
+  
+  <path d="M 750 230 L 780 230" class="arrow"/>
+  
+  <!-- Quantization -->
+  <rect x="780" y="210" width="90" height="40" rx="5" class="process-box"/>
+  <text x="825" y="227" class="text">Kvantálás</text>
+  <text x="825" y="239" class="small-text">(16-od)</text>
+  
+  <path d="M 870 230 L 900 230" class="arrow"/>
+  
+  <!-- Cache save -->
+  <rect x="900" y="210" width="90" height="40" rx="5" class="cache-box"/>
+  <text x="945" y="227" class="text">Gyorsító-</text>
+  <text x="945" y="239" class="text">tárba ment</text>
+  
+  <!-- Merge paths to data structure -->
+  <path d="M 990 230 L 1020 230 L 1020 210" class="arrow"/>
+  
+  <!-- Data Structure -->
+  <rect x="1020" y="160" width="100" height="50" rx="5" class="process-box"/>
+  <text x="1070" y="177" class="text">Adat-</text>
+  <text x="1070" y="189" class="text">struktúra</text>
+  <text x="1070" y="202" class="small-text">+ metadata</text>
+  
+  <path d="M 1070 210 L 1070 280" class="arrow"/>
+  
+  <!-- Output -->
+  <rect x="1020" y="280" width="100" height="40" rx="5" class="output-box"/>
+  <text x="1070" y="297" class="text">full_dataset.pt</text>
+  <text x="1070" y="310" class="small-text">(PyTorch)</text>
+  
+  <!-- Statistics box -->
+  <rect x="30" y="40" width="150" height="100" rx="5" stroke="#95A5A6" stroke-width="2" fill="#ECF0F1"/>
+  <text x="105" y="58" style="fill: #2C3E50; font-family: Arial; font-size: 11px; font-weight: bold; text-anchor: middle;">Statisztikák</text>
+  <text x="40" y="75" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">87,7% dallam</text>
+  <text x="40" y="90" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">47,5% basszus</text>
+  <text x="40" y="105" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">28,4% dob</text>
+  <text x="40" y="120" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">62,8% többsávos</text>
+  <text x="40" y="135" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Átlag: 896 token</text>
+  
+  <!-- Processing info box -->
+  <rect x="1020" y="40" width="150" height="100" rx="5" stroke="#95A5A6" stroke-width="2" fill="#ECF0F1"/>
+  <text x="1095" y="58" style="fill: #2C3E50; font-family: Arial; font-size: 11px; font-weight: bold; text-anchor: middle;">Feldolgozás</text>
+  <text x="1030" y="75" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">8 párhuzamos szál</text>
+  <text x="1030" y="90" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Köteg: 100</text>
+  <text x="1030" y="105" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Memória: 60%</text>
+  <text x="1030" y="120" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Cache: gzip</text>
+  <text x="1030" y="135" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">GC: 5 fájlonként</text>
+  
+  <!-- Legend -->
+  <rect x="30" y="320" width="15" height="15" rx="2" class="process-box"/>
+  <text x="55" y="332" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Feldolgozás</text>
+  
+  <rect x="130" y="320" width="15" height="15" rx="2" class="cache-box"/>
+  <text x="155" y="332" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Gyorsítótár</text>
+  
+  <rect x="250" y="320" width="15" height="15" rx="2" class="decision-box"/>
+  <text x="275" y="332" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Döntés</text>
+  
+  <rect x="340" y="320" width="15" height="15" rx="2" class="output-box"/>
+  <text x="365" y="332" style="fill: #2C3E50; font-family: Arial; font-size: 9px;">Kimenet</text>
+  
+</svg>

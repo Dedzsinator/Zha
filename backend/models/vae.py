@@ -91,7 +91,7 @@ class VAEModel(nn.Module):
         """Generate samples from the latent space with temperature control"""
         with torch.no_grad():
             z = torch.randn(num_samples, self.decoder_input.in_features, device=device) * temperature
-            return self.decode(z)
+            return torch.nan_to_num(self.decode(z), nan=0.0)
     
     def interpolate(self, x1, x2, steps=10):
         """Generate a smooth transition between two inputs"""

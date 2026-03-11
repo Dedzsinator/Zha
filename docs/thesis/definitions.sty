@@ -2,7 +2,7 @@
 \selectlanguage{magyar}
 \usepackage{t1enc}
 \usepackage[utf8]{inputenc}% FONTS
-\usepackage{times}
+% \usepackage{times} % Commented out - using Computer Modern instead
 \usepackage[T1]{fontenc}
 
 \usepackage{indentfirst}
@@ -17,9 +17,9 @@
 % aesthetic spacing redefines that look nicer
 \setlength{\cftbeforechapskip}{0.3ex}
 \setlength{\cftbeforesecskip}{0.0ex}
-% Helvetica-Narrow Bold for Chapter entries
+% Sans-serif Bold for Chapter entries
 \renewcommand{\cftchapfont}{%
-  \fontsize{11}{13}\usefont{OT1}{phv}{bc}{n}\selectfont
+  \fontsize{11}{13}\sffamily\bfseries\selectfont
 }
 \addtolength{\belowcaptionskip}{1pt}
 \addtolength{\abovecaptionskip}{-12pt}

@@ -20,4 +20,5 @@ export interface GenerationResponse {
   model_used?: string;
   duration?: number;
   parameters?: Record<string, any>;
+  tracks?: Record<string, number>;
 }

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { FaMusic, FaRobot, FaWrench } from 'react-icons/fa';
 
 interface DuetModeProps {
@@ -72,8 +71,8 @@ export default function DuetMode({
                                 <button
                                     onClick={() => onHarmonizationChange('simple')}
                                     className={`px-3 py-2 text-sm font-medium rounded-md ${harmonization === 'simple'
-                                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                                            : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                        : 'bg-gray-100 text-gray-800 border border-gray-300'
                                         }`}
                                 >
                                     Simple
@@ -81,8 +80,8 @@ export default function DuetMode({
                                 <button
                                     onClick={() => onHarmonizationChange('chord')}
                                     className={`px-3 py-2 text-sm font-medium rounded-md ${harmonization === 'chord'
-                                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                                            : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                        : 'bg-gray-100 text-gray-800 border border-gray-300'
                                         }`}
                                 >
                                     Chords
@@ -90,8 +89,8 @@ export default function DuetMode({
                                 <button
                                     onClick={() => onHarmonizationChange('melody')}
                                     className={`px-3 py-2 text-sm font-medium rounded-md ${harmonization === 'melody'
-                                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                                            : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                        : 'bg-gray-100 text-gray-800 border border-gray-300'
                                         }`}
                                 >
                                     Melody

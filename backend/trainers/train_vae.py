@@ -1,4 +1,4 @@
-import torch, os, numpy as np, warnings, matplotlib.pyplot as plt
+import torch, os, json, numpy as np, warnings
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
@@ -10,28 +10,100 @@ warnings.filterwarnings("ignore", category=UserWarning)
 torch.backends.cudnn.benchmark = True
 
 class MIDIDataset(Dataset):
-    def __init__(self, midi_dir, max_files=None, cache_size=500):
-        self.midi_dir = midi_dir
-        self.file_list = []
+    def __init__(self, midi_dir=None, max_files=None, cache_size=500, use_preprocessed=True, track_type='full'):
+        self.use_preprocessed = use_preprocessed
+        self.track_type = track_type
         self.data_cache = {}
         self.cache_size = cache_size
         self._access_order = []
-
-        # Find MIDI files in directory structure
-        print("🔍 Scanning for MIDI files...")
-        for root, _, files in os.walk(midi_dir):
-            for file in files:
-                if file.endswith('.mid'):
-                    self.file_list.append(os.path.join(os.path.relpath(root, midi_dir), file))
-                    if max_files and len(self.file_list) >= max_files:
-                        break
-        print(f"✓ Found {len(self.file_list)} MIDI files")
+        
+        if use_preprocessed:
+            # Load from preprocessed data
+            processed_data_path = "dataset/processed/markov_sequences.pt"
+            print(f"💾 Loading preprocessed data from {processed_data_path} (track: {track_type})...")
+            
+            if not os.path.exists(processed_data_path):
+                print(f"⚠️ Preprocessed data not found, falling back to MIDI processing")
+                self.use_preprocessed = False
+                midi_dir = midi_dir or "dataset/midi/"
+            else:
+                try:
+                    import torch
+                    data = torch.load(processed_data_path)
+                    sequences = data['sequences']
+                    
+                    # Extract sequences for the specified track type
+                    self.processed_sequences = []
+                    valid_files = 0
+                    
+                    for item in sequences:
+                        seq_data = item['sequences']
+                        if track_type in seq_data and len(seq_data[track_type]) > 0:
+                            # Convert sequence to pitch histogram for VAE
+                            notes = seq_data[track_type]
+                            feature = np.zeros(128, dtype=np.float32)
+                            for note in notes:
+                                if isinstance(note, (int, float)) and 0 <= int(note) < 128:
+                                    feature[int(note)] += 1
+                            
+                            # Normalize
+                            if np.sum(feature) > 0:
+                                feature = feature / np.sum(feature)
+                            
+                            self.processed_sequences.append(torch.from_numpy(feature).float())
+                            valid_files += 1
+                        elif track_type == 'full' and 'sequence' in item:
+                            # Fallback for backward compatibility
+                            notes = item['sequence']
+                            feature = np.zeros(128, dtype=np.float32)
+                            for note in notes:
+                                if isinstance(note, (int, float)) and 0 <= int(note) < 128:
+                                    feature[int(note)] += 1
+                            
+                            if np.sum(feature) > 0:
+                                feature = feature / np.sum(feature)
+                            
+                            self.processed_sequences.append(torch.from_numpy(feature).float())
+                            valid_files += 1
+                    
+                    print(f"✅ Loaded {len(self.processed_sequences)} {track_type} sequences from {valid_files} files")
+                    
+                    if len(self.processed_sequences) == 0:
+                        print(f"⚠️ No {track_type} sequences found, falling back to MIDI processing")
+                        self.use_preprocessed = False
+                        midi_dir = midi_dir or "dataset/midi/"
+                        
+                except Exception as e:
+                    print(f"⚠️ Error loading preprocessed data: {e}, falling back to MIDI processing")
+                    self.use_preprocessed = False
+                    midi_dir = midi_dir or "dataset/midi/"
+        
+        if not self.use_preprocessed:
+            # Original MIDI file processing
+            self.midi_dir = midi_dir
+            self.file_list = []
+            
+            # Find MIDI files in directory structure
+            print("🔍 Scanning for MIDI files...")
+            for root, _, files in os.walk(midi_dir):
+                for file in files:
+                    if file.endswith(('.mid', '.midi')):
+                        self.file_list.append(os.path.join(os.path.relpath(root, midi_dir), file))
+                        if max_files and len(self.file_list) >= max_files:
+                            break
+            print(f"✓ Found {len(self.file_list)} MIDI files")
 
     def __len__(self):
-        return len(self.file_list)
+        if self.use_preprocessed:
+            return len(self.processed_sequences)
+        else:
+            return len(self.file_list)
 
     def __getitem__(self, idx):
-        # Memory-efficient LRU cache
+        if self.use_preprocessed:
+            return self.processed_sequences[idx]
+        
+        # Memory-efficient LRU cache for MIDI processing
         if idx in self.data_cache:
             # Move to most recently used
             self._access_order.remove(idx)
@@ -84,6 +156,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
     epoch_kl_loss = 0
     epoch_consistency_loss = 0
     n_batches = len(dataloader)
+    _device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     optimizer.zero_grad()
 
@@ -92,7 +165,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
             batch = batch.to(device, non_blocking=True)
 
             # Forward pass with mixed precision training
-            with autocast(device_type='cuda', enabled=scaler is not None):
+            with autocast(device_type=_device_type, enabled=scaler is not None):
                 recon_batch, mu, logvar = model(batch)
 
             # Calculate losses in full precision
@@ -149,8 +222,13 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
 
 def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=128,
                    grad_accum_steps=1, patience=10, cache_size=500, beta=0.5,
-                   consistency_weight=0.2):
-    """VAE model training with beta-VAE and consistency loss for better music generation"""
+                   consistency_weight=0.2, use_preprocessed=True, track_type='full'):
+    """VAE model training with beta-VAE and consistency loss for better music generation
+    
+    Args:
+        use_preprocessed: Whether to use preprocessed data instead of processing MIDI files
+        track_type: Type of track to train on ('full', 'melody', 'bass', 'drums')
+    """
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🧠 Training on: {device}")
@@ -162,6 +240,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     model = VAEModel(input_dim=128, latent_dim=latent_dim, beta=beta).to(device)
     print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
     print(f"🎵 Using beta={beta}, consistency_weight={consistency_weight}")
+    print(f"💾 Using preprocessed data: {use_preprocessed}, track: {track_type}")
 
     # Optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -170,16 +249,17 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=False)
 
     # Create gradient scaler for mixed precision training
-    scaler = torch.amp.GradScaler() if torch.cuda.is_available() else None
+    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None
 
     # Early stopping
     early_stopping = EarlyStopping(patience=patience, verbose=True)
 
     # Data loading
     print("📂 Setting up data loader...")
-    dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=cache_size)
+    dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=cache_size, 
+                         use_preprocessed=use_preprocessed, track_type=track_type)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
-                          num_workers=4, pin_memory=True)
+                          num_workers=4 if not use_preprocessed else 0, pin_memory=True)
 
     # Training loop setup
     os.makedirs("output/trained_models", exist_ok=True)
@@ -233,6 +313,26 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     torch.save(model.state_dict(), "output/trained_models/trained_vae.pt")
     print("✅ Training complete! Model saved to output/trained_models/trained_vae.pt")
 
+    # Save full metrics history to JSON
+    os.makedirs("output/metrics", exist_ok=True)
+    metrics_path = "output/metrics/vae_metrics.json"
+    with open(metrics_path, 'w') as f:
+        json.dump({
+            'epochs_run': len(all_metrics),
+            'final_loss': all_metrics[-1]['loss'] if all_metrics else None,
+            'final_recon_loss': all_metrics[-1]['recon_loss'] if all_metrics else None,
+            'final_kl_loss': all_metrics[-1]['kl_loss'] if all_metrics else None,
+            'final_consistency_loss': all_metrics[-1]['consistency_loss'] if all_metrics else None,
+            'best_loss': min(m['loss'] for m in all_metrics) if all_metrics else None,
+            'history': all_metrics,
+            'hyperparams': {
+                'epochs': epochs, 'batch_size': batch_size, 'learning_rate': learning_rate,
+                'latent_dim': latent_dim, 'beta': beta, 'consistency_weight': consistency_weight,
+                'grad_accum_steps': grad_accum_steps, 'track_type': track_type
+            }
+        }, f, indent=2)
+    print(f"📊 Metrics saved to {metrics_path}")
+
     # Export to ONNX format
     try:
         onnx_path = "output/trained_models/trained_vae.onnx"
@@ -251,5 +351,7 @@ if __name__ == "__main__":
         patience=15,
         cache_size=500,
         beta=0.5,           # Lower beta value for more creative outputs
-        consistency_weight=0.2  # Weight for consistency loss to reduce big leaps
+        consistency_weight=0.2,  # Weight for consistency loss to reduce big leaps
+        use_preprocessed=True,   # Use preprocessed data for faster training
+        track_type='full'        # Track type: 'full', 'melody', 'bass', 'drums'
     )

@@ -1,34 +1,76 @@
-\chapter{Transzformerek a zene generálásnál}
+\chapter{Transformer hálózatok zenei generáláshoz}
 \label{chap:transformers}
 
+\section{Bevezetés}
+
+A Transformer architektúra \cite{vaswani2017attention} forradalmasította a szekvencia-modellezést az önfigyelési mechanizmusnak köszönhetően, amely lehetővé teszi tetszőleges távolságú függőségek modellezését. A Zha rendszerben a Transformer elsődleges szerepe a Markov-modell által generált dallamok harmonikus és strukturális gazdagítása: akkordok hozzáadása, ismétlődő minták létrehozása és polifón zenei struktúrák kialakítása.
+
+A standard Transformer nem veszi figyelembe a zenei domén jellemzőit. A Zha implementáció ezért két fő továbbfejlesztést tartalmaz:
+
+\begin{enumerate}
+    \item \textbf{Multitrack generálás}: Több hangsáv (melódia, basszus, dob) egyidejű generálása cross-attention mechanizmusokkal
+    \item \textbf{Strukturális memória}: Hosszú távú zenei forma és ismétlődő motívumok modellezése speciális memória mechanizmusokkal
+\end{enumerate}
+
+Ezek a módosítások lehetővé teszik komplex polifón zenei darabok generálását, ahol a Transformer hozzáadja a harmonikus töltetet és strukturális koherenciát a Markov által biztosított dallami alaphoz.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/architecture/transformer_architecture.png}
+\caption{A Transformer architektúra felépítése többfejű figyelem rétegekkel, pozíciókódolással és előrecsatoló hálózattal.}
+\label{fig:transformer_arch}
+\end{figure}
+
 \section{Elméleti alapok}
-\subsection{Önfigyelő mechanizmus}
-Az alapművelet lekérdezéseket ($\mathbf{Q}$), kulcsokat ($\mathbf{K}$) és értékeket ($\mathbf{V}$) képez le egy kimenethez:
+
+\subsection{Önfigyelési mechanizmus}
+
+Az alapvető önfigyelési művelet úgy működik, hogy lekérdezéseket ($\mathbf{Q}$), kulcsokat ($\mathbf{K}$) és értékeket ($\mathbf{V}$) képez le \cite{vaswani2017attention}:
 \[
-\text{Figyelem}(\mathbf{Q},\mathbf{K},\mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}
+\text{Figyelem}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}
 \]
-ahol $d_k$ a kulcsdimenzió. Zene esetén ez lehetővé teszi tetszőleges hangjegyfüggőségek modellezését.
+
+ahol $d_k$ a kulcsok dimenziója, a $\sqrt{d_k}$ normalizáció pedig biztosítja, hogy a dot product értékei ne legyenek túl nagyok, különben rossz gradiens tulajdonságokat kapnánk.
 
 \subsection{Többfejű figyelem}
-A párhuzamos figyelemfejek különféle kapcsolatokat rögzítenek:
+
+Több párhuzamos figyelemfej különböző reprezentációs altereket ragadhat meg:
 \[
-\text{MultiHead}(\mathbf{Q},\mathbf{K},\mathbf{V}) = \text{Concat}(\text{head}_1,...,\text{head}_h)\mathbf{W}^O
-\]
-Minden fej kiszámítja:
-\[
-\text{head}_i = \text{Figyelem}(\mathbf{Q}\mathbf{W}_i^Q, \mathbf{K}\mathbf{W}_i^K, \mathbf{V}\mathbf{W}_i^V)
+\text{Többfej}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Concat}(\text{fej}_1, \ldots, \text{fej}_h)\mathbf{W}^O
 \]
 
-\section{Zene-specifikus adaptációk}
-\subsection{Relatív pozíciókódolás}
-A szabványos szinuszos kódolás nem működik a zenei időzítésnél. A zenei transzformer \cite{huang2018music} a következőket használja:
+ahol minden fej:
 \[
-\mathbf{A}_{i,j} = \mathbf{q}_i \mathbf{k}_j^T + \mathbf{q}_i \mathbf{r}_{i-j}^T + \mathbf{v}^T \mathbf{r}_{i-j}
+\text{fej}_i = \text{Figyelem}(\mathbf{Q}\mathbf{W}_i^Q, \mathbf{K}\mathbf{W}_i^K, \mathbf{V}\mathbf{W}_i^V)
 \]
-ahol a $\mathbf{r}$ a tanult relatív pozíció beágyazás.
 
-\subsection{Rotációs pozíciós beágyazások}
-A modern megközelítések rotációs pozíciós beágyazásokat (RoPE) alkalmaznak, amelyek kifejezetten csak relatív pozíció információt kódolnak a figyelemmechanizmusban \cite{su2021roformer}. Az $m$ pozícióhoz és $d$ dimenzióhoz tartozó rotációs beágyazás egy $\mathbf{R}_{\Theta, m}^d$ rotációs mátrixot alkalmaz:
+Zenei kontextusban egy fej fókuszálhat a ritmikus mintákra, egy másik a harmonikus progressziókra, egy harmadik pedig a melodikus ívre.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/transformer/attention_heatmaps.png}
+\caption{Attention súlyok vizualizációja különböző attention fejekben, mutatva a részlégi mintakereso eseket.}
+\label{fig:attention_heatmaps}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/transformer/head_ablation.png}
+\caption{Figyelem fej ablációs tanulmány: egyes fejek eltávolításának hatása a modell teljesítményére.}
+\label{fig:head_ablation}
+\end{figure}
+
+\section{Rotációs pozíciókódolás (RoPE)}
+
+\subsection{Motiváció}
+
+A klasszikus Transformer abszolút pozíciókódolást használ szinuszos függvényekkel. Ez viszont nem ideális a zenéhez, ahol a \textit{relatív} pozíciók fontosabbak, egy motívum felismerhetősége nem az abszolút pozíciótól függ a darabban, hanem a belső struktúrától.
+
+A RoPE \cite{su2021roformer} megoldja ezt, olyan pozíciós beágyazásokat vezet be, amelyek \textit{csak} relatív információt kódolnak a figyelemmechanizmusban.
+
+\subsection{Matematikai leírás}
+
+Az $m$ pozícióhoz és $d$ dimenzióhoz tartozó rotációs beágyazás egy $\mathbf{R}_{\Theta, m}^d$ rotációs mátrixot alkalmaz:
 \[
 \mathbf{R}_{\Theta, m}^d = \begin{pmatrix}
 \cos(m\theta_0) & -\sin(m\theta_0) & 0 & 0 & \cdots \\
@@ -38,347 +80,253 @@ A modern megközelítések rotációs pozíciós beágyazásokat (RoPE) alkalmaz
 \vdots & \vdots & \vdots & \vdots & \ddots
 \end{pmatrix}
 \]
-ahol $\theta_i = 10000^{-2i/d}$ a frekvencia paraméterek.
 
-A rotációs beágyazások előnye, hogy a figyelem pontszámok csak a relatív pozíciótól függnek. Az $m$ és $n$ pozícióknál található lekérdezések és kulcsok esetén:
+ahol a frekvenciák $\theta_i = 10000^{-2i/d}$, hasonlóan a klasszikus Transformer pozíciókódolásához.
+
+\textbf{Kulcstulajdonság:} A lekérdezés és kulcs skalárszorzata csak a relatív pozíciótól függ. Az $m$ és $n$ pozíciókra:
 \[
 \mathbf{q}_m^T \mathbf{k}_n = (\mathbf{R}_{\Theta, m} \mathbf{q})^T (\mathbf{R}_{\Theta, n} \mathbf{k}) = \mathbf{q}^T \mathbf{R}_{\Theta, n-m} \mathbf{k}
 \]
-Ez transzláció-invarianciát biztosít, ami a zenei struktúrák felismerésénél különösen hasznos, hiszen a zenei minták gyakran ismétlődnek különböző pozíciókban.
 
-\subsection{Dekódolási stratégiák}
-A dekódolás során két alapvető megközelítés használható. Az autoregresszív módszer tokeneket generál balról jobbra oksági maszkolással, biztosítva hogy minden új token csak a korábban generált tokenektől függjön. Ez garantálja a szekvencia koherenciáját, de lassabb mivel szekvenciális processzálást igényel. A nem autoregresszív megközelítés párhuzamos generálást tesz lehetővé iteratív finomítással, amely gyorsabb lehet, de nagyobb kihívást jelent a globális koherencia fenntartásában.
+Ez transzláció-invari anciát biztosít, ha az egész szekvenciát eltoljuk, a figyelemmintázatok változatlanok maradnak. Ez különösen hasznos zenei minták felismerésénél, amelyek gyakran ismétlődnek különböző pozíciókban.
 
-\section {Matematikai elemzés}
-\subsection{Továbbfejlesztett figyelemmechanizmus}
-A standard figyelemmechanizmus kiterjesztése reziduális kapcsolatokkal és rétegnormalizálással javítja a gradiens áramlást. A továbbfejlesztett figyelem függvény így definiálható:
-\[
-\text{EnhancedAttention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{LayerNorm}(\mathbf{A}\mathbf{V} + \mathbf{Q})
-\]
-ahol $\mathbf{A} = \text{Dropout}(\text{softmax}(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}))$ a figyelemmátrix. A reziduális kapcsolat biztosítja hogy a gradiensek közvetlenül átjuthassanak még akkor is, ha a figyelemmátrix értékei kicsik.
-
-A gradiens áramlás javulását formálisan is igazolhatjuk. A $\mathbf{Q}$ bemenet szerinti gradiens:
-\[
-\frac{\partial \mathcal{L}}{\partial \mathbf{Q}} = \frac{\partial \mathcal{L}}{\partial \text{LayerNorm}(\mathbf{A}\mathbf{V} + \mathbf{Q})} \cdot \left(\frac{\partial \mathbf{A}\mathbf{V}}{\partial \mathbf{Q}} + \mathbf{I}\right)
-\]
-Az identitás tag ($\mathbf{I}$) garantálja hogy a gradiensek közvetlenül átáramlanak a reziduális kapcsolaton keresztül, megelőzve a gradiens eltűnést még akkor is, amikor $\frac{\partial \mathbf{A}\mathbf{V}}{\partial \mathbf{Q}} \rightarrow 0$.
-
-\subsection{Xavier inicializálási stratégia}
-A projekciós mátrixok megfelelő inicializálása kritikus a stabil tanításhoz. A továbbfejlesztett Xavier inicializálás a $\mathbf{W}_q, \mathbf{W}_k, \mathbf{W}_v \in \mathbb{R}^{d_{model} \times d_{model}}$ mátrixokat $\mathcal{N}(0, \frac{1}{\sqrt{2} \cdot d_{model}})$ normális eloszlásból, míg a kimeneti projekciót $\mathbf{W}_o$ a $\mathcal{N}(0, \frac{1}{d_{model}})$ eloszlásból inicializálja.
-
-Ez az inicializálás egység varianciát tart fenn az előre és hátra irányú átmenetek során. Legyen $\mathbf{x} \in \mathbb{R}^{d_{model}}$ bemenet $\text{Var}[\mathbf{x}] = 1$ varianciával. Ekkor:
-\[
-\text{Var}[\mathbf{W}_q \mathbf{x}] = d_{model} \cdot \text{Var}[\mathbf{W}_q] \cdot \text{Var}[\mathbf{x}] = d_{model} \cdot \frac{1}{2 \cdot d_{model}} \cdot 1 = \frac{1}{2}
-\]
-A $\frac{1}{2}$ skálázási faktor a három párhuzamos projekció miatt szükséges, kiegyensúlyozott aktivációs nagyságokat fenntartva.
-
-\subsection{Kapuzott előrecsatoló hálózatok}
-A standard előrecsatoló hálózatok továbbfejlesztéseként kapuzott mechanizmusok alkalmazhatók, amelyek adaptív módon szabályozzák az információáramlást. A kapuzott előrecsatoló hálózat (GatedFFN) így definiálható:
-\[
-\text{GatedFFN}(\mathbf{x}) = \text{LayerNorm}(\mathbf{x} + \text{FFN}(\mathbf{x}))
-\]
-\[
-\text{FFN}(\mathbf{x}) = \mathbf{W}_2 \cdot (\text{SiLU}(\mathbf{W}_1 \mathbf{x}) \odot \sigma(\mathbf{W}_g \mathbf{x}))
-\]
-ahol $\mathbf{W}_1, \mathbf{W}_g \in \mathbb{R}^{d_{ff} \times d_{model}}$ és $\mathbf{W}_2 \in \mathbb{R}^{d_{model} \times d_{ff}}$ a tanulható súlymátrixok, $\text{SiLU}(x) = x \cdot \sigma(x)$ a Swish aktivációs függvény, $\sigma$ a szigmoid függvény, és $\odot$ az elemenként való szorzást jelöli.
-
-A kapuzási mechanizmus adaptív gradiens skálázást biztosít. A $\mathbf{h}_1$ szerinti gradiens:
-\[
-\frac{\partial \mathcal{L}}{\partial \mathbf{h}_1} = \frac{\partial \mathcal{L}}{\partial \mathbf{h}_2} \odot \mathbf{g}
-\]
-Mivel $\mathbf{g} = \sigma(\mathbf{W}_g \mathbf{x}) \in (0,1)^{d_{ff}}$, a kapu adaptív tanulási rátaként működik, a bemenet tartalmától függően skálázva a gradienseket. Ez megelőzi a gradiens robbanást, miközben fenntartja az elegendő jel erősséget.
-
-\subsection{Gradiens Flow}
-A transzformátorok elkerülik a gradiensek eltűnését a maradék csatlakozásokon keresztül:
-\[
-\mathbf{h}_{l+1} = \mathbf{h}_l + \text{LayerNorm}(\text{FFN}(\text{MHA}(\mathbf{h}_l)))
-\]
-
-\subsection{Bonyolultsági szempontok}
-A továbbfejlesztett transzformátor modell számítási komplexitása rétegenkénti lebontásban a következőképpen alakul. Az előremenő lépés $O(n^2 d + nd^2)$ komplexitású, ahol az $n^2 d$ tag a figyelemmátrix számításából, az $nd^2$ tag pedig a lineáris projekciókból származik. A memória frissítés generálási lépésenként $O(L_{max} d)$ költséggel jár, ahol $L_{max}$ a maximális memória hossz. A rotációs beágyazások előfeldolgozása $O(nd)$ komplexitású, majd a figyelemszámítás során konstans időben alkalmazhatók fejenként. A kapuzott előrecsatoló hálózat $O(d \cdot d_{ff})$ költségű, de 50 százalékkal több paramétert igényel a három lineáris transzformáció miatt.
-
-A memória menedzsment algoritmus garantálja hogy a memória mérete korlátos marad $O(L_{max} \cdot d_{model})$ nagyságrendben, függetlenül a generált szekvencia hosszától. A vágási műveletet alkalmazva a memória mérete soha nem haladja meg az $L_{max}$ határt, miközben minden frissítési lépés $O(L_t \cdot d_{model})$ komplexitású, ahol $L_t$ az aktuális szekvencia hossz.
-
-A modell konvergencia tulajdonságai formálisan is igazolhatók enyhe regularitási feltételek mellett. A továbbfejlesztett transzformátor megfelelő inicializálással 1 valószínűséggel lokális optimumhoz konvergál. Ez három kulcsfontosságú tulajdonságból következik. Először, a reziduális kapcsolatok és rétegnormalizálás biztosítják hogy $\|\nabla_\theta \mathcal{L}\| \leq C$ valamilyen $C$ konstansra, vagyis a gradiensek korlátosak maradnak. Másodszor, a SiLU aktivációs függvény és a szigmoid kapuzás Lipschitz-folytonosak, ami stabil gradiens áramlást eredményez. Harmadszor, az AdamW optimalizáló megfelelő tanulási ráta ütemezéssel elégséges csökkenési feltételeket biztosít. A korlátos gradiensekkel és Lipschitz-folytonossággal rendelkező sztochasztikus optimalizálás konvergencia tétele alapján az algoritmus majdnem biztosan egy kritikus ponthoz konvergál.
-
-\section{Kihívások a zenegenerációban}
-\subsection{Hosszú távú függőségek}
-A zenéhez több mint 100 token modellezése szükséges, ami különösen nagy kihívást jelent a transzformátorok kvadratikus memória komplexitása miatt. A memória hatékony megoldások közé tartozik a Reformer \cite{kitaev2020reformer} architektúra, amely locality-sensitive hashing technikát alkalmaz a figyelemmechanizmus gyorsítására, valamint a hierarchikus modellezés, amely szegmensszintű figyelmet használ.
-
-Az adaptív memória menedzsment kulcsfontosságú a hosszú kontextusú generáláshoz. A csúszóablakos memória algoritmus a jelenlegi kimenetet $\mathbf{O}_t \in \mathbb{R}^{B \times L_t \times d_{model}}$ kombinálja a meglévő memóriával $\mathbf{M}_{t-1} \in \mathbb{R}^{B \times L_{mem} \times d_{model}}$, majd egy maximális memória hossz $L_{max}$ alatt tartja a teljes memória méretet. Ha $L_{mem} + L_t > L_{max}$, akkor a legrégebbi $L_{trim} = L_{mem} + L_t - L_{max}$ elemet eltávolítja, megtartva a legfrissebb információt. Ez biztosítja hogy a memória komplexitás $O(L_{max} \cdot d_{model})$ marad a generálás hosszától függetlenül.
-
-\subsection{Szakaszos memória rendszer strukturált generáláshoz}
-A strukturált zenei kompozíciók létrehozásához egy szakaszos memória rendszer $\mathcal{M} = \{M_s\}_{s=1}^S$ különálló memória állapotokat tart fenn $S$ különböző szakaszhoz, lehetővé téve a strukturált generálást szakasz-specifikus kontextus megőrzéssel.
-
-A szakaszos generálás során egy kezdő szegmens $\mathbf{x}_0$-ból indulva $S$ szakaszt generálunk, mindegyik $L_s$ hosszúságú. Az első szakasz a kezdő szegmenst használja mag-ként. A későbbi szakaszok esetén az előző szakasz utolsó tokenje szolgál kiindulási pontként, és ha egy átmeneti simaság $\alpha \in [0,1]$ paraméter pozitív, akkor az előző szakasz memóriájának utolsó $L_{blend} = \lfloor\alpha \cdot |M_{s-1}|\rfloor$ eleme átkerül az aktuális szakasz kezdő memóriájába. Ez biztosítja a strukturális koherenciát a szakaszok között, miközben lehetővé teszi a kreatív variációt.
-
-A szakaszok közötti koherencia az átmeneti simaság paraméteren keresztül szabályozható. Pozitív $\alpha$ érték esetén a megosztott memória $M_{s-1}[-L_{blend}:, :]$ folytonosságot biztosít, míg a szakasz-specifikus generálás strukturális variációt tesz lehetővé. A koherencia a következő szakaszok közötti kölcsönös informáci óval mérhető: $I(\mathbf{output}_s; \mathbf{output}_{s-1}) \geq \alpha \cdot I(M_{s-1}; \mathbf{output}_s)$.
-
-\subsection{Strukturális prioritások}
-A zeneelmélet beépítése harmonikus kényszereken keresztül valósítható meg. A figyelemmaszkolás lehetővé teszi bizonyos hangjegy kombinációk előnyben részesítését vagy tiltását, ezzel biztosítva a harmonikus szabályok betartását. A metrikus pozíció beágyazások a zenei ütemek és metrika explicit reprezentációját teszik lehetővé, segítve a ritmushelyes kompozíciók létrehozását.
-
-\section{Zha transzformátorának megvalósítása}
-\subsection{Részletek az építészetről}
-A Zha Transformer egy 8 rétegű, csak dekóderhez használható architektúrát alkalmaz, amely kifejezetten zenei szekvenciák generálására optimalizált \cite{huang2018music}.
-
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.8\textwidth]{images/zha_transformer_arch.png}
-\caption{Zha Transformer architektúra zenei generáláshoz}
-\label{fig:zha_transformer}
-\end{figure}
-
-\textbf{Fő komponensek}:
-\begin{itemize}
-\item \textbf{8 Transformer réteg}: Optimális mélység zenei kontextushoz
-\item \textbf{8 attention head}: Többféle zenei kapcsolat párhuzamos modellezése
-\item \textbf{512 dimenziós embedding}: Token reprezentációs tér
-\item \textbf{Pozíciós encoding}: Zenei időzítés modellezése
-\item \textbf{128 input dimenzió}: MIDI hangmagasság spektrum lefedése
-\end{itemize}
-
-\subsection{Memória-alapú generálási stratégia}
-A Zha Transformer innovatív memória mechanizmust alkalmaz strukturált zenei generáláshoz:
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.9\textwidth]{images/memory_mechanism.png}
-\caption{Memória-alapú strukturált generálás}
+\includegraphics[width=0.75\textwidth]{figures/architecture/memory_mechanism.png}
+\caption{Memória mechanizmus a strukturált zenei generáláshoz, külön kontextusokkal a különböző zenei szakaszokhoz.}
 \label{fig:memory_mechanism}
 \end{figure}
 
-A memória algoritmus komponensei:
-\begin{enumerate}
-\item \textbf{Section Memory}: Különböző zenei szakaszok (intro, verse, chorus) tárolása
-\item \textbf{Context Switching}: Automatikus váltás szakaszok között
-\item \textbf{Memory Retrieval}: Releváns múltbeli kontextus visszakeresése
-\item \textbf{Coherence Maintenance}: Hosszú távú szerkezeti egység biztosítása
-\end{enumerate}
+\subsection{Implementáció}
 
-\subsection{Structured generation algoritmus}
-A Zha strukturált generálási algoritmus több fázisban működik:
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.85\textwidth]{images/structured_generation.png}
-\caption{Strukturált zenei generálási folyamat}
-\label{fig:structured_gen}
-\end{figure}
-
-Algoritmus lépései:
-\begin{enumerate}
-\item \textbf{Szakasz tervezés}: Globális struktúra (A-B-A-C forma) meghatározása
-\item \textbf{Memória inicializálás}: Szakasz-specifikus memória területek létrehozása
-\item \textbf{Lokális generálás}: Token-by-token generálás attention mechanizmussal
-\item \textbf{Szakasz átmenetek}: Smooth váltások memória frissítéssel
-\item \textbf{Globális koherencia}: Teljes kompozíció egységének ellenőrzése
-\end{enumerate}
-
-\subsection{Top-k és nucleus sampling optimalizáció}
-Kifinomult sampling stratégiák a kreatív és koherens generáláshoz \cite{zhang2020deep}. A hőmérséklet-vezérelt generálás során a kimeneti logitokat $\mathbf{z} \in \mathbb{R}^V$ egy $\tau > 0$ hőmérséklet paraméterrel skálázzuk, amely a hőmérséklet-skálázott valószínűség eloszlást eredményezi:
-\[
-p_i = \frac{\exp(z_i/\tau)}{\sum_{j=1}^V \exp(z_j/\tau)}
-\]
-Alacsony hőmérséklet értékek determinisztikusabb, magasabb értékek kreatívabb generálást eredményeznek.
-
-A top-k sampling a $k$ legvalószínűbb tokent veszi figyelembe:
-\[
-P_{\text{top-k}}(x_t) = \begin{cases}
-\frac{P(x_t)}{\sum_{x' \in V_k} P(x')} & \text{ha } x_t \in V_k \\
-0 & \text{egyébként}
-\end{cases}
-\]
-
-A nucleus vagy top-p sampling dinamikusan határozza meg a jelöltek halmazát úgy, hogy $V_p$ a legkisebb halmaz amelyre $\sum_{x \in V_p} P(x) \geq p$. Ez adaptívabb mint a top-k, mivel a kontextustól függően változó számú tokent enged be.
-
-A nucleus sampling hőmérséklet-vezérléssel kombinálva robusztus generálási mechanizmust eredményez. Az algoritmus először a hőmérséklet-skálázott logitokat $\mathbf{z}_{temp} = \mathbf{z} / \max(0.1, \tau)$ formában számítja ki, elkerülve a nagyon kicsi értékekkel való osztást. Opcionálisan alkalmaz top-k szűrést, majd kiszámítja a softmax valószínűségeket. A valószínűségeket csökkenő sorrendbe rendezve kumulatív összeget képez, és maszkot alkalmaz az alacsony valószínűségű tokenek kiszűrésére úgy, hogy a kumulatív összeg ne haladja meg a $p$ küszöböt. Végül multinomiális mintavételezéssel választ a szűrt eloszlásból.
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.8\textwidth]{images/sampling_strategies.png}
-\caption{Különböző sampling stratégiák összehasonlítása}
-\label{fig:sampling}
-\end{figure}
-
-\subsection{JIT compilation optimalizáció}
-A Zha Transformer PyTorch JIT compilation-t alkalmaz a inferencia felgyorsítására \cite{torch2023}. A JIT optimalizáció folyamata három fő lépésből áll. Először a graph tracing során rögzíti a modell végrehajtási gráfját, amely a teljes számítási folyamat szerkezetét ábrázolja. Ezt követik az optimalizálási passok, amelyek során redundáns műveleteket eliminál, konstans kifejezéseket kiértékel, és a számítási gráfot egyszerűsíti. Végül a kernel fusion GPU műveleteket kombinál, csökkentve a memória hozzáférések számát, és cache-barát adatstruktúrákat alkalmaz a memória elrendezés optimalizálásához.
-
-A JIT compilation alkalmazása jelentős teljesítmény javulást eredményez. Az inferencia sebesség 2-3 szoros gyorsítást mutat a natív PyTorch végrehajtáshoz képest, különösen hosszú szekvenciák esetén. A memória hatékonyság 20-30 százalékos csökkenést ér el a redundancia eliminálás és az optimalizált memória elrendezés révén. A batch processing során nagyobb throughput érhető el, mivel a JIT compiled modell hatékonyabban használja ki a párhuzamos végrehajtási lehetőségeket.
-
-\section{Esettanulmány: Bach-korálgeneráció}
-\subsection{Kísérleti beállítás}
-A Bach-korálok generálásához végzett kísérletek 352 korálon alapultak, összesen körülbelül 16 000 ütem anyagot tartalmazva. A bemeneti reprezentáció négy fő komponensből állt, amelyek együttesen írják le a MIDI eseményeket. A hangmagasság komponens 128 lehetséges MIDI hangjegyet reprezentál, az időtartam komponens 32 féle időegységet különböztet meg (a 32. hangegységek alapján), a sebesség komponens a MIDI velocity értékeket 32 kategóriába sorolja, végül egy bináris szünet jelző mutatja a hangok közötti csendeket. Az összehasonlítás érdekében egy LSTM baseline modellt használtunk, amely hasonló paraméterszámmal rendelkezett mint a transzformátor.
-
-Az eredmények egyértelműen a transzformátor architektúra fölényét mutatják. A perplexity metrikában a transzformátor 1.8 értéket ért el, szemben az LSTM 3.2-es eredményével, ami alacsonyabb zavarodottságot és jobb predikciós képességet jelez. A motívum konzisztencia tekintetében a transzformátor 0.73-os pontszámot kapott, míg az LSTM csak 0.41-et, ami azt mutatja hogy a transzformátor képes konzisztensen fenntartani a zenei motívumokat.
-
-A kvalitatív elemzés további betekintést nyújtott a modellek viselkedésébe. A transzformátorok pontos intervallumkapcsolatokkal reprodukálták a fugal alanyokat, megőrizve a komplex polifon szerkezeteket. Az LSTM modellek ezzel szemben nem tudtak 8 ütemen túl fenntartani a hangvezetési szabályokat, elvesztve a hosszú távú zenei koherenciát.
-
-\centering
-\begin{tikzpicture}[
-    every node/.style={draw, minimum width=2cm, minimum height=1cm, align=center}
-]
-
-\node (pitch) at (-2,0) {Hangmagasság (128)};
-\node (dur) at (2,0) {Időtartam (32)};
-\node (vel) at (6,0) {Sebesség (32)};
-\node (rest) at (10,0) {Szünet (1)};
-
-\node[draw=none] at (-2,-1) {\footnotesize MIDI hangjegyek};
-\node[draw=none] at (2,-1) {\footnotesize 32. hangegységek};
-\node[draw=none] at (6,-1) {\footnotesize MIDI sebesség bins};
-\node[draw=none] at (10,-1) {\footnotesize Szünet jelzése};
-
-\draw[->, shorten >=5pt, shorten <=5pt] (pitch.east) -- (dur.west);
-\draw[->, shorten >=5pt, shorten <=5pt] (dur.east) -- (vel.west);
-\draw[->, shorten >=5pt, shorten <=5pt] (vel.east) -- (rest.west);
-
-\node[draw=none, font=\bfseries] at (4.5,1) {MIDI jellemzők reprezentációja};
-
-\end{tikzpicture}
-
-\subsection{Eredmények}
-\begin{table}
-\centering
-\begin{tabular}{lcc}
-\hline
-Modell és zavarodottság és motívum konzisztencia \\
-\hline
-LSTM és 3.2 és 0.41 \\
-Transformer & \textbf{1.8} & \textbf{0.73} \\
-\hline
-\end{tabular}
-\caption{Értékelés a Bach-korál tesztkészletről (jobb a kisebb zavarodottság)}
-\end{table}
-
-\subsection{Tanítási stabilitás és konvergencia}
-A továbbfejlesztett architektúra jelentős javulást mutat a tanítási stabilitás terén. A gradiens variancia 40 százalékkal csökkent a standard transzformátorokhoz képest, ami egyenletesebb tanítási dinamikát eredményez. A loss konvergencia 25 százalékkal gyorsabb a cél loss értékek eléréséhez, lerövidítve a szükséges tanítási időt. A memória hatékonyság szempontjából az adaptív memória menedzsment konstans memória használatot biztosít a generálás hosszától függetlenül, kiküszöbölve a hagyományos transzformátorok kvadratikus memória növekedését.
-
-\section{Korlátozások és kiterjesztések}
-\subsection{Főbb kihívások}
-A transzformátor alapú zenei generálás során több alapvető kihívás merül fel. A négyzetes memória bonyolultsága jelentősen korlátozza a kontextus ablak méretét, különösen hosszú kompozíciók esetén. Ez azt eredményezi hogy a modell csak korlátozott számú korábbi tokent tud figyelembe venni a generálás során. Másik jelentős probléma a hidegindítási jelenség, amikor üres vagy nagyon rövid kezdeti sorozatokból kell generálni, ekkor a modell nem rendelkezik elegendő kontextussal a koherens zenei struktúrák létrehozásához.
-
-\subsection{Speciális változatok}
-Több speciális transzformátor változat született kifejezetten zenei generálásra optimalizálva. A Music Transformer relatív figyelmet alkalmaz az időzítésre, lehetővé téve a pontos ritmikai szerkezetek modellezését a pozíció-relatív figyelem mechanizmusokon keresztül. A CP-Transformer (Chord Progression Transformer) tanult akkordmeneti sablonokat használ, amelyek előzetes zenei tudást építenek be a modellbe, segítve a harmonikusan helyes progressziók generálását.
-
-\subsection{Jövőbeli kutatási irányok}
-A továbbfejlesztések lehetséges irányai között szerepel a multimodális zenei generálás kiterjesztése, amely audio és MIDI reprezentációkat egyaránt kezel egyetlen egyesített keretrendszerben. Az adaptív hőmérséklet ütemezés a zenei struktúra alapján dinamikusan állítaná be a generálási paramétereket, például alacsonyabb hőmérsékletet használva repetitív szakaszokhoz és magasabbat variációkhoz. A zeneelméleti megszorítások integrálása formális szabályok beépítését jelentené a modellbe, például harmóniai progressziók, ellenpont szabályok vagy stílus-specifikus idiómák formájában. Végül hierarchikus memória rendszerek fejlesztése többskálás zenei struktúrák kezelését tenné lehetővé, különböző memória szintekkel a motívumok, frázisok, szakaszok és teljes kompozíciók számára.
-
-\section{Zha Transformer implementáció részletes elemzése}
-\subsection{Pozíciós kódolás implementáció}
-A Zha Transformer szinuszos pozíciós kódolást használ a szekvencia pozíció információ megadásához:
+A \texttt{lightning\_transformer.py} implementációja hatékonyan alkalmazza a RoPE-ot:
 
 \begin{lstlisting}[language=Python]
-class PositionalEncoding(nn.Module):
-    def __init__(self, embed_dim, max_len=2048):
+class RotaryPositionalEmbeddings(nn.Module):
+    def __init__(self, d_model, max_seq_len=5000):
         super().__init__()
-        pe = torch.zeros(max_len, embed_dim)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, embed_dim, 2).float() * 
-                            (-math.log(10000.0) / embed_dim))
-        
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        
-        self.register_buffer('pe', pe.unsqueeze(0))
-        self.dropout = nn.Dropout(0.1)
-\end{lstlisting}
-
-\subsection{Memória-alapú generálás}
-A Zha Transformer innovatív memória mechanizmust implementál:
-
-\textbf{Szakasz-alapú memória}: A modell külön memóriát tárol minden zenei szakaszhoz:
-\begin{lstlisting}[language=Python]
-self.section_memories = {}  # {section_id: memory_tensor}
-\end{lstlisting}
-
-\textbf{Memória frissítés}:
-\begin{lstlisting}[language=Python]
-def forward(self, x, use_memory=False):
-    if use_memory and hasattr(self, 'memory') and self.memory is not None:
-        x = torch.cat([self.memory, x], dim=1)
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, d_model, 2).float() 
+                                     / d_model))
+        self.register_buffer('inv_freq', inv_freq)
     
-    # ... transformer processing ...
-    
-    if use_memory:
-        max_memory_length = 1024
-        self.memory = output.detach()
-        if self.memory.size(1) > max_memory_length:
-            self.memory = self.memory[:, -max_memory_length:, :]
+    def forward(self, x, seq_len=None):
+        t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
+        freqs = torch.einsum('i,j->ij', t, self.inv_freq)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        return emb.cos(), emb.sin()
 \end{lstlisting}
 
-\subsection{Strukturált generálás}
-A \texttt{generate\_with\_structure} metódus összetett zenei formákat képes létrehozni:
+A \texttt{rotate\_half} segédfüggvény a vektor felét rotálja:
 
-\begin{algorithm}[H]
-\SetAlgoLined
-\KwIn{Seed, num\_sections, section\_length, temperature, transition\_smoothness}
-\KwOut{Multi-sectional musical sequence}
-
-Memória alaphelyzetbe állítása\;
-\For{section\_id = 0 \KwTo num\_sections-1}{
-    \If{section\_id in section\_memories}{
-        Memória betöltése\;
-    }
-    \Else{
-        \If{transition\_smoothness > 0}{
-            Előző szakasz memóriájának keverése\;
-        }
-    }
-    Szakasz generálása $\leftarrow$ \_generate\_section()\;
-    Memória mentése section\_memories[section\_id]\;
-}
-Összes szakasz összefűzése\;
-
-\caption{Strukturált generálás Zha Transformerben}
-\end{algorithm}
-
-\subsection{Sampling stratégiák}
-\textbf{Top-k és Nucleus sampling kombinációja}:
 \begin{lstlisting}[language=Python]
-# Top-k filtering
-if top_k > 0:
-    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
-    next_token_logits[indices_to_remove] = -float('inf')
-
-# Nucleus (top-p) filtering
-if top_p > 0.0:
-    sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
-    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-    sorted_indices_to_remove = cumulative_probs > top_p
-    # Keep first token above threshold
-    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-    sorted_indices_to_remove[..., 0] = 0
+def rotate_half(x):
+    x1, x2 = x[..., :x.shape[-1]//2], x[..., x.shape[-1]//2:]
+    return torch.cat((-x2, x1), dim=-1)
 \end{lstlisting}
 
-\subsection{Architektúra specifikációk}
-\textbf{Modell paraméterek}:
+Ezt követően a lekérdezésre és kulcsra alkalmazzuk:
+
+\begin{lstlisting}[language=Python]
+cos_q, sin_q = self.rope(x, seq_len=L)
+q = (q * cos_q) + (rotate_half(q) * sin_q)
+k = (k * cos_k) + (rotate_half(k) * sin_k)
+\end{lstlisting}
+
+\section{Kapuzott előrecsatoló hálózatok (GatedFFN)}
+
+\subsection{Motiváció}
+
+A standard Transformer előrecsatoló hálózata két lineáris transzformációból áll ReLU aktivációval:
+\[
+\text{FFN}(\mathbf{x}) = \mathbf{W}_2 \cdot \text{ReLU}(\mathbf{W}_1 \mathbf{x})
+\]
+
+Ez egyszerű, de nem adaptív, minden bemenet ugyanazon a transzformáción megy keresztül. A kapuzási mechanizmus lehetővé teszi, hogy a hálózat a bemenet tartalmától függően szabályozza az információáramlást.
+
+\subsection{GatedFFN definíció}
+
+A kapuzott előrecsatoló hálózat két párhuzamos útvonalat használ:
+\[
+\text{GatedFFN}(\mathbf{x}) = \mathbf{W}_2 \cdot (\text{SiLU}(\mathbf{W}_1 \mathbf{x}) \odot \sigma(\mathbf{W}_g \mathbf{x}))
+\]
+
+ahol:
 \begin{itemize}
-\item \textbf{Embedding dimenzió}: 512
-\item \textbf{Figyelemfejek száma}: 8
-\item \textbf{Rétegek száma}: 8
-\item \textbf{Feedforward dimenzió}: 2048
-\item \textbf{Dropout}: 0.1
-\item \textbf{Input dimenzió}: 128 (MIDI hangmagasság spektrum)
+    \item $\mathbf{W}_1 \mathbf{x}$ a fő aktivációs út (SiLU aktivációval)
+    \item $\mathbf{W}_g \mathbf{x}$ a kapuzási út (szigmoid aktivációval)
+    \item $\odot$ elemenként szorzás
+    \item $\text{SiLU}(x) = x \cdot \sigma(x)$ a Swish aktivációs függvény
 \end{itemize}
 
-\textbf{Batch-first konvenció}: A modell batch-first tenzor formátumot használ a hatékonyság érdekében:
+Reziduális kapcsolattal és LayerNorm-mal:
+\[
+\text{Output} = \text{LayerNorm}(\mathbf{x} + \text{Dropout}(\text{GatedFFN}(\mathbf{x})))
+\]
+
+\subsection{Gradiens tulajdonságok}
+
+A $\mathbf{h}_1 = \text{SiLU}(\mathbf{W}_1 \mathbf{x})$ szerinti gradiens:
+\[
+\frac{\partial \mathcal{L}}{\partial \mathbf{h}_1} = \frac{\partial \mathcal{L}}{\partial \mathbf{h}_2} \odot \mathbf{g}
+\]
+
+ahol $\mathbf{g} = \sigma(\mathbf{W}_g \mathbf{x}) \in (0, 1)^{d_{ff}}$. Mivel a kapu értékei a $(0,1)$ intervallumban vannak, ez adaptív gradiens skálázást biztosít:
+\begin{itemize}
+    \item \textbf{Gradiens robbanás megelőzése:} A kapu automatikusan csillapítja a túl nagy gradienseket
+    \item \textbf{Jelszint fenntartása:} A kapu nem zéró, így a gradiens nem tűnik el teljesen
+\end{itemize}
+
+\subsection{Implementáció}
+
 \begin{lstlisting}[language=Python]
-encoder_layers = nn.TransformerEncoderLayer(
-    d_model=embed_dim,
-    nhead=num_heads,
-    dim_feedforward=dim_feedforward,
-    dropout=dropout,
-    batch_first=True  # [batch, seq, features]
-)
+class GatedFeedForward(nn.Module):
+    def __init__(self, d_model, d_ff, dropout=0.1):
+        super().__init__()
+        self.w1 = nn.Linear(d_model, d_ff)
+        self.wg = nn.Linear(d_model, d_ff)
+        self.w2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(d_model)
+        
+    def forward(self, x):
+        residual = x
+        hidden = F.silu(self.w1(x)) * torch.sigmoid(self.wg(x))
+        output = self.w2(self.eldobás(hidden))
+        return self.norm(residual + output)
 \end{lstlisting}
 
-\subsection{Optimalizálás és teljesítmény}
-\textbf{JIT Compilation}: A modell JIT script formában menthető a gyorsabb inferenciához:
+\section{Továbbfejlesztett attention réteg}
+
+\subsection{Reziduális kapcsolatok és normalizálás}
+
+A \texttt{EnhancedMultiheadAttention} integrálja a pozíciókódolást és a reziduális kapcsolatokat:
+
 \begin{lstlisting}[language=Python]
-try:
-    scripted_model = torch.jit.script(model.cpu())
-    scripted_model.save("trained_transformer_jit.pt")
-    print("JIT compiled model saved for faster inference")
-except Exception as e:
-    print(f"JIT compilation failed: {e}")
+class EnhancedTransformerEncoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward, dropout=0.1):
+        super().__init__()
+        self.self_attn = EnhancedMultiheadAttention(d_model, nhead, 
+                                                      dropout=dropout)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.gated_ffn = GatedFeedForward(d_model, dim_feedforward, 
+                                          dropout)
+
+    def forward(self, src, src_mask=None):
+        src2 = self.self_attn(src, mask=src_mask)
+        src = self.norm1(src + self.dropout1(src2))
+        src = self.gated_ffn(src)
+        return src
 \end{lstlisting}
+
+A normalizálás az összeadás \textit{után} történik (Post-LN), amely stabilabb tanítást eredményez mély hálózatokban \cite{xiong2020layer}.
+
+\subsection{Xavier inicializálás}
+
+A projekciós mátrixok inicializálása kritikus a stabil tanításhoz. A továbbfejlesztett Xavier inicializálás figyelembe veszi a párhuzamos projekciókat:
+
+\[
+\mathbf{W}_q, \mathbf{W}_k, \mathbf{W}_v \sim \mathcal{N}(0, \tfrac{1}{\sqrt{2} \cdot d_{model}})
+\]
+\[
+\mathbf{W}_o \sim \mathcal{N}(0, \tfrac{1}{d_{model}})
+\]
+
+A $\frac{1}{2}$ skálázás a három párhuzamos projekció miatt szükséges az egység variancia fenntartásához.
+
+\section{Teljesítmény és komplexitás}
+
+\subsection{Számítási komplexitás}
+
+Rétegenkénti breakdown:
+\begin{itemize}
+    \item \textbf{Attention:} $O(n^2 d + nd^2)$, ahol az $n^2 d$ a figyelemmátrix számításából, az $nd^2$ a lineáris projekciókból származik
+    \item \textbf{RoPE:} $O(nd)$ előfeldolgozás, majd konstans idejű alkalmazás fejenként
+    \item \textbf{GatedFFN:} $O(d \cdot d_{ff})$, de 50\%-kal több paraméter a három lineáris transzformáció miatt
+\end{itemize}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/transformer/sampling_strategies.png}
+\caption{Különböző sampling stratégiák (greedy, temperature, top-k, nucleus) hatása a generált zene diverzitására és minőségére.}
+\label{fig:sampling_strategies}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.65\textwidth]{figures/transformer/perplexity_analysis.png}
+\caption{Perplexity analízis különböző szekvencia hosszaknál, mutatva a modell előrejelzési bizonytalanságát.}
+\label{fig:perplexity}
+\end{figure}
+
+\subsection{Memória menedzsment}
+
+Hosszú szekvenciák generálásánál csúszó ablakos memóriát alkalmazunk:
+
+\begin{lstlisting}[language=Python]
+if memory_length + new_length > max_memory:
+    trim_length = memory_length + new_length - max_memory
+    memory = memory[:, trim_length:, :]
+\end{lstlisting}
+
+Ez garantálja, hogy a memória $O(L_{\max} \cdot d_{model})$ korlátozott marad a generálási hossztól függetlenül.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/transformer/training_curves.png}
+\caption{Transformer Tanítási görbék: vesztés, perplexity és validációs pontosság alakulása az epoch-ok során.}
+\label{fig:training_curves}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.65\textwidth]{figures/transformer/quality_metrics.png}
+\caption{Zenei minőségi metrikák (harmonic coherence, rhythmic consistency, melodic contour) különböző modell konfigurációknál.}
+\label{fig:quality_metrics}
+\end{figure}
+
+\section{Implementációs részletek}
+
+\subsection{Architektúra}
+
+A Transformer hat rétegből áll, nyolc fejjel és 512-es $d_{\text{model}}$ értékkel. Rotációs pozicionális beágyazásokat használ Su et al. (2020) szerint. Az előrecsatoló rejtett méret 2048. Dropout 0,1 értéket vesz fel a figyelem és előrecsatoló alrétegeken.
+
+\subsubsection{Relatív pozíció bias}
+
+Tanult bias mátrix $B_{i,j}$ hozzáadása történik a figyelem logitjaihoz a zenei intervallum kapcsolatok modellezésére.
+
+\subsection{Tanítási folyamat}
+
+A Transformer modell tanítása fejlett optimalizációs technikákat alkalmaz a stabilitás és a hatékonyság érdekében:
+
+\begin{itemize}
+\item \textbf{Vegyes pontosság}: \texttt{torch.cuda.amp} modullal, amely csökkenti a memóriaigényt és gyorsítja a számításokat félpontos aritmetikával
+\item \textbf{Tanulási ráta ütemezés}: bemelegítés az első 5000 lépésben, majd koszinuszos csökkenéssel nulláig tart 200 000 lépésig
+\item \textbf{Gradiens akkumuláció}: 512-es batch méret szimulálására, ha a GPU memória korlátozott
+\end{itemize}
+
+A \texttt{train\_transformer.py} script a következő pipeline-t futtatja:
+
+\begin{enumerate}
+    \item Adat betöltése \texttt{full\_dataset.pt}-ből
+    \item Lightning Transformer modell inicializálása (RoPE, GatedFFN engedélyezve)
+    \item PyTorch Lightning Trainer beállítása (GPU support, gradient clipping)
+    \item Tanítási loop: teacher forcing autoregresszív generálással
+    \item Metrikák: perplexity, accuracy, loss
+    \item Checkpoint mentés
+\end{enumerate}
+
+A modell támogatja a többszólamú generálást kereszt-figyelemmechanizmussal a különböző hangszín-track-ek között.
+
+\section{Összefoglalás}
+
+A fejezet bemutatta a Zha Transformer moduljának főbb továbbfejlesztéseit:
+\begin{itemize}
+    \item A RoPE transzláció-invariáns relatív pozíciókódolást biztosít
+    \item A GatedFFN adaptív információáramlást és jobb gradiens tulajdonságokat eredményez
+    \item A továbbfejlesztett attention reziduális kapcsolatokkal stabilabb tanítást tesz lehetővé
+\end{itemize}
+
+Ezek a módosítások együttesen jelentősen javítják a modell zenei generálási képességét, különösen hosszabb kompozíciók esetén, ahol a hosszú távú koherencia elengedhetetlen.
+
+% Részletes matematikai levezetések (RoPE invariancia, GatedFFN gradiens analízis) a Függelékben
