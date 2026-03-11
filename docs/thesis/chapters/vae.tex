@@ -52,44 +52,21 @@ Ezzel szétválasztjuk a determinisztikus ($\boldsymbol{\mu}, \boldsymbol{\sigma
 
 \section{Csoport-orbitális konzisztencia}
 
-\subsection{Motiváció: a zenei szimmetria problémája}
+\subsection{Motiváció}
 
-Képzeljünk el egy egyszerű dallamot C-dúrban. Ha ezt két félhanggal feljebb transzponáljuk D-dúrba, a dallam zeneileg \textit{ugyanaz marad}, csak más hangnemben szól. A standard VAE mégis két teljesen különböző látens vektort tanul nekik, feleslegesen pazarolva a modell kapacitását.
+A klasszikus VAE nem veszi figyelembe a zenei szimmetriákat, különösen a transzpozíciós invarianciát. Egy dallam zeneileg ugyanaz marad, ha más hangnembe transzponáljuk, de a VAE különböző reprezentációkat tanul nekik.
 
-Ez a probléma nem csak a transzpozícióra igaz. A zene tele van szimmetriákkal: augmentáció (a ritmus nyújtása), inverziók, retrográd (visszafelé játszás). Ezek mind \textit{csoportműveletek}, amelyeknek invariánsaknak kellene lenniük a látens reprezentációban.
+\subsection{GOLC módszer}
 
-\subsection{Formális definíció}
+A Csoport-Orbitális Látens Konzisztencia (GOLC) explicit módon beépíti a zenei szimmetriákat:
 
-Legyen $G$ egy transzformációs csoport (például a 12 félhangos transzpozíció a kromatikus skálán), amely hat a zenei adatok $\mathcal{X}$ halmazán. Egy $x \in \mathcal{X}$ elem \textit{orbitja}:
+- \textbf{Orbit definíció}: Egy dallam összes transzponált változata
+- \textbf{Kanonikus reprezentáció}: Az orbit átlaga a látens térben  
+- \textbf{Orbitális veszteség}: Kényszeríti, hogy minden transzponált változat ugyanarra a pontra képeződjön
+
 \[
-G \cdot x = \{g \cdot x \mid g \in G\}
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{recon}} + \beta \cdot \mathcal{L}_{\text{KL}} + \beta_{\text{orbit}} \cdot \mathcal{L}_{\text{orbit}}
 \]
-
-A GOLC alapelve: a kódoló legyen invariáns az orbitokon, azaz:
-\[
-\text{Kódoló}_\phi(g \cdot x) \approx \text{Kódoló}_\phi(x), \quad \forall g \in G
-\]
-
-\textbf{Kanonikus reprezentáció:} Az orbit összes elemének látens reprezentációinak átlaga:
-\[
-\mathbf{z}_c(x) = \frac{1}{|G|} \sum_{g \in G} \text{Kódoló}_\phi(g \cdot x)
-\]
-
-\textbf{Orbitális konzisztencia veszteség:}
-\[
-\mathcal{L}_{\text{orbit}} = \frac{1}{|G|} \sum_{g \in G} \| \text{Kódoló}_\phi(g \cdot x) - \mathbf{z}_c(x) \|^2
-\]
-
-Ez a veszteség arra kényszeríti a modellt, hogy minden orbit-elemet ugyanarra a látens pontra képezzen le.
-
-\subsection{Teljes veszteségfüggvény}
-
-A GOLC-VAE teljes veszteségfüggvénye:
-\[
-\mathcal{L}_{\text{total}} = \underbrace{\mathcal{L}_{\text{recon}}}_{\text{Rekonstrukció}} + \underbrace{\beta \cdot \mathcal{L}_{\text{KL}}}_{\text{Regularizáció}} + \underbrace{\beta_{\text{orbit}} \cdot \mathcal{L}_{\text{orbit}}}_{\text{GOLC}}
-\]
-
-ahol $\beta$ a $\beta$-VAE súly \cite{higgins2017beta}, $\beta_{\text{orbit}}$ pedig a GOLC regularizáció súlya.
 
 \section{Implementáció és architektúra}
 
@@ -170,6 +147,61 @@ A regularizáció stabilizálja is a tanítást, simítja a látens tér topoló
 \section{Implementációs részletek}
 
 A tanítás azzal kezdődik, hogy betöltjük a zenei adathalmazt, majd inicializáljuk a GOLC-VAE modellt megfelelő súlyozási paraméterekkel a regularizációs tagokhoz. Adam optimalizálót használunk, amely adaptív tanulási rátával kezeli a paraméterfrissítéseket. A tanítási ciklusban párhuzamosan számoljuk a rekonstrukciós, KL és GOLC veszteségeket, közben követjük a modell teljesítményét különböző metrikákkal. A transzpozíciós csoport félhangos eltolásokat tartalmaz egy zeneileg értelmes tartományban, azokat a transzformációkat, amelyek a zenei invariancia szempontjából gyakorlatilag fontosak.
+
+\section{Implementációs részletek}
+
+\subsection{VAE architektúra}
+
+A VAE implementáció a \texttt{backend/models/vae.py} fájlban található. A modell két fő komponensből áll: enkóder és dekóder.
+
+\subsubsection{Enkóder}
+
+Az enkóder egy bidirekcionális LSTM hálózat, amely a teljes szekvenciát feldolgozza:
+
+\[
+  h_t = \mathrm{BiLSTM}(x_t, h_{t-1}),\quad
+  \mu = W_\mu \, h_{T},\quad
+  \log\sigma^2 = W_\sigma \, h_{T}.
+\]
+
+\subsubsection{Dekóder}
+
+A dekóder autoregresszív módon működik. Minden időlépésben $t$:
+
+\[
+  \hat{x}_t = \mathrm{Softmax}\bigl(W_o [e_{t-1} \,\|\, z]\bigr),
+\]
+
+ahol $e_{t-1}$ az előző token beágyazása és $z$ a mintavételezett latens vektor.
+
+\subsubsection{Tanítási trükkök}
+
+A tanítás során több trükköt alkalmazunk:
+
+\begin{itemize}
+\item \textbf{KL-annealing}: $\beta(e) = \min(1, e/E_{\text{warmup}})$
+\item \textbf{Free Bits}: KL dimenziónként minimum 0,1 értékre korlátozódik az összeomlás elkerülése érdekében
+\item \textbf{Gradiens vágás}: végtelen norma maximum 1,0
+\end{itemize}
+
+\subsection{Tanítási folyamat}
+
+A VAE tanítása a rekonstrukciós veszteség és a KL-divergencia egyensúlyára épül. A tanítási ciklus minden epochban végigmegy a batch-eken:
+
+\begin{lstlisting}[language=Python]
+for epoch in range(num_epochs):  # Iteráció az epochokon keresztül
+    for batch in dataloader:  # Batch-ek feldolgozása
+        recon, mu, logvar = model(batch)  # Modell elorejelzese: rekonstrukcio es latens parameterek
+        recon_loss = F.cross_entropy(recon, batch)  # Rekonstrukciós veszteség számítása
+        kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())  # KL-divergencia
+        loss = recon_loss + beta(epoch)*kl  # Teljes veszteségfüggvény súlyozással
+        optimizer.zero_grad()  # Gradiensek nullázása
+        loss.backward()  # Visszafelé terjesztés
+        clip_grad_norm_(model.parameters(), 1.0)  # Gradiens vágás
+        optimizer.step()  # Paraméter frissítés
+\end{lstlisting}
+
+Korai leállítást aktiválok, ha a validációs veszteség nem javul öt epoch alatt, ezzel elkerülve a túltanítást.
 
 \section{Kapcsolat korábbi munkákhoz}
 

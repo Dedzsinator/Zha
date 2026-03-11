@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-import pickle
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -13,10 +12,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from tqdm import tqdm
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from models.golc_vae import GOLC_VAE
+from backend.models.golc_vae import GOLC_VAE
 
 
 class GOLC_VAE_Trainer:
@@ -51,7 +47,6 @@ class GOLC_VAE_Trainer:
             mode='min',
             factor=0.5,
             patience=10,
-            verbose=True,
             min_lr=1e-6
         )
         
@@ -248,7 +243,7 @@ class GOLC_VAE_Trainer:
                 self.best_val_loss = val_losses['total']
                 self.patience_counter = 0
                 self.save_checkpoint(epoch, is_best=True)
-                print(f"  ✓ New best model saved! (Val Loss: {self.best_val_loss:.4f})")
+                print(f"  \u2713 New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
             else:
                 self.patience_counter += 1
                 
@@ -309,62 +304,60 @@ class GOLC_VAE_Trainer:
 
 
 def load_data(data_dir='dataset/processed', batch_size=128, val_split=0.1):
-    """Load preprocessed MIDI data"""
+    """Load preprocessed MIDI data from .pt file (markov_sequences format)"""
     print(f"Loading data from {data_dir}...")
-    
-    # Load sequences
-    sequences_path = Path(data_dir) / 'sequences.pkl'
-    with open(sequences_path, 'rb') as f:
-        sequences = pickle.load(f)
-    
-    # Load metadata
-    metadata_path = Path(data_dir) / 'metadata.json'
-    with open(metadata_path, 'r') as f:
-        metadata = json.load(f)
-    
-    print(f"Loaded {len(sequences)} sequences")
-    print(f"Sequence shape: {sequences.shape}")
-    
-    # Convert to tensors
-    data_tensor = torch.FloatTensor(sequences)
-    
-    # Normalize if needed (ensure [0, 1] range for BCE loss)
+
+    # Try full_dataset.pt first, fall back to markov_sequences.pt
+    for fname in ('full_dataset.pt', 'markov_sequences.pt'):
+        sequences_path = Path(data_dir) / fname
+        if sequences_path.exists():
+            break
+    else:
+        raise FileNotFoundError(
+            f"No preprocessed data found in {data_dir}. "
+            "Run scripts/preprocess_dataset.py first."
+        )
+
+    raw = torch.load(sequences_path)
+    items = raw.get('sequences', raw) if isinstance(raw, dict) else raw
+
+    # Build pitch-histogram tensors (128-dim, normalised) from note sequences
+    tensors = []
+    for item in items:
+        seq_data = item.get('sequences', {}) if isinstance(item, dict) else {}
+        notes = seq_data.get('full', seq_data.get('melody', []))
+        if not notes and isinstance(item, dict):
+            notes = item.get('sequence', [])
+        feature = np.zeros(128, dtype=np.float32)
+        for n in notes:
+            if isinstance(n, (int, float)) and 0 <= int(n) < 128:
+                feature[int(n)] += 1
+        if feature.sum() > 0:
+            feature /= feature.sum()
+        tensors.append(torch.from_numpy(feature))
+
+    if not tensors:
+        raise ValueError("No valid sequences found in the preprocessed data.")
+
+    data_tensor = torch.stack(tensors)          # [N, 128]
     data_tensor = torch.clamp(data_tensor, 0, 1)
-    
-    # Split into train/val
-    num_samples = len(data_tensor)
-    num_val = int(num_samples * val_split)
-    num_train = num_samples - num_val
-    
-    indices = torch.randperm(num_samples)
-    train_indices = indices[:num_train]
-    val_indices = indices[num_train:]
-    
-    train_data = data_tensor[train_indices]
-    val_data = data_tensor[val_indices]
-    
-    # Create datasets and loaders
-    train_dataset = TensorDataset(train_data)
-    val_dataset = TensorDataset(val_data)
-    
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True
-    )
-    
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True
-    )
-    
-    print(f"Train samples: {len(train_data)}, Val samples: {len(val_data)}")
-    
+    print(f"Loaded {len(data_tensor)} sequences, shape: {data_tensor.shape}")
+
+    # Train / val split
+    num_val   = max(1, int(len(data_tensor) * val_split))
+    num_train = len(data_tensor) - num_val
+    indices   = torch.randperm(len(data_tensor))
+    train_data = data_tensor[indices[:num_train]]
+    val_data   = data_tensor[indices[num_train:]]
+
+    train_loader = DataLoader(TensorDataset(train_data), batch_size=batch_size,
+                              shuffle=True,  num_workers=0, pin_memory=True)
+    val_loader   = DataLoader(TensorDataset(val_data),   batch_size=batch_size,
+                              shuffle=False, num_workers=0, pin_memory=True)
+
+    metadata = {'num_train': num_train, 'num_val': num_val,
+                'source_file': str(sequences_path)}
+    print(f"Train samples: {num_train}, Val samples: {num_val}")
     return train_loader, val_loader, metadata
 
 

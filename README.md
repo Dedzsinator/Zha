@@ -51,13 +51,13 @@ Zha is a neural network-based music synthesis project that allows you to generat
 ### Dataset Preparation
 
 1. **Prepare your music dataset**
-   - Place your MIDI or audio files in the `data/raw` directory
-   - Supported formats: MIDI (.mid, .midi), WAV, MP3
+   - Place your MIDI files in the `dataset/midi` directory
+   - Supported formats: MIDI (.mid, .midi)
 
 2. **Preprocess the dataset**
 
    ```bash
-   python scripts/preprocess.py --input data/raw --output data/processed
+   python scripts/preprocess_dataset.py
    ```
 
 ## Training the Model
@@ -65,72 +65,108 @@ Zha is a neural network-based music synthesis project that allows you to generat
 1. **Basic training**
 
    ```bash
-   python train.py --data data/processed --epochs 100
+   python train.py
    ```
 
-2. **Advanced options**
+2. **Train individual models**
 
    ```bash
-   python train.py --data data/processed --epochs 100 --batch-size 64 --learning-rate 0.001 --model-type lstm
+   # Train Markov chain model
+   python backend/trainers/train_markov.py
+   
+   # Train VAE model
+   python backend/trainers/train_vae.py
+   
+   # Train Transformer model
+   python backend/trainers/train_transformer.py
+   
+   # Train Diffusion model
+   python backend/trainers/train_diffusion.py
    ```
+
+3. **Advanced training options**
+
+   Available models: markov, vae, golc_vae, transformer, diffusion
+   Use `--help` with any training script for full options.
 
 ## Generating Music
 
-1. **Generate music using a trained model**
+1. **Start the FastAPI server**
 
    ```bash
-   python generate.py --model models/model_latest.pt --output output/my_music.mid --length 60
+   python backend/app.py
    ```
 
-2. **Interactive generation**
+2. **Generate music via API**
 
-   ```bash
-   python interactive.py --model models/model_latest.pt
+   Use the `/generate_combined` endpoint with a MIDI file upload and parameters:
+   - `creativity`: Controls VAE sampling randomness (0.0-1.0)
+   - `duration`: Length of generated music in seconds
+   - `instrument`: Target instrument (piano, guitar, etc.)
+
+   Example API call:
+   ```python
+   import requests
+
+   files = {'midi_file': open('input.mid', 'rb')}
+   data = {'creativity': 0.5, 'duration': 30, 'instrument': 'piano'}
+   response = requests.post('http://localhost:8000/generate_combined', files=files, data=data)
    ```
+
+3. **Web Interface**
+
+   Open `http://localhost:8000/docs` in your browser for the interactive API documentation.
 
 ## Project Structure
 
 ```bash
 Zha/
 │
-├── data/               # Data directory
-│   ├── raw/            # Raw music files
+├── backend/            # FastAPI backend
+│   ├── app.py          # Main API server
+│   ├── models/         # Neural network architectures
+│   └── trainers/       # Training scripts
+│
+├── dataset/            # Data directory
+│   ├── midi/           # Raw MIDI files
 │   └── processed/      # Processed datasets
 │
-├── models/             # Saved models
+├── frontend/           # Next.js frontend (optional)
 │
-├── scripts/            # Utility scripts
-│   └── preprocess.py   # Data preprocessing
+├── output/             # Generated music and checkpoints
+│   ├── trained_models/ # Saved model checkpoints
+│   ├── checkpoints/    # Training checkpoints
+│   └── generated/      # Generated music files
 │
-├── src/                # Source code
-│   ├── models/         # Neural network architectures
-│   ├── utils/          # Utility functions
-│   └── visualization/  # Visualization tools
+├── scripts/            # Utility and analysis scripts
+│   ├── preprocess_dataset.py
+│   ├── generate_all_metrics.py
+│   └── compare_vae_models.py
 │
-├── output/             # Generated music output
+├── docs/               # Documentation and thesis
 │
-├── tests/              # Unit tests
-│
-├── train.py            # Training script
-├── generate.py         # Music generation script
-├── interactive.py      # Interactive generation interface
-├── requirements.txt    # Project dependencies
-└── README.md           # This file
+├── docker-compose.yml  # Docker setup
+├── Dockerfile         # Container configuration
+└── requirements.txt   # Python dependencies
 ```
 
 ## Examples
 
-### Example 1: Training on Bach compositions
+### Example 1: Training on MIDI dataset
 
 ```bash
-python train.py --data data/processed/bach --epochs 200 --model-type transformer
+python train.py
 ```
 
-### Example 2: Generating jazz-style music
+### Example 2: Generating music via API
+
+Start the FastAPI server and use the `/generate_combined` endpoint:
 
 ```bash
-python generate.py --model models/jazz_model.pt --style jazz --temperature 0.8 --output output/jazz_piece.mid
+python backend/app.py
 ```
+
+Then make API requests as shown in the "Generating Music" section above.
 
 ## Troubleshooting
 
@@ -141,8 +177,8 @@ python generate.py --model models/jazz_model.pt --style jazz --temperature 0.8 -
    - Use gradient accumulation: `python train.py --gradient-accumulation 4`
 
 2. **Poor quality generated music**
-   - Try different temperatures: `python generate.py --temperature 0.7`
-   - Train the model for more epochs
+   - Adjust creativity parameter in API calls (0.0-1.0)
+   - Try different model combinations
    - Ensure your dataset is properly preprocessed
 
 ## Contributing

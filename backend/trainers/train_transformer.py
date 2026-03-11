@@ -1,6 +1,6 @@
-import torch, os, warnings
+import torch, os, json, warnings
 from torch.utils.data import DataLoader
-from torch.cuda.amp import GradScaler
+from torch.amp import GradScaler
 import torch.nn.functional as F
 from backend.models.transformer import TransformerModel
 from backend.trainers.utils import train_epoch, LRSchedulerWithBatchOption, EarlyStopping
@@ -69,6 +69,14 @@ class TransformerMIDIDataset(MIDIDataset):
                 'tempo_changes': []
             }
 
+def _transformer_collate_fn(batch):
+    """Custom collate that handles the variable-length chord/tempo lists."""
+    sequences = torch.stack([item['sequence'] for item in batch])
+    chords = [item['chords'] for item in batch]
+    tempo_changes = [item['tempo_changes'] for item in batch]
+    return {'sequence': sequences, 'chords': chords, 'tempo_changes': tempo_changes}
+
+
 def train_transformer_model(
     epochs=100,
     batch_size=64,
@@ -135,7 +143,7 @@ def train_transformer_model(
         final_div_factor=1e4
     )
     scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=True)
-    scaler = GradScaler() if torch.cuda.is_available() else None
+    scaler = GradScaler('cuda') if torch.cuda.is_available() else None
 
     # Early stopping
     early_stopping = EarlyStopping(patience=patience)
@@ -149,7 +157,8 @@ def train_transformer_model(
         batch_size=batch_size,
         shuffle=True,
         num_workers=4 if not use_preprocessed else 0,
-        pin_memory=True
+        pin_memory=True,
+        collate_fn=_transformer_collate_fn
     )
 
     # Training loop
@@ -203,13 +212,18 @@ def train_transformer_model(
             
             # Forward pass
             optimizer.zero_grad()
-            with torch.cuda.amp.autocast(enabled=scaler is not None):
+            _amp_enabled = scaler is not None
+            with torch.amp.autocast('cuda', enabled=_amp_enabled):
                 output = model(sequences, chord_conditioning=chord_conditioning, 
                              tempo_conditioning=tempo_conditioning)
                 
+                # model always returns [batch, seq_len, input_dim]; squeeze seq dim when 1
+                if output.dim() == 3 and output.size(1) == 1:
+                    output = output.squeeze(1)   # [batch, input_dim]
+
                 # Compute loss (cross-entropy for next token prediction)
-                if len(sequences.shape) == 2:
-                    # Single step prediction
+                if output.dim() == 2:
+                    # Single step prediction: [batch, 128] vs [batch] target
                     loss = F.cross_entropy(output, sequences.argmax(dim=-1))
                 else:
                     # Sequence prediction - predict next tokens
@@ -222,12 +236,15 @@ def train_transformer_model(
             if scaler is not None:
                 scaler.scale(loss).backward()
                 if (batch_idx + 1) % grad_accum_steps == 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     scaler.step(optimizer)
                     scaler.update()
                     scheduler_wrapper.step()
             else:
                 loss.backward()
                 if (batch_idx + 1) % grad_accum_steps == 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
                     scheduler_wrapper.step()
             
@@ -255,6 +272,24 @@ def train_transformer_model(
 
     # Save final model and JIT scripted version for faster inference
     torch.save(model.state_dict(), "output/trained_models/trained_transformer.pt")
+
+    # Save full metrics history to JSON
+    os.makedirs("output/metrics", exist_ok=True)
+    metrics_path = "output/metrics/transformer_metrics.json"
+    with open(metrics_path, 'w') as f:
+        json.dump({
+            'epochs_run': len(all_metrics),
+            'final_loss': all_metrics[-1]['loss'] if all_metrics else None,
+            'best_loss': min(m['loss'] for m in all_metrics) if all_metrics else None,
+            'history': all_metrics,
+            'hyperparams': {
+                'epochs': epochs, 'batch_size': batch_size, 'learning_rate': learning_rate,
+                'embed_dim': embed_dim, 'num_heads': num_heads, 'num_layers': num_layers,
+                'dim_feedforward': dim_feedforward, 'dropout': dropout,
+                'grad_accum_steps': grad_accum_steps, 'track_type': track_type
+            }
+        }, f, indent=2)
+    print(f"📊 Metrics saved to {metrics_path}")
 
     # Create a JIT compiled version for faster inference
     try:

@@ -27,11 +27,12 @@ def train_diffusion_model(epochs=50, batch_size=128, learning_rate=2e-4):
     # Optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     scaler = GradScaler()
+    _device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Data loading
     print("📂 Setting up data loader...")
     dataset = MIDIDataset(midi_dir="dataset/midi/")
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, 
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                           num_workers=4, pin_memory=True)
     
     # Noise schedule

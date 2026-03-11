@@ -1,4 +1,4 @@
-import torch, os, numpy as np, warnings, matplotlib.pyplot as plt
+import torch, os, json, numpy as np, warnings
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
@@ -156,6 +156,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
     epoch_kl_loss = 0
     epoch_consistency_loss = 0
     n_batches = len(dataloader)
+    _device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     optimizer.zero_grad()
 
@@ -164,7 +165,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
             batch = batch.to(device, non_blocking=True)
 
             # Forward pass with mixed precision training
-            with autocast(device_type='cuda', enabled=scaler is not None):
+            with autocast(device_type=_device_type, enabled=scaler is not None):
                 recon_batch, mu, logvar = model(batch)
 
             # Calculate losses in full precision
@@ -248,7 +249,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=False)
 
     # Create gradient scaler for mixed precision training
-    scaler = torch.amp.GradScaler() if torch.cuda.is_available() else None
+    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None
 
     # Early stopping
     early_stopping = EarlyStopping(patience=patience, verbose=True)
@@ -311,6 +312,26 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     # Save final model
     torch.save(model.state_dict(), "output/trained_models/trained_vae.pt")
     print("✅ Training complete! Model saved to output/trained_models/trained_vae.pt")
+
+    # Save full metrics history to JSON
+    os.makedirs("output/metrics", exist_ok=True)
+    metrics_path = "output/metrics/vae_metrics.json"
+    with open(metrics_path, 'w') as f:
+        json.dump({
+            'epochs_run': len(all_metrics),
+            'final_loss': all_metrics[-1]['loss'] if all_metrics else None,
+            'final_recon_loss': all_metrics[-1]['recon_loss'] if all_metrics else None,
+            'final_kl_loss': all_metrics[-1]['kl_loss'] if all_metrics else None,
+            'final_consistency_loss': all_metrics[-1]['consistency_loss'] if all_metrics else None,
+            'best_loss': min(m['loss'] for m in all_metrics) if all_metrics else None,
+            'history': all_metrics,
+            'hyperparams': {
+                'epochs': epochs, 'batch_size': batch_size, 'learning_rate': learning_rate,
+                'latent_dim': latent_dim, 'beta': beta, 'consistency_weight': consistency_weight,
+                'grad_accum_steps': grad_accum_steps, 'track_type': track_type
+            }
+        }, f, indent=2)
+    print(f"📊 Metrics saved to {metrics_path}")
 
     # Export to ONNX format
     try:

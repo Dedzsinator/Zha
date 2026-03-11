@@ -4,7 +4,7 @@
 
 Ebben a dolgozatban a Zha rendszert mutattam be, amely mély tanulási módszereket alkalmaz szimbolikus zenei tartalom generálására. A kutatás központjában az állt, hogy kidolgozzak egy olyan hibrid architektúrát, amely egyesíti a különböző generatív modellek erősségeit, és kompenzálja az egyéni gyengeségeiket.
 
-A dolgozat során három fő modellt integráltam: Markov láncokat a harmonikus struktúra biztosítására, Variációs Autoenkódereket (VAE) a kreatív variációk generálására, és Transformer modelleket a hosszú távú koherencia megteremtésére. Ez a hierarchikus megközelítés lehetővé tette, hogy a generált zenei tartalom egyszerre legyen strukturáltan koherens és kreatívan változatos.
+A dolgozat során három fő modellt integráltam: Markov láncokat a dallami alap biztosítására, Variációs Autoenkódereket (VAE) a kreatív variációk generálására, és Transformer modelleket a polifón struktúrák és ismétlődő minták hozzáadására. Ez a hierarchikus megközelítés lehetővé teszi, hogy a generált zenei tartalom egyszerre legyen dallamian koherens és harmonikusan gazdag.
 
 \subsection{Elméleti hozzájárulások}
 
@@ -13,9 +13,9 @@ A dolgozat több elméleti szempontból is hozzájárult a számítógépes zene
 \begin{enumerate}
   \item \textbf{Hibrid modell integráció}: Bemutattuk, hogyan lehet hatékonyan kombinálni különböző generatív modelleket egy szekvenciális pipeline-ban, ahol minden modell specifikus zenei aspektusokat kezel.
   
-  \item \textbf{Harmonikus strukturálás}: A Markov lánc alapú akkordprogresszió generálás és hangnem detektálás biztosítja, hogy a generált zene harmonikusan koherens maradjon, még kreatív variációk mellett is.
+  \item \textbf{Dallami alapozás}: A Markov lánc alapú monofón dallamgenerálás biztosítja az alapvető zenei vonalat, amelyre a komplexebb modellek építhetnek.
   
-  \item \textbf{Skála-alapú szűrés}: A VAE kimenetének skála szerinti szűrése matematikailag megalapozott módszert kínál arra, hogy a latens térből származó kreativitást összhangba hozzuk a zenei elméleti korlátokkal.
+  \item \textbf{Polifón gazdagítás}: A Transformer modell által hozzáadott akkordok és többsávos struktúrák matematikailag megalapozott módszert kínálnak a dallami alap harmónikus kibővítésére.
   
   \item \textbf{Multi-track generálás}: A sávszétválasztási algoritmus lehetővé teszi a melódia, basszus és dobrészek független modellezését, ami gazdagabb zenei textúrát eredményez.
 \end{enumerate}

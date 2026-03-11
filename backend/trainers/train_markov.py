@@ -1,6 +1,7 @@
 import os
 import sys
 import gc
+import json
 import logging
 import warnings
 import traceback
@@ -161,8 +162,6 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
 
         logger.info(f"✅ Successfully loaded {len(note_sequences)} {track_type} sequences and {len(chord_sequences)} chord sequences from {track_count} files.")
 
-        logger.info(f"✅ Successfully loaded {len(note_sequences)} {track_type} sequences from {track_count} files.")
-
         if len(note_sequences) == 0:
             logger.warning(f"⚠️ No {track_type} sequences found. Inspecting sample entry to report keys...")
             sample_item = None
@@ -249,6 +248,29 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         logger.info("🔮 HMM: DISABLED")
         
     logger.info("="*60 + "\n✅ TRAINING COMPLETE!\n" + "="*60)
+    
+    # Export model statistics to JSON
+    os.makedirs(output_dir, exist_ok=True)
+    stats = {
+        'order': order,
+        'max_interval': max_interval,
+        'n_hidden_states': n_hidden_states,
+        'track_type': track_type,
+        'sequences_loaded': track_count,
+        'hmm_enabled': bool(model.hmm_model),
+    }
+    if hasattr(model, 'transitions') and hasattr(model.transitions, 'shape'):
+        non_zero = int(np.count_nonzero(model.transitions)) if isinstance(model.transitions, np.ndarray) else int(model.transitions.to_sparse()._nnz())
+        total_possible = int(model.transitions.shape[0] * model.transitions.shape[1])
+        stats['transition_matrix_size'] = list(model.transitions.shape)
+        stats['transition_nonzero'] = non_zero
+        stats['transition_sparsity_pct'] = round((1 - non_zero / total_possible) * 100, 2) if total_possible > 0 else 0
+    stats['higher_order_contexts'] = sum(len(v) for v in model.higher_order_transitions.values())
+    metrics_path = os.path.join("output/metrics", "markov_metrics.json")
+    os.makedirs("output/metrics", exist_ok=True)
+    with open(metrics_path, 'w') as f:
+        json.dump(stats, f, indent=2)
+    logger.info(f"📊 Metrics saved to {metrics_path}")
     
     return model
 

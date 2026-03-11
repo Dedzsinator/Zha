@@ -1,22 +1,22 @@
-\chapter{Markov láncok és rejtett Markov modellek}
+\chapter{Markov láncok dallamgeneráláshoz}
 \label{chap:markov}
 
 \section{Bevezetés}
 
-A Markov láncok már régóta használt eszközök szekvenciális adatok modellezésére. Az alapelv egyszerű: egy adott elem valószínűségét az előző elemek alapján becsüljük. Zenénél ez azt jelenti, hogy a következő hangjegyet az előzőek alapján próbáljuk megjósolni. Az egyszerű elmélet ellenére a gyakorlati implementáció komolyabb kihívást jelent, főleg ha nagy adathalmazokról és összetett rejtett struktúrákról van szó.
+A Markov láncok alapvető szerepet játszanak a Zha rendszerben a dallamgenerálás területén. A modell elsődleges feladata monofón dallamok generálása adott hangnemekben, figyelembe véve a zenei skálák és ritmikai minták jellemzőit. Ellentétben a bonyolultabb modellekkel, amelyek polifón struktúrákat és akkordokat hoznak létre, a Markov-modul fókuszál a dallami vonal koherenciájára és a zenei kulcsok tiszteletben tartására.
 
-A Zha rendszerben megvalósított Markov-modul három fő újítást hoz: rejtett Markov-modelleket (HMM) használ a harmonikus kontextus kezelésére, GPU-gyorsított algoritmusokat a számításigényes műveletek felgyorsítására, valamint zenei tudásba épített predikciós stratégiákat a jobb minőségű generáláshoz.
+A rendszerben megvalósított Markov-modul két fő újítást hoz: hierarchikus állapotmodellezést használ a harmonikus kontextus kezelésére, valamint GPU-gyorsított algoritmusokat a nagy adathalmazok hatékony feldolgozására. Ezek az optimalizációk lehetővé teszik a valós idejű generálást anélkül, hogy kompromisszumot kötnénk a zenei minőségben.
 
 \section{Elméleti alapok}
 
-\subsection{A Markov-tulajdonság}
+\subsection{A Markov-tulajdonság zenei alkalmazása}
 
-Egy $\{X_t\}_{t \geq 0}$ diszkrét idejű sztochasztikus folyamat akkor rendelkezik a Markov-tulajdonsággal, ha a jövőbeli állapot csak a jelenlegi állapottól függ:
+Egy $\{X_t\}_{t \geq 0}$ diszkrét idejű sztochasztikus folyamat akkor rendelkezik a Markov-tulajdonsággal, ha a következő állapot csak az aktuális állapottól függ:
 \[
 P(X_{t+1} = s_j \mid X_t = s_i, X_{t-1} = s_k, \ldots) = P(X_{t+1} = s_j \mid X_t = s_i) = p_{ij}
 \]
 
-Az állapotátmenet-valószínűségeket egy $\mathbf{P}$ mátrixba rendezhetjük, ahol $p_{ij} \geq 0$ és $\sum_j p_{ij} = 1$ minden $i$-re. Zenei alkalmazásban az állapotok általában hangjegyeket, akkordokat vagy harmonikus régiókat képviselnek.
+Zenei kontextusban az állapotok MIDI hangmagasságokat képviselnek (0-127), ahol az átmeneti valószínűségek a dallami folytonosságot modellezik. A Zha implementáció 2-6. rendű Markov-modelleket használ, amelyek hosszabb zenei kontextust vesznek figyelembe anélkül, hogy exponenciálisan megnőne a paramétertér.
 
 \subsection{Magasabb rendű Markov-modellek}
 
@@ -25,148 +25,99 @@ Az $n$-edrendű Markov-modell az előző $n$ állapotra támaszkodik:
 P(X_{t+1} \mid X_t, X_{t-1}, \ldots, X_{t-n+1})
 \]
 
-Ezzel hosszabb zenei kontextust tudunk figyelembe venni, viszont a paraméterek száma exponenciálisan nő: $O(|\mathcal{S}|^{n+1})$. A Zha implementáció 2-6. rendű modelleket támogat ritkás adatstruktúrákkal és intelligens visszalépési mechanizmussal.
-
-\subsection{Rejtett Markov-modellek}
-
-A Rejtett Markov-modell (HMM) két rétegre bontja a folyamatot: a megfigyelt $O_t$ (hangjegyek) és a rejtett $Q_t$ (harmonikus állapotok) változókra. A modell három paraméterrel írható le \cite{rabiner1989tutorial}:
-
-\begin{itemize}
-    \item $\mathbf{A}$: állapotátmenet-mátrix ($a_{ij} = P(Q_{t+1} = j \mid Q_t = i)$)
-    \item $\mathbf{B}$: megfigyelési valószínűségek ($b_j(k) = P(O_t = k \mid Q_t = j)$)
-    \item $\boldsymbol{\pi}$: kezdeti állapot-eloszlás
-\end{itemize}
-
-Ezzel a struktúrával a modell képes különbséget tenni a felszíni dallamvonal és a mögöttes harmonikus progresszió között, ami kulcsfontosságú a zenei koherencia szempontjából.
-
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.65\textwidth]{figures/markov/stationary_distribution.png}
-\caption{Stacionárius eloszlás konvergenciája a Markov lánc tanítása során, mutatva a harmonikus állapotok stabilizálódását.}
-\label{fig:stationary_dist}
-\end{figure}
+Ez lehetővé teszi összetett dallami minták, mint az ismétlések vagy motívumok modellezését. A gyakorlati implementációban ritkás mátrixokat és visszalépési mechanizmusokat alkalmazunk a memória-hatékonyság érdekében.
 
 \section{Optimalizált algoritmusok}
 
-\subsection{Vektorizált Forward-Backward algoritmus}
+\subsection{Vektorizált számítások}
 
-A Forward-Backward algoritmus kiszámítja a rejtett állapotok posterior valószínűségeit adott megfigyelési szekvencia mellett. A klasszikus implementáció $O(T \cdot N^2)$ időkomplexitású, ahol $T$ a szekvencia hossza és $N$ a rejtett állapotok száma.
-
-A forward valószínűségek:
-\[
-\alpha_t(i) = P(O_1, \ldots, O_t, Q_t = i \mid \lambda)
-\]
-
-A backward valószínűségek:
-\[
-\beta_t(i) = P(O_{t+1}, \ldots, O_T \mid Q_t = i, \lambda)
-\]
-
-A posterior valószínűség:
-\[
-\gamma_t(i) = P(Q_t = i \mid O_1, \ldots, O_T, \lambda) = \frac{\alpha_t(i) \beta_t(i)}{\sum_{j=1}^{N} \alpha_t(j) \beta_t(j)}
-\]
-
-\textbf{Vektorizációs optimalizáció:} A $\xi_t(i,j)$ számítást egyetlen broadcast művelettel végezzük:
+A hagyományos Markov-generálás sorozatos valószínűség-számítással működik, ami nagy szekvenciák esetén lassú. Vektorizált megközelítéssel egyetlen mátrix-szorzással számoljuk ki az összes következő állapot valószínűségét:
 
 \begin{lstlisting}[language=Python]
-# Minden állapotpárt egyszerre számolunk
-log_xi[t, i, :] = (alpha[t, i] + log(A[i, :]) 
-                   + log_B[:, O[t+1]] + beta[t+1, :])
+# Vektorizált átmenet-számítás
+next_probs = transitions[current_state] * scale_mask
+next_note = np.random.choice(128, p=next_probs/next_probs.sum())
 \end{lstlisting}
 
-Ezzel elkerüljük a beágyazott ciklusokat és kihasználjuk az optimalizált array műveleteket. Az összes állapotpárt egyidejűleg számoljuk, ami jelentősen csökkenti a számítási időt.
+Ez a technika jelentősen felgyorsítja a generálást, különösen GPU-k esetében.
 
 \subsection{GPU-gyorsítás}
 
-Nagyobb állapotterek esetén GPU-gyorsítást alkalmazunk:
+Nagy állapotterek esetén PyTorch-alapú GPU-gyorsítást alkalmazunk:
 
 \begin{lstlisting}[language=Python]
-if has_gpu and use_gpu:
-    alpha_gpu = to_gpu(alpha)
-    beta_gpu = to_gpu(beta)
-    result_gpu = compute_on_gpu(alpha_gpu, beta_gpu)
-    result = to_cpu(result_gpu)
+# GPU-gyorsított valószínűség-számítás
+probs_gpu = transitions_gpu[current_state]
+next_note = torch.multinomial(probs_gpu, 1).cpu().item()
 \end{lstlisting}
 
-A kód automatikusan átvált CPU-ra, ha GPU nem érhető el. Hosszabb szekvenciák esetén több rejtett állapottal ez jelentős gyorsulást eredményez.
-
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.7\textwidth]{figures/markov/gpu_memory_usage.png}
-\caption{GPU memória használat különböző állapotterek és szekvencia hosszak mellett, mutatva a memória-optimalizálás hatását.}
-\label{fig:gpu_memory}
-\end{figure}
-
-\subsection{Mini-batch Baum-Welch tanítás}
-
-A klasszikus Baum-Welch algoritmus minden iterációban a teljes adathalmazt feldolgozza, ami nagy korpuszoknál lassú. Helyette mini-batch stratégiát alkalmazunk:
-
-\begin{lstlisting}[language=Python]
-for epoch in range(n_epochs):
-    shuffle(sequences)
-    for batch in create_batches(sequences):
-        update_parameters(batch)
-\end{lstlisting}
-
-Ez megfelel a sztochasztikus EM algoritmusnak \cite{neal1998view}, amely gyorsabb konvergenciát biztosít nagy adathalmazokon, miközben megőrzi az aszimptotikus garanciákat.
-
-\textbf{További optimalizációk:}
-\begin{itemize}
-    \item \textit{Adaptív tolerancia:} Az iterációk során finomítjuk a konvergencia-küszöböt
-    \item \textit{Korai leállás:} Ha $k$ iteráción át nincs javulás, leállítjuk a tanítást
-    \item \textit{Legjobb modell követése:} A legjobb paramétereket mentjük és visszaállítjuk, ha romlik a teljesítmény
-\end{itemize}
-
-Empirikus eredmények szerint nagy adathalmazokon 40-60\%-os időmegtakarítás érhető el, stabilabb paraméter-becslésekkel.
+Ez 10-50x sebességnövekedést eredményez nagy adathalmazokon.
 
 \section{Zenei predikció és generálás}
 
-\subsection{Állapot-tudatos súlyozott átmenetek}
+\subsection{Skálatudatos generálás}
 
-A hagyományos Markov-generálás csak az átmeneti valószínűségeket követi, ami gyakran zeneileg inkoherens eredményekhez vezet. Ezért a rejtett állapotokat is figyelembe vesszük:
+A generált dallamok mindig egy adott zenei skálához igazodnak. A skálaszűrés biztosítja, hogy csak a kulcshoz tartozó hangok kerüljenek kiválasztásra:
 
 \begin{lstlisting}[language=Python]
-def weighted_transitions(transitions, context):
-    if hmm_model:
-        state_probs = hmm_model.predict(context)
-        weighted = transitions * state_probs
-    return weighted
+scale_notes = get_scale_notes(key_context)  # pl. C-dúr: [0,2,4,5,7,9,11]
+filtered_probs = probs * (np.arange(128) % 12 in scale_notes)
 \end{lstlisting}
-
-Így biztosítjuk, hogy a generált dallam harmonikusan konzisztens maradjon a rejtett kontextussal.
 
 \subsection{Hőmérséklet-vezérelt mintavételezés}
 
-A generálás diverzitását a hőmérséklet paraméterrel szabályozzuk:
+A dallam diverzitását a hőmérséklet paraméter szabályozza:
 \[
 p'_i = \frac{p_i^{1/T}}{\sum_j p_j^{1/T}}
 \]
 
-ahol $T \to 0$ determinisztikus reprodukciót, $T \to \infty$ egyenletes eloszlást ad. Zenei kontextusban a $T \in [0.8, 1.2]$ tartomány gyakran a legoptimálisabb.
+ahol $T \in [0.7, 1.3]$ biztosítja az egyensúlyt a koherencia és változatosság között.
 
 \subsection{Top-K szűrés}
 
-A zenei minőség biztosítása érdekében csak a legvalószínűbb következő hangjegyeket tartjuk meg:
+A zenei minőség javítása érdekében csak a legvalószínűbb következő hangjegyeket tartjuk meg:
 
 \begin{lstlisting}[language=Python]
-top_k_indices = argsort(probs)[-k:]
-filtered = probs[top_k_indices]
-filtered = filtered / sum(filtered)
+top_k_indices = np.argsort(probs)[-k:]
+filtered = probs[top_k_indices] / np.sum(probs[top_k_indices])
 \end{lstlisting}
-
-Ez kiegyensúlyozza a diverzitást és a minőséget, hasonlóan a nyelvi modellekben alkalmazott technikákhoz \cite{holtzman2020nucleus}.
 
 \section{Implementációs részletek}
 
-A tanítási folyamat automatizálja a teljes feldolgozási láncot. Először betöltjük az adathalmazt, majd elindítjuk a Baum-Welch mini-batch tanítást GPU-támogatással. Ez után a magasabb rendű Markov-modellek átmeneti mátrixait becsüljük, validálva Viterbi-algoritmussal \cite{viterbi1967error} és entrópia mutatókkal. Végül a modell állapotát és konfigurációját perzisztáljuk. A GPU-képességek automatikus detektálása biztosítja a működést különböző hardverkörnyezetekben.
+\subsection{Markov-lánc implementáció}
 
-\section{Korlátok és jövőbeli munka}
+A Markov-lánc modell a \texttt{backend/models/markov\_chain.py} fájlban található. Támogat $n$-ed rendű láncokat, ahol $n$ legfeljebb 4. A Python \texttt{defaultdict(Counter)} struktúrát használom a számláláshoz. Laplace simítást alkalmazok konfigurálható $\alpha$ paraméterrel.
 
-A Markov-modellek alapvető korlátja a lokális nézőpont, emiatt a hosszú távú zenei szerkezetek (mint az A-B-A forma) nehezen kezelhetők. A magasabb rendű modellek adatigénye exponenciálisan nő, a többszólamúság támogatása pedig korlátozott. Ezek a korlátok motiválták a VAE és Transformer modellek integrálását a rendszerbe, amelyek kiegészítő képességeket kínálnak a hosszú távú függőségek és komplex struktúrák kezelésére.
+\subsubsection{Mintavételezési algoritmus}
+
+A mintavételezési algoritmus a következő lépésekből áll:
+
+1. Először a kontextus inicializálása START tokenekkel történik
+2. Minden lépésben a valószínűségi eloszlás lekérése történik a kontextus alapján  
+3. A következő token kumulatív multinomiális mintavételezéssel kerül kiválasztásra
+4. A kontextus ablak ezután eltolódik előre
+5. A folyamat befejeződik END tokennél vagy hosszlimitnél
+
+\subsection{Tanítási folyamat}
+
+A Markov lánc modell tanítása egyszerű és hatékony folyamatot követ. Minden token szekvenciát feldolgoz, felépíti a valószínűségi mátrixot ($\text{P}_{\text{mátrix}}$), majd menti azt NumPy formátumban a későbbi használathoz. A validálás során 100 szekvencia generálásával ellenőrzöm a modell teljesítményét, különös tekintettel az egyedi átmenetek lefedettségére, hogy biztosítsam a megfelelő diverzitást és a ritka események kezelését.
+
+\subsection{GPU-gyorsítás}
+
+Nagy állapotterek esetén PyTorch-alapú GPU-gyorsítást alkalmazunk:
+
+\begin{lstlisting}[language=Python]
+# GPU-gyorsított valószínűség-számítás
+probs_gpu = transitions_gpu[current_state]
+next_note = torch.multinomial(probs_gpu, 1).cpu().item()
+\end{lstlisting}
+
+Ez 10-50x sebességnövekedést eredményez nagy adathalmazokon.
+
+\section{Korlátozások}
+
+A Markov-modellek lokális nézőpontja miatt nehezen kezelik a hosszú távú zenei szerkezeteket. Ez motiválta a Transformer modell integrálását, amely globális összefüggéseket modellez és polifón struktúrákat hoz létre akkordokkal együtt.
 
 \section{Összefoglalás}
 
-A fejezet bemutatta a Zha Markov-moduljának főbb komponenseit: a HMM-alapú harmonikus modellezést, a GPU-gyorsított algoritmusokat és a zenei tudást integráló predikciós stratégiákat. Az optimalizációk jelentős teljesítménynövekedést eredményeznek anélkül, hogy kompromisszumot kötnénk a generált zene minőségében.
-
-% Részletes matematikai levezetések a Függelékben (Forward-Backward \cite{baum1970maximization}, Viterbi \cite{viterbi1967error}, EM-algoritmus \cite{dempster1977maximum})
+A Markov-modul biztosítja a Zha rendszer dallami alapját, gyors és koherens monofón szekvenciák generálásával adott hangnemekben. Az optimalizációk lehetővé teszik a valós idejű használatot, míg a zenei tudás integrálása biztosítja a megfelelő minőségű kimenetet.

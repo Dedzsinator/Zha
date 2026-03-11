@@ -203,7 +203,7 @@ A rendszer natívan támogatja a multi-GPU képzést DataParallel és Distribute
 Az efficient data loading multi-worker DataLoader-ekkel biztosítja a folyamatos adatáramlást, megelőzve a GPU idle időket. A persistent workers opció csökkenti a worker process restart overhead-et hosszú tanítási munkamenetek során. A \texttt{prefetch\_factor} beállítás optimalizálja a memória használatot és az adatbetöltési sebességet.
 
 \subsubsection{Deployment-ready modell export}
-A képzés befejezése után a rendszer automatikusan többféle formátumban exportálja a modelleket. A TorchScript JIT compilation lehetővé teszi a gyorsabb inference-t C++ környezetekben, míg az ONNX export platform-független deployment-et biztosít. A quantization support csökkenti a modell méretet és javítja az inference sebességet alacsonyabb precizitású környezetekben.
+A képzés befejezése után a rendszer automatikusan többféle formátumban exportálja a modelleket. A TorchScript JIT compilation lehetővé teszi a gyorsabb inference-t C++ környezetekben. A quantization support csökkenti a modell méretet és javítja az inference sebességet alacsonyabb precizitású környezetekben.
 
 A model optimization pipeline automatikusan alkalmaz operator fusion-t, constant folding-ot és memory layout optimalizációkat. Az inference profiling segít azonosítani a bottleneck-eket a deployment környezetben, javaslataokkal a további optimalizációkhoz. A compatibility testing biztosítja, hogy az exportált modellek helyesen működnek különböző runtime környezetekben.
 

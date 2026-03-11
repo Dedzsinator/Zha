@@ -3,19 +3,16 @@
 
 \section{Bevezetés}
 
-A Transformer architektúra \cite{vaswani2017attention} valósággal forradalmasította a szekvencia-modellezést az önfigyelési mechanizmusnak köszönhetően, amely lehetővé teszi tetszőleges távolságú függőségek modellezését. A zenében ez különösen fontos, mert a zenei struktúrák gyakran hosszú távú összefüggéseket igényelnek (például témák visszatérése, motívumok variációi).
+A Transformer architektúra \cite{vaswani2017attention} forradalmasította a szekvencia-modellezést az önfigyelési mechanizmusnak köszönhetően, amely lehetővé teszi tetszőleges távolságú függőségek modellezését. A Zha rendszerben a Transformer elsődleges szerepe a Markov-modell által generált dallamok harmonikus és strukturális gazdagítása: akkordok hozzáadása, ismétlődő minták létrehozása és polifón zenei struktúrák kialakítása.
 
-A standard Transformer azonban nem veszi figyelembe a zenei domén specifikus jellemzőit. A Zha rendszerben ezért három fő továbbfejlesztést implementáltunk:
+A standard Transformer nem veszi figyelembe a zenei domén jellemzőit. A Zha implementáció ezért két fő továbbfejlesztést tartalmaz:
 
 \begin{enumerate}
-    \item \textbf{Rotációs pozíciókódolás (RoPE)}: A klasszikus szinuszos beágyazások helyett rotációs mátrixokat használunk, amelyek transzláció-invariáns relatív pozíció-információt kódolnak.
-    
-    \item \textbf{Kapuzott Előrecsatoló Hálózatok (GatedFFN)}: A standard előrecsatoló rétegeket kapuzási mechanizmussal egészítjük ki, amely adaptívan szabályozza az információáramlást és javítja a gradiens stabilitást.
-    
-    \item \textbf{Továbbfejlesztett Attention}: Reziduális kapcsolatok és LayerNorm integrálása közvetlenül a figyelemmechanizmusba.
+    \item \textbf{Multitrack generálás}: Több hangsáv (melódia, basszus, dob) egyidejű generálása cross-attention mechanizmusokkal
+    \item \textbf{Strukturális memória}: Hosszú távú zenei forma és ismétlődő motívumok modellezése speciális memória mechanizmusokkal
 \end{enumerate}
 
-Ezek a módosítások jelentősen javítják a modell zenei generálási képességét, főleg hosszabb szekvenciák esetén.
+Ezek a módosítások lehetővé teszik komplex polifón zenei darabok generálását, ahol a Transformer hozzáadja a harmonikus töltetet és strukturális koherenciát a Markov által biztosított dallami alaphoz.
 
 \begin{figure}[ht]
 \centering
@@ -289,6 +286,24 @@ Ez garantálja, hogy a memória $O(L_{\max} \cdot d_{model})$ korlátozott marad
 \end{figure}
 
 \section{Implementációs részletek}
+
+\subsection{Architektúra}
+
+A Transformer hat rétegből áll, nyolc fejjel és 512-es $d_{\text{model}}$ értékkel. Rotációs pozicionális beágyazásokat használ Su et al. (2020) szerint. Az előrecsatoló rejtett méret 2048. Dropout 0,1 értéket vesz fel a figyelem és előrecsatoló alrétegeken.
+
+\subsubsection{Relatív pozíció bias}
+
+Tanult bias mátrix $B_{i,j}$ hozzáadása történik a figyelem logitjaihoz a zenei intervallum kapcsolatok modellezésére.
+
+\subsection{Tanítási folyamat}
+
+A Transformer modell tanítása fejlett optimalizációs technikákat alkalmaz a stabilitás és a hatékonyság érdekében:
+
+\begin{itemize}
+\item \textbf{Vegyes pontosság}: \texttt{torch.cuda.amp} modullal, amely csökkenti a memóriaigényt és gyorsítja a számításokat félpontos aritmetikával
+\item \textbf{Tanulási ráta ütemezés}: bemelegítés az első 5000 lépésben, majd koszinuszos csökkenéssel nulláig tart 200 000 lépésig
+\item \textbf{Gradiens akkumuláció}: 512-es batch méret szimulálására, ha a GPU memória korlátozott
+\end{itemize}
 
 A \texttt{train\_transformer.py} script a következő pipeline-t futtatja:
 
