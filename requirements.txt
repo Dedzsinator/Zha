@@ -13,3 +13,5 @@ scipy
 tqdm
 pytorch-lightning
 psutil
+datasets
+hmmlearn

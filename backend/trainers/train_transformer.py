@@ -1,10 +1,12 @@
 import torch, os, json, warnings
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.amp import GradScaler
 import torch.nn.functional as F
 from backend.models.transformer import TransformerModel
 from backend.trainers.utils import train_epoch, LRSchedulerWithBatchOption, EarlyStopping
 from backend.trainers.train_vae import MIDIDataset  # Reuse the dataset class
+from backend.datamodules.hf_midi_dataset import build_hf_dataloader
 
 warnings.filterwarnings("ignore")
 torch.backends.cudnn.benchmark = True
@@ -89,7 +91,9 @@ def train_transformer_model(
     dim_feedforward=2048,
     dropout=0.1,
     use_preprocessed=True,
-    track_type='full'
+    track_type='full',
+    use_huggingface=False,
+    hf_genre_filter=None,
 ):
     """
     Train a transformer model for music generation with enhanced performance
@@ -150,16 +154,36 @@ def train_transformer_model(
 
     # Data loading with memory-efficient caching
     print("📂 Setting up data loader...")
-    dataset = TransformerMIDIDataset(midi_dir="dataset/midi/", cache_size=500, 
-                                   use_preprocessed=use_preprocessed, track_type=track_type)
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=4 if not use_preprocessed else 0,
-        pin_memory=True,
-        collate_fn=_transformer_collate_fn
-    )
+    if use_huggingface:
+        print(f"🌐 Streaming from HuggingFace (amaai-lab/MidiCaps), genre_filter={hf_genre_filter}")
+        # HF dataset returns plain tensors; wrap them to match the dict format the loop expects
+        _hf_base = build_hf_dataloader(
+            batch_size=batch_size,
+            genre_filter=hf_genre_filter,
+            shuffle_buffer=2000,
+            num_workers=0,
+            pin_memory=True,
+        )
+        class _HFDictWrapper:
+            """Wraps plain-tensor batches into the dict format TransformerMIDIDataset uses."""
+            def __init__(self, loader): self._loader = loader
+            def __iter__(self):
+                for seq in self._loader:
+                    yield {'sequence': seq, 'chords': [[] for _ in range(seq.size(0))],
+                           'tempo_changes': [[] for _ in range(seq.size(0))]}
+            def __len__(self): return len(self._loader) if hasattr(self._loader, '__len__') else 0
+        dataloader = _HFDictWrapper(_hf_base)
+    else:
+        dataset = TransformerMIDIDataset(midi_dir="dataset/midi/", cache_size=500,
+                                       use_preprocessed=use_preprocessed, track_type=track_type)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=4 if not use_preprocessed else 0,
+            pin_memory=True,
+            collate_fn=_transformer_collate_fn
+        )
 
     # Training loop
     os.makedirs("output/trained_models", exist_ok=True)
@@ -167,13 +191,15 @@ def train_transformer_model(
 
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
-    for epoch in range(epochs):
+    epoch_pbar = tqdm(range(epochs), desc="🎵 Epochs", unit="epoch", position=0)
+    for epoch in epoch_pbar:
         # Custom training loop for Transformer with conditioning
         model.train()
         epoch_loss = 0.0
         num_batches = 0
-        
-        for batch_idx, batch in enumerate(dataloader):
+
+        batch_pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}", unit="batch", leave=False, position=1)
+        for batch_idx, batch in enumerate(batch_pbar):
             sequences = batch['sequence'].to(device)
             chords = batch['chords']  # List of chord lists
             tempo_changes = batch['tempo_changes']  # List of tempo lists
@@ -250,20 +276,22 @@ def train_transformer_model(
             
             epoch_loss += loss.item()
             num_batches += 1
-            
-            if batch_idx % 10 == 0:
-                print(f"Epoch {epoch+1}, Batch {batch_idx}, Loss: {loss.item():.4f}")
-        
+
+            batch_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+
         avg_loss = epoch_loss / num_batches
         metrics = {'loss': avg_loss}
         all_metrics.append(metrics)
 
+        # Update outer progress bar
+        epoch_pbar.set_postfix({'loss': f"{avg_loss:.4f}", 'lr': f"{scheduler.get_last_lr()[0]:.2e}"})
+
         # Report metrics
-        print(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
+        tqdm.write(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
 
         # Early stopping check
         if early_stopping(avg_loss):
-            print(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            tqdm.write(f"⚠️ Early stopping triggered after {epoch+1} epochs")
             break
 
         # Save checkpoints
@@ -303,16 +331,23 @@ def train_transformer_model(
     return model, all_metrics
 
 if __name__ == "__main__":
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--hf", action="store_true", help="Stream from HuggingFace instead of local data")
+    p.add_argument("--genre", nargs="*", default=None, help="Genre filter, e.g. --genre pop rock")
+    args = p.parse_args()
     train_transformer_model(
         epochs=100,
         batch_size=64,
-        grad_accum_steps=4,  # Accumulate gradients for larger effective batch size
-        patience=15,         # Early stopping patience
+        grad_accum_steps=4,
+        patience=15,
         embed_dim=512,
         num_heads=8,
         num_layers=8,
         dim_feedforward=2048,
         dropout=0.1,
-        use_preprocessed=True,   # Use preprocessed data for faster training
-        track_type='full'        # Track type: 'full', 'melody', 'bass', 'drums'
+        use_preprocessed=not args.hf,
+        track_type='full',
+        use_huggingface=args.hf,
+        hf_genre_filter=args.genre,
     )

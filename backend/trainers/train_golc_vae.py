@@ -5,6 +5,8 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+from backend.datamodules.hf_midi_dataset import build_hf_dataloader
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -79,7 +81,7 @@ class GOLC_VAE_Trainer:
             'orbit': 0.0
         }
         
-        num_batches = len(self.train_loader)
+        num_batches = 0  # count during iteration (supports IterableDataset)
         
         pbar = tqdm(self.train_loader, desc='Training', leave=False)
         for batch_idx, (data,) in enumerate(pbar):
@@ -114,6 +116,7 @@ class GOLC_VAE_Trainer:
             epoch_losses['recon'] += loss_dict['recon_loss']
             epoch_losses['kl'] += loss_dict['kl_loss']
             epoch_losses['orbit'] += loss_dict['orbit_loss']
+            num_batches += 1
             
             # Update progress bar
             pbar.set_postfix({
@@ -124,8 +127,9 @@ class GOLC_VAE_Trainer:
             })
         
         # Average losses
-        for key in epoch_losses:
-            epoch_losses[key] /= num_batches
+        if num_batches > 0:
+            for key in epoch_losses:
+                epoch_losses[key] /= num_batches
         
         return epoch_losses
     
@@ -140,7 +144,7 @@ class GOLC_VAE_Trainer:
             'orbit': 0.0
         }
         
-        num_batches = len(self.val_loader)
+        num_batches = 0  # count during iteration (supports IterableDataset)
         
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc='Validation', leave=False)
@@ -164,6 +168,7 @@ class GOLC_VAE_Trainer:
                 epoch_losses['recon'] += loss_dict['recon_loss']
                 epoch_losses['kl'] += loss_dict['kl_loss']
                 epoch_losses['orbit'] += loss_dict['orbit_loss']
+                num_batches += 1
                 
                 # Update progress bar
                 pbar.set_postfix({
@@ -172,8 +177,9 @@ class GOLC_VAE_Trainer:
                 })
         
         # Average losses
-        for key in epoch_losses:
-            epoch_losses[key] /= num_batches
+        if num_batches > 0:
+            for key in epoch_losses:
+                epoch_losses[key] /= num_batches
         
         return epoch_losses
     
@@ -191,7 +197,8 @@ class GOLC_VAE_Trainer:
         print(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
         print(f"{'='*60}\n")
         
-        for epoch in range(num_epochs):
+        epoch_pbar = tqdm(range(num_epochs), desc="🎵 Epochs", unit="epoch", position=0)
+        for epoch in epoch_pbar:
             # Determine temperature for this epoch
             if temperature_schedule is not None:
                 temperature = temperature_schedule(epoch)
@@ -222,20 +229,27 @@ class GOLC_VAE_Trainer:
             self.history['learning_rate'].append(current_lr)
             self.history['orbit_distance'].append(orbit_stats.get('mean_orbit_distance', 0.0))
             
+            # Update outer progress bar
+            epoch_pbar.set_postfix({
+                'train': f"{train_losses['total']:.4f}",
+                'val': f"{val_losses['total']:.4f}",
+                'lr': f"{current_lr:.2e}",
+            })
+
             # Print epoch summary
-            print(f"\nEpoch {epoch+1}/{num_epochs}")
-            print(f"  Train Loss: {train_losses['total']:.4f} "
+            tqdm.write(f"\nEpoch {epoch+1}/{num_epochs}")
+            tqdm.write(f"  Train Loss: {train_losses['total']:.4f} "
                   f"(Recon: {train_losses['recon']:.4f}, "
                   f"KL: {train_losses['kl']:.4f}, "
                   f"Orbit: {train_losses['orbit']:.4f})")
-            print(f"  Val Loss:   {val_losses['total']:.4f} "
+            tqdm.write(f"  Val Loss:   {val_losses['total']:.4f} "
                   f"(Recon: {val_losses['recon']:.4f}, "
                   f"KL: {val_losses['kl']:.4f}, "
                   f"Orbit: {val_losses['orbit']:.4f})")
-            print(f"  LR: {current_lr:.6f}, Temp: {temperature:.3f}")
-            
+            tqdm.write(f"  LR: {current_lr:.6f}, Temp: {temperature:.3f}")
+
             if orbit_stats:
-                print(f"  Orbit Stats: Mean={orbit_stats['mean_orbit_distance']:.4f}, "
+                tqdm.write(f"  Orbit Stats: Mean={orbit_stats['mean_orbit_distance']:.4f}, "
                       f"Std={orbit_stats['std_orbit_distance']:.4f}")
             
             # Save best model
@@ -243,7 +257,7 @@ class GOLC_VAE_Trainer:
                 self.best_val_loss = val_losses['total']
                 self.patience_counter = 0
                 self.save_checkpoint(epoch, is_best=True)
-                print(f"  \u2713 New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
+                tqdm.write(f"  ✓ New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
             else:
                 self.patience_counter += 1
                 
@@ -253,7 +267,7 @@ class GOLC_VAE_Trainer:
             
             # Early stopping
             if self.patience_counter >= self.early_stop_patience:
-                print(f"\nEarly stopping triggered after {epoch+1} epochs")
+                tqdm.write(f"\nEarly stopping triggered after {epoch+1} epochs")
                 break
         
         # Save final model and history
@@ -387,6 +401,10 @@ def main():
                        help='Validation split ratio')
     parser.add_argument('--device', type=str, default='cuda',
                        help='Device to use (cuda/cpu)')
+    parser.add_argument('--hf', action='store_true',
+                       help='Stream data from HuggingFace (amaai-lab/MidiCaps) instead of local')
+    parser.add_argument('--genre', nargs='*', default=None,
+                       help='Genre filter for HF dataset, e.g. --genre pop rock')
     
     args = parser.parse_args()
     
@@ -395,11 +413,30 @@ def main():
     print(f"Using device: {device}")
     
     # Load data
-    train_loader, val_loader, metadata = load_data(
-        data_dir=args.data_dir,
-        batch_size=args.batch_size,
-        val_split=args.val_split
-    )
+    if getattr(args, 'hf', False):
+        print(f"🌐 Streaming from HuggingFace (amaai-lab/MidiCaps), genre={getattr(args, 'genre', None)}")
+        train_loader = build_hf_dataloader(
+            batch_size=args.batch_size,
+            genre_filter=getattr(args, 'genre', None),
+            shuffle_buffer=2000,
+            num_workers=0,
+            tuple_wrap=True,   # GOLC-VAE trainer unpacks (data,) tuples
+        )
+        val_loader = build_hf_dataloader(
+            batch_size=args.batch_size,
+            genre_filter=getattr(args, 'genre', None),
+            max_samples=max(1, int(168385 * args.val_split)),
+            shuffle_buffer=500,
+            num_workers=0,
+            tuple_wrap=True,
+        )
+        metadata = {'source': 'huggingface/amaai-lab/MidiCaps'}
+    else:
+        train_loader, val_loader, metadata = load_data(
+            data_dir=args.data_dir,
+            batch_size=args.batch_size,
+            val_split=args.val_split
+        )
     
     # Create model
     model = GOLC_VAE(

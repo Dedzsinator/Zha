@@ -8,7 +8,6 @@ from music21 import note, pitch, scale, key, chord, stream, roman, meter
 import logging
 from sklearn.cluster import KMeans
 from hmmlearn import hmm
-import cupy as cp
 import warnings
 
 logger = logging.getLogger(__name__)
@@ -586,14 +585,22 @@ class MarkovChain:
                 kmeans = KMeans(n_clusters=self.n_hidden_states, random_state=42)
                 cluster_labels = kmeans.fit_predict(features_array)
             
-            # Initialize HMM
-            self.hmm_model = hmm.GaussianHMM(n_components=self.n_hidden_states, covariance_type="full")
+            # Initialize HMM — use diagonal covariance for numerical stability
+            self.hmm_model = hmm.GaussianHMM(
+                n_components=self.n_hidden_states,
+                covariance_type="diag",
+                n_iter=100,
+                random_state=42,
+                min_covar=1e-3,
+            )
             
             try:
-                self.hmm_model.fit(features_array.reshape(-1, 1) if features_array.ndim == 1 else features_array)
+                # Pass each feature vector as its own 1-frame sequence via lengths
+                lengths = [1] * len(features_array)
+                self.hmm_model.fit(features_array, lengths=lengths)
                 logger.info(f"HMM initialized with {self.n_hidden_states} hidden states")
             except Exception as e:
-                logger.warning(f"HMM fitting failed: {e}, using simpler model")
+                logger.warning(f"HMM fitting failed ({type(e).__name__}: {e}) — HMM disabled")
                 self.hmm_model = None
         else:
             logger.warning(f"Insufficient data for HMM (need >= {self.n_hidden_states} samples)")
@@ -606,10 +613,15 @@ class MarkovChain:
             if len(sequence) < 5:
                 continue
                 
-            # Extract raw data from sequence
-            pitches_raw = [item[0] for item in sequence]
-            durations = [item[1] for item in sequence]
-            velocities = [item[2] for item in sequence]
+            # Extract raw data — support both plain-int sequences and (pitch, dur, vel) tuples
+            if isinstance(sequence[0], (int, float, np.integer)):
+                pitches_raw = list(sequence)
+                durations   = [0.5] * len(sequence)
+                velocities  = [80.0] * len(sequence)
+            else:
+                pitches_raw = [item[0] for item in sequence]
+                durations   = [item[1] for item in sequence]
+                velocities  = [item[2] for item in sequence]
             
             # --- FIX: Flatten pitches to handle chords ---
             pitches = []

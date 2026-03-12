@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.amp import autocast, GradScaler
 from backend.models.vae import VAEModel
 from backend.trainers.utils import LRSchedulerWithBatchOption, EarlyStopping
+from backend.datamodules.hf_midi_dataset import build_hf_dataloader
 
 warnings.filterwarnings("ignore", category=UserWarning)
 torch.backends.cudnn.benchmark = True
@@ -155,12 +156,17 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
     epoch_recon_loss = 0
     epoch_kl_loss = 0
     epoch_consistency_loss = 0
-    n_batches = len(dataloader)
+    # IterableDataset (HuggingFace streaming) has no __len__; fall back to None
+    try:
+        n_batches_total = len(dataloader)
+    except TypeError:
+        n_batches_total = None
     _device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
+    i = -1  # track actual batch count in case of streaming dataset
 
     optimizer.zero_grad()
 
-    with tqdm(total=n_batches, desc=f"Epoch {epoch_idx+1}", ncols=100) as pbar:
+    with tqdm(total=n_batches_total, desc=f"Epoch {epoch_idx+1}", ncols=100) as pbar:
         for i, batch in enumerate(dataloader):
             batch = batch.to(device, non_blocking=True)
 
@@ -181,10 +187,10 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
             # Total loss
             loss = (recon_loss + beta_kl_loss + consistency_loss) / batch.size(0)
 
-            # Backward pass with gradient accumulation
+            # Backward pass with gradient accumulation (flush every N steps)
             if scaler is not None:
                 scaler.scale(loss / accumulation_steps).backward()
-                if (i + 1) % accumulation_steps == 0 or (i + 1) == n_batches:
+                if (i + 1) % accumulation_steps == 0:
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad()
@@ -192,7 +198,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
                         scheduler.step()
             else:
                 (loss / accumulation_steps).backward()
-                if (i + 1) % accumulation_steps == 0 or (i + 1) == n_batches:
+                if (i + 1) % accumulation_steps == 0:
                     optimizer.step()
                     optimizer.zero_grad()
                     if scheduler.step_every_batch:
@@ -212,6 +218,17 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
                 'kl': f"{epoch_kl_loss/(i+1):.4f}"
             })
 
+    # Flush any remaining accumulated gradients after the last batch
+    n_batches = i + 1
+    if n_batches % accumulation_steps != 0:
+        if scaler is not None:
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+        else:
+            optimizer.step()
+            optimizer.zero_grad()
+
     # Return average metrics
     return {
         'loss': epoch_loss / n_batches,
@@ -222,12 +239,16 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
 
 def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=128,
                    grad_accum_steps=1, patience=10, cache_size=500, beta=0.5,
-                   consistency_weight=0.2, use_preprocessed=True, track_type='full'):
+                   consistency_weight=0.2, use_preprocessed=True, track_type='full',
+                   use_huggingface=False, hf_genre_filter=None):
     """VAE model training with beta-VAE and consistency loss for better music generation
     
     Args:
         use_preprocessed: Whether to use preprocessed data instead of processing MIDI files
         track_type: Type of track to train on ('full', 'melody', 'bass', 'drums')
+        use_huggingface: Stream data from amaai-lab/MidiCaps on HuggingFace (no download)
+        hf_genre_filter: List of genre strings to filter, e.g. ['pop', 'rock'].
+                         None = use all 168k tracks.
     """
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -256,10 +277,20 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
 
     # Data loading
     print("📂 Setting up data loader...")
-    dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=cache_size, 
-                         use_preprocessed=use_preprocessed, track_type=track_type)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
-                          num_workers=4 if not use_preprocessed else 0, pin_memory=True)
+    if use_huggingface:
+        print(f"🌐 Streaming from HuggingFace (amaai-lab/MidiCaps), genre_filter={hf_genre_filter}")
+        dataloader = build_hf_dataloader(
+            batch_size=batch_size,
+            genre_filter=hf_genre_filter,
+            shuffle_buffer=2000,
+            num_workers=0,
+            pin_memory=True,
+        )
+    else:
+        dataset = MIDIDataset(midi_dir="dataset/midi/", cache_size=cache_size,
+                             use_preprocessed=use_preprocessed, track_type=track_type)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
+                              num_workers=4 if not use_preprocessed else 0, pin_memory=True)
 
     # Training loop setup
     os.makedirs("output/trained_models", exist_ok=True)
@@ -267,7 +298,8 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
 
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
-    for epoch in range(epochs):
+    epoch_pbar = tqdm(range(epochs), desc="🎵 Epochs", unit="epoch", position=0)
+    for epoch in epoch_pbar:
         # Train one epoch
         metrics = train_epoch(
             model=model,
@@ -288,22 +320,29 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
         # Store metrics
         all_metrics.append(metrics)
 
+        # Update outer progress bar
+        epoch_pbar.set_postfix({
+            'loss': f"{metrics['loss']:.4f}",
+            'recon': f"{metrics['recon_loss']:.4f}",
+            'kl': f"{metrics['kl_loss']:.4f}",
+        })
+
         # Report metrics
-        print(f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} " +
+        tqdm.write(f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} " +
               f"(Recon={metrics['recon_loss']:.4f}, KL={metrics['kl_loss']:.4f}, " +
               f"Consistency={metrics['consistency_loss']:.4f}), " +
               f"LR={scheduler.get_last_lr()[0]:.6f}")
 
         # Early stopping check
         if early_stopping(metrics['loss']):
-            print(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            tqdm.write(f"⚠️ Early stopping triggered after {epoch+1} epochs")
             break
 
         # Generate samples periodically
         if (epoch + 1) % 10 == 0:
             with torch.no_grad():
                 samples = model.sample(num_samples=3, temperature=0.8, device=device)
-                print(f"Sample note distribution entropy: {-torch.sum(samples * torch.log(samples + 1e-8), dim=1).mean().item():.4f}")
+                tqdm.write(f"Sample note distribution entropy: {-torch.sum(samples * torch.log(samples + 1e-8), dim=1).mean().item():.4f}")
 
         # Save checkpoints
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
@@ -344,14 +383,21 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     return model, all_metrics
 
 if __name__ == "__main__":
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--hf", action="store_true", help="Stream from HuggingFace instead of local data")
+    p.add_argument("--genre", nargs="*", default=None, help="Genre filter for HF dataset, e.g. --genre pop rock")
+    args = p.parse_args()
     train_vae_model(
         epochs=100,
         batch_size=128,
         grad_accum_steps=2,
         patience=15,
         cache_size=500,
-        beta=0.5,           # Lower beta value for more creative outputs
-        consistency_weight=0.2,  # Weight for consistency loss to reduce big leaps
-        use_preprocessed=True,   # Use preprocessed data for faster training
-        track_type='full'        # Track type: 'full', 'melody', 'bass', 'drums'
+        beta=0.5,
+        consistency_weight=0.2,
+        use_preprocessed=not args.hf,
+        track_type='full',
+        use_huggingface=args.hf,
+        hf_genre_filter=args.genre,
     )

@@ -1,0 +1,8 @@
+# 1. Install PyTorch with CUDA (adjust cu126 to match your driver)
+pip install torch torchaudio
+
+# 2. Install everything else
+pip install -r requirements.txt
+
+# 3. Train all models on full HuggingFace dataset
+bash scripts/train_prod.sh

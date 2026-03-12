@@ -83,13 +83,169 @@ def demonstrate_hmm_algorithms(model, sequences):
         logger.error(f"❌ HMM demonstration failed: {e}")
         logger.debug(traceback.format_exc())
 
-def train_markov_model(order=3, max_interval=12, output_dir="output/trained_models", 
-                       n_hidden_states=16, use_gpu=True, track_type='full'):
+# ---------------------------------------------------------------------------
+# Chord quality → semitone intervals (root-relative)
+# ---------------------------------------------------------------------------
+_QUALITY_INTERVALS = {
+    'major':          [0, 4, 7],
+    'minor':          [0, 3, 7],
+    'dominant':       [0, 4, 7, 10],
+    'major seventh':  [0, 4, 7, 11],
+    'minor seventh':  [0, 3, 7, 10],
+    'diminished':     [0, 3, 6],
+    'augmented':      [0, 4, 8],
+    'suspended':      [0, 5, 7],
+    'half-diminished':[0, 3, 6, 10],
+}
+_NAME_TO_PC = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
+
+def _chord_to_notes(chord: dict, base_octave: int = 5) -> list:
+    """Convert a MidiCaps chord dict to a short list of MIDI note numbers."""
+    root_str = chord.get('root') or chord.get('Root') or 'C'
+    quality  = (chord.get('quality') or chord.get('Quality') or 'major').lower()
+
+    # Parse root note → pitch class
+    root_pc = _NAME_TO_PC.get(root_str[0].upper(), 0)
+    if len(root_str) > 1:
+        root_pc += root_str[1:].count('#') - root_str[1:].count('b')
+    root_pc %= 12
+    root_midi = root_pc + base_octave * 12  # e.g. C5 = 60
+
+    intervals = _QUALITY_INTERVALS.get('major')  # fallback
+    for qname, ivs in _QUALITY_INTERVALS.items():
+        if qname in quality:
+            intervals = ivs
+            break
+
+    return [min(127, max(0, root_midi + i)) for i in intervals]
+
+
+def _load_sequences_from_hf():
+    """Stream amaai-lab/MidiCaps and build note+chord sequences for Markov training."""
+    try:
+        from datasets import load_dataset
+    except ImportError as e:
+        raise ImportError(
+            "The 'datasets' library is required.  pip install datasets"
+        ) from e
+
+    logger.info("🌐 Streaming from HuggingFace (amaai-lab/MidiCaps) — ALL genres...")
+    ds = load_dataset("amaai-lab/MidiCaps", split="train", streaming=True)
+
+    note_sequences = []
+    chord_sequences_out = []
+    track_count = 0
+
+    for row in tqdm(ds, desc="🌐 Loading from HF"):
+        # Try multiple field names — MidiCaps uses "chords" in some versions
+        all_chords = row.get("all_chords") or row.get("chords") or []
+        if isinstance(all_chords, str):
+            try:
+                import json as _json
+                all_chords = _json.loads(all_chords)
+            except Exception:
+                all_chords = []
+
+        note_seq = []
+        chord_seq = []
+
+        # Build a note sequence by expanding each chord into its pitches
+        for chord in (all_chords if isinstance(all_chords, list) else []):
+            if not isinstance(chord, dict):
+                continue
+            notes = _chord_to_notes(chord)
+            note_seq.extend(notes)
+            chord_seq.append(tuple(sorted(notes)))
+
+        # Fallback: synthesise a scale from key metadata when no chord data
+        if len(note_seq) < 4:
+            key_str = str(row.get("key") or "")
+            tokens = key_str.split()
+            if tokens:
+                rname = tokens[0]
+                rpc = _NAME_TO_PC.get(rname[0].upper(), 0)
+                if len(rname) > 1:
+                    rpc += rname[1:].count('#') - rname[1:].count('b')
+                rpc %= 12
+                is_minor = len(tokens) > 1 and 'minor' in tokens[1].lower()
+                # Natural minor / major diatonic scale (2 octaves)
+                ivs = [0, 2, 3, 5, 7, 8, 10] if is_minor else [0, 2, 4, 5, 7, 9, 11]
+                base = 48 + rpc  # root at C4
+                note_seq = [min(127, base + i) for i in ivs + [i + 12 for i in ivs]]
+                chord_seq = []
+
+        if len(note_seq) >= 4:   # minimum viable sequence for Markov
+            note_sequences.append(note_seq)
+            chord_sequences_out.append(chord_seq)
+            track_count += 1
+
+    logger.info(f"✅ Built {track_count:,} note sequences from HF dataset")
+    return note_sequences, chord_sequences_out, track_count
+
+
+def _load_sequences_from_local(track_type: str):
+    """Load note sequences from the local preprocessed .pt file."""
+    processed_data_path = "dataset/processed/full_dataset.pt"
+    logger.info(f"💾 Loading pre-processed data from '{processed_data_path}' (track: {track_type})...")
+
+    if not os.path.exists(processed_data_path):
+        old_path = "dataset/processed/markov_sequences.pt"
+        if os.path.exists(old_path):
+            logger.warning(f"⚠️ '{processed_data_path}' not found, falling back to '{old_path}'")
+            processed_data_path = old_path
+        else:
+            logger.error(f"❌ Processed data file not found at '{processed_data_path}'.")
+            logger.error("Run: python scripts/preprocess_dataset.py")
+            return None
+
+    try:
+        data = torch.load(processed_data_path)
+        sequences_container = data.get('sequences') if isinstance(data, dict) else data
+        if sequences_container is None:
+            sequences_container = data
+        sequences_iter = sequences_container if isinstance(sequences_container, (list, tuple)) else []
+
+        note_sequences = []
+        chord_sequences = []
+        track_count = 0
+
+        for item in sequences_iter:
+            if isinstance(item, dict) and 'sequences' in item and isinstance(item['sequences'], dict):
+                seq_data = item['sequences']
+                if track_type in seq_data and seq_data[track_type]:
+                    note_sequences.append(seq_data[track_type])
+                    track_count += 1
+                elif track_type == 'full' and 'full' in seq_data and seq_data['full']:
+                    note_sequences.append(seq_data['full'])
+                    track_count += 1
+                if 'chords' in seq_data and seq_data['chords']:
+                    chord_seq = [tuple(sorted(c['pitches'])) for c in seq_data['chords'] if 'pitches' in c]
+                    if chord_seq:
+                        chord_sequences.append(chord_seq)
+
+        logger.info(f"✅ Loaded {len(note_sequences)} {track_type} sequences from {track_count} files.")
+
+        if len(note_sequences) == 0:
+            logger.error(f"❌ No {track_type} sequences found in '{processed_data_path}'.")
+            return None
+
+        return note_sequences, chord_sequences, track_count
+
+    except Exception as e:
+        logger.error(f"❌ Failed to load pre-processed data: {e}\n{traceback.format_exc()}")
+        return None
+
+
+def train_markov_model(order=3, max_interval=12, output_dir="output/trained_models",
+                       n_hidden_states=16, use_gpu=True, track_type='full',
+                       use_huggingface=False):
     """
     Trains the Markov chain model by loading pre-processed note sequences.
-    
+
     Args:
         track_type: Type of track to train on ('full', 'melody', 'bass', 'drums')
+        use_huggingface: If True, stream note sequences from amaai-lab/MidiCaps
+                         on HuggingFace instead of the local preprocessed file.
     """
     gpu_info = detect_gpu_capabilities()
     use_gpu = use_gpu and gpu_info['cuda_available']
@@ -101,97 +257,17 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         n_hidden_states=n_hidden_states,
         use_gpu=use_gpu
     )
-    
-    # --- 1. Load Pre-processed Data ---
-    processed_data_path = "dataset/processed/full_dataset.pt"
-    logger.info(f"💾 Loading pre-processed data from '{processed_data_path}' (track: {track_type})...")
 
-    if not os.path.exists(processed_data_path):
-        # Fallback to old path if new one doesn't exist
-        old_path = "dataset/processed/markov_sequences.pt"
-        if os.path.exists(old_path):
-            logger.warning(f"⚠️ '{processed_data_path}' not found, falling back to '{old_path}'")
-            processed_data_path = old_path
-        else:
-            logger.error(f"❌ Processed data file not found at '{processed_data_path}'.")
-            logger.error("Please run the preprocessing script first: python scripts/preprocess_dataset.py")
+    # -----------------------------------------------------------------------
+    # Data loading: HuggingFace streaming OR local preprocessed file
+    # -----------------------------------------------------------------------
+    if use_huggingface:
+        note_sequences, chord_sequences, track_count = _load_sequences_from_hf()
+    else:
+        result = _load_sequences_from_local(track_type)
+        if result is None:
             return None
-
-    try:
-        data = torch.load(processed_data_path)
-
-        # Data can be either a dict with key 'sequences' (our new format)
-        # or an older list/dict where each item contains 'sequence'.
-        sequences_container = data.get('sequences') if isinstance(data, dict) else data
-
-        if sequences_container is None:
-            # If the file doesn't have 'sequences', try using the loaded object directly
-            sequences_container = data
-
-        # Ensure sequences_container is iterable
-        sequences_iter = sequences_container if isinstance(sequences_container, (list, tuple)) else []
-
-        # Extract sequences for the specified track type
-        note_sequences = []
-        chord_sequences = []
-        track_count = 0
-
-        for item in sequences_iter:
-            # New format: item is {'path': ..., 'sequences': {...}, 'metadata': {...}}
-            if isinstance(item, dict) and 'sequences' in item and isinstance(item['sequences'], dict):
-                seq_data = item['sequences']
-                if track_type in seq_data and seq_data[track_type]:
-                    note_sequences.append(seq_data[track_type])
-                    track_count += 1
-                elif track_type == 'full' and 'full' in seq_data and seq_data['full']:
-                    note_sequences.append(seq_data['full'])
-                    track_count += 1
-                
-                # Extract chord sequences
-                if 'chords' in seq_data and seq_data['chords']:
-                    # Convert chords to sequence of chord representations
-                    chord_seq = []
-                    for chord_info in seq_data['chords']:
-                        # Represent chord as tuple of pitches
-                        chord_seq.append(tuple(sorted(chord_info['pitches'])))
-                    if chord_seq:
-                        chord_sequences.append(chord_seq)
-            else:
-                # Older format handling
-                pass
-
-        logger.info(f"✅ Successfully loaded {len(note_sequences)} {track_type} sequences and {len(chord_sequences)} chord sequences from {track_count} files.")
-
-        if len(note_sequences) == 0:
-            logger.warning(f"⚠️ No {track_type} sequences found. Inspecting sample entry to report keys...")
-            sample_item = None
-            try:
-                sample_item = sequences_iter[0]
-            except Exception:
-                sample_item = None
-
-            if isinstance(sample_item, dict):
-                logger.warning(f"Sample item keys: {list(sample_item.keys())}")
-                if 'sequences' in sample_item and isinstance(sample_item['sequences'], dict):
-                    for key in ['full', 'melody', 'bass', 'drums']:
-                        if key in sample_item['sequences']:
-                            logger.warning(f"  - {key}: {len(sample_item['sequences'][key])} notes")
-                elif 'sequence' in sample_item:
-                    logger.warning(f"  - sequence: {len(sample_item['sequence'])} notes")
-            else:
-                logger.warning(f"Sample item type: {type(sample_item)}")
-
-            return None
-            
-    except Exception as e:
-        logger.error(f"❌ Failed to load or parse pre-processed data: {e}\n{traceback.format_exc()}")
-        return None
-
-    if not note_sequences:
-        logger.error("❌ No valid note sequences found in the pre-processed file.")
-        return None
-
-    log_memory_usage("after loading sequences")
+        note_sequences, chord_sequences, track_count = result
     
     # --- 2. Train the Model ---
     logger.info("🧠 Training Markov model with HMM...")
@@ -256,6 +332,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         'max_interval': max_interval,
         'n_hidden_states': n_hidden_states,
         'track_type': track_type,
+        'source': 'huggingface' if use_huggingface else 'local',
         'sequences_loaded': track_count,
         'hmm_enabled': bool(model.hmm_model),
     }
@@ -275,24 +352,30 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     return model
 
 if __name__ == "__main__":
-    # Simplified parameter parsing
-    order = int(sys.argv[1]) if len(sys.argv) > 1 else 4
-    max_interval = int(sys.argv[2]) if len(sys.argv) > 2 else 12
-    n_hidden_states = int(sys.argv[3]) if len(sys.argv) > 3 else 16
-    use_gpu = sys.argv[4].lower() != 'false' if len(sys.argv) > 4 else True
-    track_type = sys.argv[5] if len(sys.argv) > 5 else 'full'
-    
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--order",          type=int,   default=4)
+    p.add_argument("--max-interval",   type=int,   default=12)
+    p.add_argument("--hidden-states",  type=int,   default=16)
+    p.add_argument("--no-gpu",         action="store_true")
+    p.add_argument("--track",          type=str,   default="full")
+    p.add_argument("--hf",             action="store_true",
+                   help="Stream data from HuggingFace (amaai-lab/MidiCaps) instead of local file")
+    args = p.parse_args()
+
     logger.info("🚀 MARKOV TRAINING INITIATED 🚀")
-    logger.info(f"🧠 Order: {order}")
-    logger.info(f"🎵 Max interval: {max_interval}")
-    logger.info(f"🔮 Hidden states: {n_hidden_states}")
-    logger.info(f"⚡ GPU acceleration: {'ENABLED' if use_gpu else 'DISABLED'}")
-    logger.info(f"🎼 Track type: {track_type}")
-    
+    logger.info(f"🧠 Order: {args.order}")
+    logger.info(f"🎵 Max interval: {args.max_interval}")
+    logger.info(f"🔮 Hidden states: {args.hidden_states}")
+    logger.info(f"⚡ GPU acceleration: {'DISABLED' if args.no_gpu else 'ENABLED'}")
+    logger.info(f"🎼 Track type: {args.track}")
+    logger.info(f"🌐 Data source: {'HuggingFace' if args.hf else 'local'}")
+
     train_markov_model(
-        order=order, 
-        max_interval=max_interval,
-        n_hidden_states=n_hidden_states,
-        use_gpu=use_gpu,
-        track_type=track_type
+        order=args.order,
+        max_interval=args.max_interval,
+        n_hidden_states=args.hidden_states,
+        use_gpu=not args.no_gpu,
+        track_type=args.track,
+        use_huggingface=args.hf,
     )

@@ -1,76 +1,103 @@
 #!/bin/bash
 
 # Full Production Training Script for Zha
-# Trains all 3 models: Markov Chain, GOLC-VAE, and Transformer
+# Trains ALL models on the full amaai-lab/MidiCaps dataset (168k MIDI files,
+# all genres) streamed directly from HuggingFace — no local download needed.
+# Falls back to local preprocessed data if --local flag is passed.
 
-# Exit on error
 set -e
 
-# Configuration
-DATASET_PATH="dataset/processed/full_dataset.pt"
-MIDI_DIR="dataset/midi"
 OUTPUT_DIR="output/trained_models"
 LOG_DIR="output/logs"
+DATASET_PATH="dataset/processed/full_dataset.pt"
+MIDI_DIR="dataset/midi"
 
-# Create directories
-mkdir -p "$OUTPUT_DIR"
-mkdir -p "$LOG_DIR"
+mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "output/metrics"
+export PYTHONPATH="${PYTHONPATH:-.}:."
 
+# ── GPU / CUDA check ──────────────────────────────────────────────────────────
+if python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+    GPU_NAME=$(python3 -c "import torch; print(torch.cuda.get_device_name(0))")
+    echo "🟢 GPU detected: $GPU_NAME"
+else
+    echo "⚠️  WARNING: No CUDA GPU detected — training will run on CPU (very slow)."
+    echo "   To train on GPU, install the CUDA-enabled torch wheel:"
+    echo "   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126"
+    echo "   (replace cu126 with your CUDA version — check with: nvidia-smi)"
+    echo ""
+    read -r -p "Continue on CPU anyway? [y/N] " _cpu_confirm
+    [[ "$_cpu_confirm" =~ ^[Yy]$ ]] || exit 1
+fi
+
+# ── optional --local flag skips HF and uses local preprocessed data ──────────
+USE_HF="--hf"
+if [[ "$1" == "--local" ]]; then
+    USE_HF=""
+    echo "ℹ️  Using LOCAL preprocessed data"
+    if [ ! -f "$DATASET_PATH" ]; then
+        echo "🔄 Preprocessing MIDI files from $MIDI_DIR..."
+        python3 scripts/preprocess_dataset.py --midi-dir "$MIDI_DIR" --output-file "$DATASET_PATH"
+    fi
+else
+    echo "🌐 Using HuggingFace dataset (amaai-lab/MidiCaps, ALL genres)"
+fi
+
+echo ""
 echo "========================================================"
 echo "🚀 STARTING FULL PRODUCTION TRAINING PIPELINE"
 echo "========================================================"
 
-# 1. Preprocessing
+# ── 1. Markov ─────────────────────────────────────────────────────────────────
 echo ""
 echo "--------------------------------------------------------"
-echo "1️⃣  PREPROCESSING DATASET"
+echo "1️⃣  TRAINING MARKOV CHAIN MODEL"
 echo "--------------------------------------------------------"
-if [ -f "$DATASET_PATH" ]; then
-    echo "✅ Dataset already exists at $DATASET_PATH"
-    echo "   (Delete it if you want to re-process from scratch)"
-else
-    echo "🔄 Processing MIDI files from $MIDI_DIR..."
-    python3 scripts/preprocess_dataset.py --midi-dir "$MIDI_DIR" --output-file "$DATASET_PATH"
-fi
+python3 -m backend.trainers.train_markov \
+    --order 4 \
+    --max-interval 12 \
+    --hidden-states 16 \
+    --track full \
+    $USE_HF \
+    2>&1 | tee "$LOG_DIR/markov.log"
 
-# 2. Train Markov Model
+<<EOF
+
+# ── 2. VAE ────────────────────────────────────────────────────────────────────
 echo ""
 echo "--------------------------------------------------------"
-echo "2️⃣  TRAINING MARKOV CHAIN MODEL"
+echo "2️⃣  TRAINING VAE MODEL"
 echo "--------------------------------------------------------"
-# Order=4, MaxInterval=12, HiddenStates=16, GPU=True, Track=full
-export PYTHONPATH=$PYTHONPATH:.
-python3 backend/trainers/train_markov.py 4 12 16 True full
+python3 -m backend.trainers.train_vae \
+    $USE_HF \
+    2>&1 | tee "$LOG_DIR/vae.log"
 
-# 3. Train GOLC-VAE
+# ── 3. GOLC-VAE ───────────────────────────────────────────────────────────────
 echo ""
 echo "--------------------------------------------------------"
 echo "3️⃣  TRAINING GOLC-VAE MODEL"
 echo "--------------------------------------------------------"
-python3 scripts/train_lightning.py \
-    --model vae \
-    --data_path "$DATASET_PATH" \
+python3 -m backend.trainers.train_golc_vae \
     --epochs 100 \
-    --batch_size 64 \
-    --latent_dim 128 \
-    --lr 1e-4
+    --batch-size 128 \
+    --lr 1e-3 \
+    $USE_HF \
+    2>&1 | tee "$LOG_DIR/golc_vae.log"
 
-# 4. Train Transformer
+# ── 4. Transformer ────────────────────────────────────────────────────────────
 echo ""
 echo "--------------------------------------------------------"
 echo "4️⃣  TRAINING TRANSFORMER MODEL"
 echo "--------------------------------------------------------"
-python3 scripts/train_lightning.py \
-    --model transformer \
-    --data_path "$DATASET_PATH" \
-    --epochs 100 \
-    --batch_size 32 \
-    --embed_dim 256 \
-    --num_heads 4 \
-    --num_layers 4 \
-    --lr 1e-4
+python3 -m backend.trainers.train_transformer \
+    $USE_HF \
+    2>&1 | tee "$LOG_DIR/transformer.log"
 
 echo ""
 echo "========================================================"
 echo "✅ ALL MODELS TRAINED SUCCESSFULLY!"
+echo "   Metrics: output/metrics/"
+echo "   Weights: output/trained_models/"
+echo "   Logs:    output/logs/"
 echo "========================================================"
+
+EOF
