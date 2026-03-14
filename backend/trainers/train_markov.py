@@ -5,6 +5,7 @@ import json
 import logging
 import warnings
 import traceback
+import time
 import psutil
 import numpy as np
 import torch
@@ -16,6 +17,10 @@ from backend.models.markov_chain import MarkovChain
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Reduce noisy third-party logs that are usually non-fatal for long HMM runs
+logging.getLogger("hmmlearn").setLevel(logging.ERROR)
+logging.getLogger("hmmlearn.base").setLevel(logging.ERROR)
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -25,6 +30,17 @@ def log_memory_usage(stage=""):
     logger.info(f"🧠 Memory {stage}: {mem.percent:.1f}% used ({mem.used/1e9:.2f}GB / {mem.total/1e9:.2f}GB available)")
     if mem.percent > 85:
         logger.warning(f"⚠️ Memory usage is very high ({mem.percent:.1f}%)!")
+
+def log_process_memory(stage=""):
+    """Log current process RSS/VMS to make htop RES/VIRT interpretation explicit."""
+    try:
+        proc = psutil.Process(os.getpid())
+        mem = proc.memory_info()
+        logger.info(
+            f"🧾 Process memory {stage}: RSS={mem.rss/1e9:.2f}GB, VMS={mem.vms/1e9:.2f}GB"
+        )
+    except Exception as e:
+        logger.debug(f"Could not read process memory: {e}")
 
 def detect_gpu_capabilities():
     """Detect and configure GPU capabilities."""
@@ -283,6 +299,8 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         if result is None:
             return None
         note_sequences, chord_sequences, track_count = result
+
+    log_process_memory("after data load")
     
     # --- 2. Train the Model ---
     logger.info("🧠 Training Markov model with HMM...")
@@ -295,10 +313,22 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         dynamic_ncols=True,
         mininterval=1.0,
     )
+    start_time = time.time()
+    last_logged_percent = -1
+    logger.info("⏳ Markov training started (progress logs every 5%)")
     
     def update_progress(percent):
+        nonlocal last_logged_percent
         current = int(percent * 100)
         progress_bar.update(current - progress_bar.n)
+        if (not use_tqdm) and current >= 0:
+            if current >= min(100, last_logged_percent + 5):
+                elapsed = time.time() - start_time
+                eta = (elapsed / current) * (100 - current) if current > 0 else 0.0
+                logger.info(
+                    f"🚀 Training progress: {current}% | elapsed={elapsed/60:.1f}m | eta={eta/60:.1f}m"
+                )
+                last_logged_percent = current
     
     markov_model_logger = logging.getLogger("backend.models.markov_chain")
     previous_markov_level = markov_model_logger.level
@@ -312,6 +342,9 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     finally:
         markov_model_logger.setLevel(previous_markov_level)
     progress_bar.close()
+    elapsed_total = time.time() - start_time
+    logger.info(f"✅ Markov training phase finished in {elapsed_total/60:.1f} minutes")
+    log_process_memory("after model.train")
     
     # --- 3. Clean Up Memory ---
     logger.info("🧹 Cleaning up memory...")
@@ -319,6 +352,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     del note_sequences
     gc.collect()
     log_memory_usage("after training cleanup")
+    log_process_memory("after cleanup")
     
     if not training_success:
         logger.error("❌ Training failed.")
