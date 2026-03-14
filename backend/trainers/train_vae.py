@@ -1,4 +1,5 @@
 import torch, os, json, numpy as np, warnings
+import sys
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
@@ -149,7 +150,8 @@ class MIDIDataset(Dataset):
             return torch.zeros(128, dtype=torch.float32)
 
 def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
-                accumulation_steps=1, epoch_idx=0, consistency_weight=0.1):
+                accumulation_steps=1, epoch_idx=0, consistency_weight=0.1,
+                show_progress=True):
     """Training epoch with consistency loss to promote smoother transitions"""
     model.train()
     epoch_loss = 0
@@ -166,7 +168,14 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
 
     optimizer.zero_grad()
 
-    with tqdm(total=n_batches_total, desc=f"Epoch {epoch_idx+1}", ncols=100) as pbar:
+    with tqdm(
+        total=n_batches_total,
+        desc=f"Epoch {epoch_idx+1}",
+        ncols=100,
+        disable=not show_progress,
+        dynamic_ncols=True,
+        mininterval=1.0,
+    ) as pbar:
         for i, batch in enumerate(dataloader):
             batch = batch.to(device, non_blocking=True)
 
@@ -212,11 +221,12 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
 
             # Update progress bar
             pbar.update(1)
-            pbar.set_postfix({
-                'loss': f"{epoch_loss/(i+1):.4f}",
-                'recon': f"{epoch_recon_loss/(i+1):.4f}",
-                'kl': f"{epoch_kl_loss/(i+1):.4f}"
-            })
+            if show_progress:
+                pbar.set_postfix({
+                    'loss': f"{epoch_loss/(i+1):.4f}",
+                    'recon': f"{epoch_recon_loss/(i+1):.4f}",
+                    'kl': f"{epoch_kl_loss/(i+1):.4f}"
+                })
 
     # Flush any remaining accumulated gradients after the last batch
     n_batches = i + 1
@@ -251,6 +261,14 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
                          None = use all 168k tracks.
     """
     # Setup device
+    use_tqdm = sys.stdout.isatty()
+
+    def _progress_log(message):
+        if use_tqdm:
+            tqdm.write(message)
+        else:
+            print(message)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🧠 Training on: {device}")
     if torch.cuda.is_available():
@@ -298,7 +316,15 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
 
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
-    epoch_pbar = tqdm(range(epochs), desc="🎵 Epochs", unit="epoch", position=0)
+    epoch_pbar = tqdm(
+        range(epochs),
+        desc="🎵 Epochs",
+        unit="epoch",
+        position=0,
+        disable=not use_tqdm,
+        dynamic_ncols=True,
+        mininterval=1.0,
+    )
     for epoch in epoch_pbar:
         # Train one epoch
         metrics = train_epoch(
@@ -310,7 +336,8 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
             scaler=scaler,
             accumulation_steps=grad_accum_steps,
             epoch_idx=epoch,
-            consistency_weight=consistency_weight
+            consistency_weight=consistency_weight,
+            show_progress=use_tqdm,
         )
 
         # Step scheduler if epoch-based
@@ -321,28 +348,34 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
         all_metrics.append(metrics)
 
         # Update outer progress bar
-        epoch_pbar.set_postfix({
-            'loss': f"{metrics['loss']:.4f}",
-            'recon': f"{metrics['recon_loss']:.4f}",
-            'kl': f"{metrics['kl_loss']:.4f}",
-        })
+        if use_tqdm:
+            epoch_pbar.set_postfix({
+                'loss': f"{metrics['loss']:.4f}",
+                'recon': f"{metrics['recon_loss']:.4f}",
+                'kl': f"{metrics['kl_loss']:.4f}",
+            })
 
         # Report metrics
-        tqdm.write(f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} " +
-              f"(Recon={metrics['recon_loss']:.4f}, KL={metrics['kl_loss']:.4f}, " +
-              f"Consistency={metrics['consistency_loss']:.4f}), " +
-              f"LR={scheduler.get_last_lr()[0]:.6f}")
+        _progress_log(
+            f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} "
+            f"(Recon={metrics['recon_loss']:.4f}, KL={metrics['kl_loss']:.4f}, "
+            f"Consistency={metrics['consistency_loss']:.4f}), "
+            f"LR={scheduler.get_last_lr()[0]:.6f}"
+        )
 
         # Early stopping check
         if early_stopping(metrics['loss']):
-            tqdm.write(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            _progress_log(f"⚠️ Early stopping triggered after {epoch+1} epochs")
             break
 
         # Generate samples periodically
         if (epoch + 1) % 10 == 0:
             with torch.no_grad():
                 samples = model.sample(num_samples=3, temperature=0.8, device=device)
-                tqdm.write(f"Sample note distribution entropy: {-torch.sum(samples * torch.log(samples + 1e-8), dim=1).mean().item():.4f}")
+                _progress_log(
+                    f"Sample note distribution entropy: "
+                    f"{-torch.sum(samples * torch.log(samples + 1e-8), dim=1).mean().item():.4f}"
+                )
 
         # Save checkpoints
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:

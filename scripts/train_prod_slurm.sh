@@ -74,16 +74,7 @@ python3 -m backend.trainers.train_markov \
     $USE_HF \
     2>&1 | tee "$LOG_DIR/markov.log"
 
-# 2. VAE
-echo ""
-echo "--------------------------------------------------------"
-echo "2️⃣  TRAINING VAE MODEL"
-echo "--------------------------------------------------------"
-python3 -m backend.trainers.train_vae \
-    $USE_HF \
-    2>&1 | tee "$LOG_DIR/vae.log"
-
-# 3. GOLC-VAE
+# 2. GOLC-VAE
 echo ""
 echo "--------------------------------------------------------"
 echo "3️⃣  TRAINING GOLC-VAE MODEL"
@@ -95,7 +86,7 @@ python3 -m backend.trainers.train_golc_vae \
     $USE_HF \
     2>&1 | tee "$LOG_DIR/golc_vae.log"
 
-# 4. Transformer
+# 3. Transformer
 echo ""
 echo "--------------------------------------------------------"
 echo "4️⃣  TRAINING TRANSFORMER MODEL"

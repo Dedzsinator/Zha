@@ -1,4 +1,6 @@
 import torch, os, json, warnings
+import math
+import sys
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.amp import GradScaler
@@ -116,6 +118,14 @@ def train_transformer_model(
         Trained model and training metrics
     """
     # Setup device
+    use_tqdm = sys.stdout.isatty()
+
+    def _progress_log(message):
+        if use_tqdm:
+            tqdm.write(message)
+        else:
+            print(message)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🧠 Training on: {device}")
     if torch.cuda.is_available():
@@ -137,16 +147,7 @@ def train_transformer_model(
 
     # Optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=learning_rate,
-        total_steps=epochs * 1000 // grad_accum_steps,
-        pct_start=0.1,
-        anneal_strategy='cos',
-        div_factor=25,
-        final_div_factor=1e4
-    )
-    scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=True)
+
     scaler = GradScaler('cuda') if torch.cuda.is_available() else None
 
     # Early stopping
@@ -185,20 +186,67 @@ def train_transformer_model(
             collate_fn=_transformer_collate_fn
         )
 
+    # Build scheduler after dataloader is known so total steps match real optimizer updates
+    try:
+        batches_per_epoch = len(dataloader)
+    except (TypeError, AttributeError):
+        batches_per_epoch = None
+
+    if batches_per_epoch is not None and batches_per_epoch > 0:
+        optimizer_steps_per_epoch = max(1, math.ceil(batches_per_epoch / max(1, grad_accum_steps)))
+        total_optimizer_steps = max(1, epochs * optimizer_steps_per_epoch)
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=learning_rate,
+            total_steps=total_optimizer_steps,
+            pct_start=0.1,
+            anneal_strategy='cos',
+            div_factor=25,
+            final_div_factor=1e4
+        )
+        scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=True)
+        print(f"📉 Scheduler: OneCycleLR ({total_optimizer_steps} optimizer steps)")
+    else:
+        # Streaming/unknown-length dataloaders cannot safely use OneCycleLR total_steps.
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, epochs),
+            eta_min=learning_rate * 0.01,
+        )
+        scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=False)
+        print("📉 Scheduler: CosineAnnealingLR (epoch-based, unknown dataloader length)")
+
     # Training loop
     os.makedirs("output/trained_models", exist_ok=True)
     all_metrics = []
 
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
-    epoch_pbar = tqdm(range(epochs), desc="🎵 Epochs", unit="epoch", position=0)
+    epoch_pbar = tqdm(
+        range(epochs),
+        desc="🎵 Epochs",
+        unit="epoch",
+        position=0,
+        disable=not use_tqdm,
+        dynamic_ncols=True,
+        mininterval=1.0,
+    )
     for epoch in epoch_pbar:
         # Custom training loop for Transformer with conditioning
         model.train()
         epoch_loss = 0.0
         num_batches = 0
 
-        batch_pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}", unit="batch", leave=False, position=1)
+        batch_pbar = tqdm(
+            dataloader,
+            desc=f"Epoch {epoch+1}",
+            unit="batch",
+            leave=False,
+            position=1,
+            disable=not use_tqdm,
+            dynamic_ncols=True,
+            mininterval=1.0,
+        )
         for batch_idx, batch in enumerate(batch_pbar):
             sequences = batch['sequence'].to(device)
             chords = batch['chords']  # List of chord lists
@@ -277,21 +325,27 @@ def train_transformer_model(
             epoch_loss += loss.item()
             num_batches += 1
 
-            batch_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+            if use_tqdm:
+                batch_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
         avg_loss = epoch_loss / num_batches
         metrics = {'loss': avg_loss}
         all_metrics.append(metrics)
 
         # Update outer progress bar
-        epoch_pbar.set_postfix({'loss': f"{avg_loss:.4f}", 'lr': f"{scheduler.get_last_lr()[0]:.2e}"})
+        if use_tqdm:
+            epoch_pbar.set_postfix({'loss': f"{avg_loss:.4f}", 'lr': f"{scheduler.get_last_lr()[0]:.2e}"})
 
         # Report metrics
-        tqdm.write(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
+        _progress_log(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
+
+        # Step scheduler if it is configured to update per epoch
+        if not scheduler_wrapper.step_every_batch:
+            scheduler_wrapper.step()
 
         # Early stopping check
         if early_stopping(avg_loss):
-            tqdm.write(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            _progress_log(f"⚠️ Early stopping triggered after {epoch+1} epochs")
             break
 
         # Save checkpoints

@@ -69,6 +69,13 @@ class GOLC_VAE_Trainer:
         self.best_val_loss = float('inf')
         self.patience_counter = 0
         self.early_stop_patience = 30
+        self.use_tqdm = sys.stdout.isatty()
+
+    def _progress_log(self, message: str):
+        if self.use_tqdm:
+            tqdm.write(message)
+        else:
+            print(message)
         
     def train_epoch(self, temperature=1.0):
         """Train for one epoch with optional temperature annealing"""
@@ -83,7 +90,14 @@ class GOLC_VAE_Trainer:
         
         num_batches = 0  # count during iteration (supports IterableDataset)
         
-        pbar = tqdm(self.train_loader, desc='Training', leave=False)
+        pbar = tqdm(
+            self.train_loader,
+            desc='Training',
+            leave=False,
+            disable=not self.use_tqdm,
+            dynamic_ncols=True,
+            mininterval=1.0,
+        )
         for batch_idx, (data,) in enumerate(pbar):
             data = data.to(self.device)
             
@@ -119,12 +133,13 @@ class GOLC_VAE_Trainer:
             num_batches += 1
             
             # Update progress bar
-            pbar.set_postfix({
-                'loss': f"{loss_dict['total_loss']:.4f}",
-                'recon': f"{loss_dict['recon_loss']:.4f}",
-                'kl': f"{loss_dict['kl_loss']:.4f}",
-                'orbit': f"{loss_dict['orbit_loss']:.4f}"
-            })
+            if self.use_tqdm:
+                pbar.set_postfix({
+                    'loss': f"{loss_dict['total_loss']:.4f}",
+                    'recon': f"{loss_dict['recon_loss']:.4f}",
+                    'kl': f"{loss_dict['kl_loss']:.4f}",
+                    'orbit': f"{loss_dict['orbit_loss']:.4f}"
+                })
         
         # Average losses
         if num_batches > 0:
@@ -147,7 +162,14 @@ class GOLC_VAE_Trainer:
         num_batches = 0  # count during iteration (supports IterableDataset)
         
         with torch.no_grad():
-            pbar = tqdm(self.val_loader, desc='Validation', leave=False)
+            pbar = tqdm(
+                self.val_loader,
+                desc='Validation',
+                leave=False,
+                disable=not self.use_tqdm,
+                dynamic_ncols=True,
+                mininterval=1.0,
+            )
             for data, in pbar:
                 data = data.to(self.device)
                 
@@ -171,10 +193,11 @@ class GOLC_VAE_Trainer:
                 num_batches += 1
                 
                 # Update progress bar
-                pbar.set_postfix({
-                    'loss': f"{loss_dict['total_loss']:.4f}",
-                    'orbit': f"{loss_dict['orbit_loss']:.4f}"
-                })
+                if self.use_tqdm:
+                    pbar.set_postfix({
+                        'loss': f"{loss_dict['total_loss']:.4f}",
+                        'orbit': f"{loss_dict['orbit_loss']:.4f}"
+                    })
         
         # Average losses
         if num_batches > 0:
@@ -197,7 +220,15 @@ class GOLC_VAE_Trainer:
         print(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
         print(f"{'='*60}\n")
         
-        epoch_pbar = tqdm(range(num_epochs), desc="🎵 Epochs", unit="epoch", position=0)
+        epoch_pbar = tqdm(
+            range(num_epochs),
+            desc="🎵 Epochs",
+            unit="epoch",
+            position=0,
+            disable=not self.use_tqdm,
+            dynamic_ncols=True,
+            mininterval=1.0,
+        )
         for epoch in epoch_pbar:
             # Determine temperature for this epoch
             if temperature_schedule is not None:
@@ -230,26 +261,27 @@ class GOLC_VAE_Trainer:
             self.history['orbit_distance'].append(orbit_stats.get('mean_orbit_distance', 0.0))
             
             # Update outer progress bar
-            epoch_pbar.set_postfix({
-                'train': f"{train_losses['total']:.4f}",
-                'val': f"{val_losses['total']:.4f}",
-                'lr': f"{current_lr:.2e}",
-            })
+            if self.use_tqdm:
+                epoch_pbar.set_postfix({
+                    'train': f"{train_losses['total']:.4f}",
+                    'val': f"{val_losses['total']:.4f}",
+                    'lr': f"{current_lr:.2e}",
+                })
 
             # Print epoch summary
-            tqdm.write(f"\nEpoch {epoch+1}/{num_epochs}")
-            tqdm.write(f"  Train Loss: {train_losses['total']:.4f} "
+            self._progress_log(f"\nEpoch {epoch+1}/{num_epochs}")
+            self._progress_log(f"  Train Loss: {train_losses['total']:.4f} "
                   f"(Recon: {train_losses['recon']:.4f}, "
                   f"KL: {train_losses['kl']:.4f}, "
                   f"Orbit: {train_losses['orbit']:.4f})")
-            tqdm.write(f"  Val Loss:   {val_losses['total']:.4f} "
+            self._progress_log(f"  Val Loss:   {val_losses['total']:.4f} "
                   f"(Recon: {val_losses['recon']:.4f}, "
                   f"KL: {val_losses['kl']:.4f}, "
                   f"Orbit: {val_losses['orbit']:.4f})")
-            tqdm.write(f"  LR: {current_lr:.6f}, Temp: {temperature:.3f}")
+            self._progress_log(f"  LR: {current_lr:.6f}, Temp: {temperature:.3f}")
 
             if orbit_stats:
-                tqdm.write(f"  Orbit Stats: Mean={orbit_stats['mean_orbit_distance']:.4f}, "
+                self._progress_log(f"  Orbit Stats: Mean={orbit_stats['mean_orbit_distance']:.4f}, "
                       f"Std={orbit_stats['std_orbit_distance']:.4f}")
             
             # Save best model
@@ -257,7 +289,7 @@ class GOLC_VAE_Trainer:
                 self.best_val_loss = val_losses['total']
                 self.patience_counter = 0
                 self.save_checkpoint(epoch, is_best=True)
-                tqdm.write(f"  ✓ New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
+                self._progress_log(f"  ✓ New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
             else:
                 self.patience_counter += 1
                 
@@ -267,7 +299,7 @@ class GOLC_VAE_Trainer:
             
             # Early stopping
             if self.patience_counter >= self.early_stop_patience:
-                tqdm.write(f"\nEarly stopping triggered after {epoch+1} epochs")
+                self._progress_log(f"\nEarly stopping triggered after {epoch+1} epochs")
                 break
         
         # Save final model and history

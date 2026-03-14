@@ -136,7 +136,14 @@ def _load_sequences_from_hf():
     chord_sequences_out = []
     track_count = 0
 
-    for row in tqdm(ds, desc="🌐 Loading from HF"):
+    use_tqdm = sys.stdout.isatty()
+    for row in tqdm(
+        ds,
+        desc="🌐 Loading from HF",
+        disable=not use_tqdm,
+        dynamic_ncols=True,
+        mininterval=1.0,
+    ):
         # Try multiple field names — MidiCaps uses "chords" in some versions
         all_chords = row.get("all_chords") or row.get("chords") or []
         if isinstance(all_chords, str):
@@ -271,13 +278,31 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     
     # --- 2. Train the Model ---
     logger.info("🧠 Training Markov model with HMM...")
-    progress_bar = tqdm(total=100, desc="🚀 Training", unit="%")
+    use_tqdm = sys.stdout.isatty()
+    progress_bar = tqdm(
+        total=100,
+        desc="🚀 Training",
+        unit="%",
+        disable=not use_tqdm,
+        dynamic_ncols=True,
+        mininterval=1.0,
+    )
     
     def update_progress(percent):
         current = int(percent * 100)
         progress_bar.update(current - progress_bar.n)
     
-    training_success = model.train(note_sequences, chord_sequences=chord_sequences, progress_callback=update_progress)
+    markov_model_logger = logging.getLogger("backend.models.markov_chain")
+    previous_markov_level = markov_model_logger.level
+    markov_model_logger.setLevel(logging.WARNING)
+    try:
+        training_success = model.train(
+            note_sequences,
+            chord_sequences=chord_sequences,
+            progress_callback=update_progress,
+        )
+    finally:
+        markov_model_logger.setLevel(previous_markov_level)
     progress_bar.close()
     
     # --- 3. Clean Up Memory ---
@@ -337,11 +362,27 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         'hmm_enabled': bool(model.hmm_model),
     }
     if hasattr(model, 'transitions') and hasattr(model.transitions, 'shape'):
-        non_zero = int(np.count_nonzero(model.transitions)) if isinstance(model.transitions, np.ndarray) else int(model.transitions.to_sparse()._nnz())
-        total_possible = int(model.transitions.shape[0] * model.transitions.shape[1])
-        stats['transition_matrix_size'] = list(model.transitions.shape)
+        transitions_np = model.transitions if isinstance(model.transitions, np.ndarray) else model.transitions.cpu().numpy()
+
+        non_zero = int(np.count_nonzero(transitions_np))
+        total_possible = int(transitions_np.shape[0] * transitions_np.shape[1])
+        stats['transition_matrix_size'] = list(transitions_np.shape)
         stats['transition_nonzero'] = non_zero
         stats['transition_sparsity_pct'] = round((1 - non_zero / total_possible) * 100, 2) if total_possible > 0 else 0
+
+        # More informative sparsity over active notes only (rows/cols with non-zero probability mass).
+        row_activity = transitions_np.sum(axis=1)
+        col_activity = transitions_np.sum(axis=0)
+        active_notes = np.union1d(np.where(row_activity > 0)[0], np.where(col_activity > 0)[0])
+        active_note_count = int(len(active_notes))
+        stats['active_note_count'] = active_note_count
+
+        if active_note_count > 0:
+            active_submatrix = transitions_np[np.ix_(active_notes, active_notes)]
+            active_nonzero = int(np.count_nonzero(active_submatrix))
+            active_total = int(active_note_count * active_note_count)
+            stats['active_transition_nonzero'] = active_nonzero
+            stats['active_transition_sparsity_pct'] = round((1 - active_nonzero / active_total) * 100, 2) if active_total > 0 else 0
     stats['higher_order_contexts'] = sum(len(v) for v in model.higher_order_transitions.values())
     metrics_path = os.path.join("output/metrics", "markov_metrics.json")
     os.makedirs("output/metrics", exist_ok=True)

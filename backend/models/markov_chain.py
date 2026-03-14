@@ -411,8 +411,7 @@ class MarkovChain:
 
             pitch_mean = np.mean(flat_pitches)
             pitch_std = np.std(flat_pitches) if len(flat_pitches) > 1 else 0.0
-            duration_mean = np.mean(durations)
-            velocity_mean = np.mean(velocities) if velocities else 80.0
+            pitch_range = (max(flat_pitches) - min(flat_pitches)) if len(flat_pitches) > 1 else 0.0
             
             # Calculate interval features
             intervals = np.diff(flat_pitches)
@@ -559,8 +558,8 @@ class MarkovChain:
         """Initialize Hidden Markov Model with musical structure awareness"""
         logger.info("Initializing HMM with musical structure awareness...")
         
-        # Extract feature vectors from sequences
-        features = self._extract_hmm_features(sequences)
+        # Extract feature vectors from sequences (with per-sequence lengths for temporal learning)
+        features, lengths = self._extract_hmm_features(sequences, return_lengths=True)
         
         if len(features) == 0:
             logger.warning("No features extracted for HMM initialization")
@@ -595,8 +594,6 @@ class MarkovChain:
             )
             
             try:
-                # Pass each feature vector as its own 1-frame sequence via lengths
-                lengths = [1] * len(features_array)
                 self.hmm_model.fit(features_array, lengths=lengths)
                 logger.info(f"HMM initialized with {self.n_hidden_states} hidden states")
             except Exception as e:
@@ -605,9 +602,10 @@ class MarkovChain:
         else:
             logger.warning(f"Insufficient data for HMM (need >= {self.n_hidden_states} samples)")
             
-    def _extract_hmm_features(self, sequences):
+    def _extract_hmm_features(self, sequences, return_lengths=False):
         """Extract features for HMM training"""
         features = []
+        sequence_lengths = []
         
         for sequence in sequences[:min(len(sequences), 1000)]:  # Limit for performance
             if len(sequence) < 5:
@@ -620,8 +618,8 @@ class MarkovChain:
                 velocities  = [80.0] * len(sequence)
             else:
                 pitches_raw = [item[0] for item in sequence]
-                durations   = [item[1] for item in sequence]
-                velocities  = [item[2] for item in sequence]
+                durations   = [item[1] if len(item) > 1 else 0.5 for item in sequence]
+                velocities  = [item[2] if len(item) > 2 else 80.0 for item in sequence]
             
             # --- FIX: Flatten pitches to handle chords ---
             pitches = []
@@ -654,8 +652,21 @@ class MarkovChain:
                 pitch_mean, pitch_std, duration_mean, velocity_mean,
                 interval_mean, interval_std, note_density
             ]
-            features.append(feature_vector)
+            # Build temporal chunks so HMM can learn transitions within each sequence
+            seq_feature_count = max(1, len(pitches) // 4)
+            sequence_lengths.append(seq_feature_count)
+            for _ in range(seq_feature_count):
+                features.append(feature_vector)
                 
+        if return_lengths:
+            # lengths sum must equal number of rows in features_array
+            if sum(sequence_lengths) != len(features):
+                if len(features) > 0:
+                    sequence_lengths = [len(features)]
+                else:
+                    sequence_lengths = []
+            return features, sequence_lengths
+
         return features
         
     def train(self, midi_sequences, chord_sequences=None, progress_callback=None):
@@ -1443,12 +1454,28 @@ class MarkovChain:
         
     def save(self, filepath):
         """Save model with efficient serialization"""
+        hmm_state = None
+        if self.hmm_model is not None and hasattr(self.hmm_model, 'means_'):
+            try:
+                hmm_state = {
+                    'n_components': int(self.hmm_model.n_components),
+                    'covariance_type': str(self.hmm_model.covariance_type),
+                    'startprob_': np.array(self.hmm_model.startprob_, dtype=np.float64),
+                    'transmat_': np.array(self.hmm_model.transmat_, dtype=np.float64),
+                    'means_': np.array(self.hmm_model.means_, dtype=np.float64),
+                    'covars_': np.array(self.hmm_model.covars_, dtype=np.float64),
+                }
+            except Exception as e:
+                logger.warning(f"Could not serialize HMM state: {e}")
+
         data_to_save = {
             'transitions': self.transitions,
             'interval_transitions': self.interval_transitions,
             'max_interval': self.max_interval,
             'order': self.order,
-            'musical_features': self.musical_features
+            'n_hidden_states': self.n_hidden_states,
+            'musical_features': self.musical_features,
+            'hmm_state': hmm_state,
         }
         
         np.save(filepath, data_to_save, allow_pickle=True)
@@ -1465,12 +1492,33 @@ class MarkovChain:
             self.interval_range = 2 * self.max_interval + 1
             self.interval_transitions = data.get('interval_transitions', {})
             self.order = data.get('order', 1)
+            self.n_hidden_states = data.get('n_hidden_states', self.n_hidden_states)
             
             # Load musical features with proper defaults
             loaded_features = data.get('musical_features', {})
             for key in self.musical_features:
                 if key in loaded_features:
                     self.musical_features[key] = loaded_features[key]
+
+            # Restore trained HMM if available
+            self.hmm_model = None
+            hmm_state = data.get('hmm_state')
+            if hmm_state:
+                try:
+                    self.hmm_model = hmm.GaussianHMM(
+                        n_components=int(hmm_state.get('n_components', self.n_hidden_states)),
+                        covariance_type=hmm_state.get('covariance_type', 'diag'),
+                        n_iter=1,
+                        random_state=42,
+                    )
+                    self.hmm_model.startprob_ = np.array(hmm_state['startprob_'], dtype=np.float64)
+                    self.hmm_model.transmat_ = np.array(hmm_state['transmat_'], dtype=np.float64)
+                    self.hmm_model.means_ = np.array(hmm_state['means_'], dtype=np.float64)
+                    self.hmm_model.covars_ = np.array(hmm_state['covars_'], dtype=np.float64)
+                    logger.info("Loaded persisted HMM parameters")
+                except Exception as e:
+                    logger.warning(f"Failed to restore persisted HMM; continuing without HMM: {e}")
+                    self.hmm_model = None
             
             self.trained = True
             logger.info(f"Loaded model with order {self.order} and max interval {self.max_interval}")
@@ -2003,6 +2051,14 @@ class MarkovChain:
 
     def generate_expressive_sequence(self, key_context=None, length=64, complexity=0.7):
         """Generate a musically expressive sequence with varied rhythms"""
+        # Prefer full Markov + HMM generation when available.
+        if self.trained and self.hmm_model is not None:
+            return self.generate_with_hmm(
+                length=length,
+                key_context=key_context,
+                use_hidden_states=True,
+            )
+
         # Select time signature based on complexity
         if complexity < 0.3:
             time_sig = "4/4"
@@ -2152,7 +2208,12 @@ class MarkovChain:
         """Generate sequence using HMM and higher-order transitions with anti-repetition"""
         if not self.trained or not self.hmm_model:
             logger.warning("HMM not available, falling back to standard generation")
-            return self.generate_expressive_sequence(key_context, length)
+            fallback = self.generate_with_chords(
+                key_context=key_context,
+                length=length,
+                time_signature="4/4",
+            )
+            return fallback if fallback is not None else self._generate_fallback_sequence(length)
         
         try:
             # Generate hidden state sequence
@@ -2203,14 +2264,19 @@ class MarkovChain:
             
         except Exception as e:
             logger.error(f"HMM generation failed: {e}")
-            return self.generate_expressive_sequence(key_context, length)
+            fallback = self.generate_with_chords(
+                key_context=key_context,
+                length=length,
+                time_signature="4/4",
+            )
+            return fallback if fallback is not None else self._generate_fallback_sequence(length)
     
     def _generate_hidden_state_sequence(self, length):
         """Generate sequence of hidden states using HMM"""
         try:
             # Sample from HMM
-            states, _ = self.hmm_model.sample(length)
-            return states.flatten().tolist()
+            _, states = self.hmm_model.sample(length)
+            return [int(s) for s in states]
         except Exception as e:
             logger.warning(f"HMM state generation failed: {e}")
             # Fallback to simple state pattern
@@ -2264,7 +2330,17 @@ class MarkovChain:
                     
                     if probs.sum() > 0:
                         probs = probs / probs.sum()
-                        return np.random.choice(128, p=probs)
+                        transition_dict = {note: float(probs[note]) for note in range(128) if probs[note] > 0}
+                        weighted_transitions = self._weight_by_hidden_state(
+                            transition_dict,
+                            hidden_state,
+                            key_context,
+                            context_notes,
+                        )
+                        if weighted_transitions:
+                            notes = list(weighted_transitions.keys())
+                            weights = list(weighted_transitions.values())
+                            return int(random.choices(notes, weights=weights)[0])
             
             # Final fallback - ensure variety
             scale_pitches = self._get_scale_pitches(key_context)
