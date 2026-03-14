@@ -135,6 +135,8 @@ def _load_sequences_from_hf():
     note_sequences = []
     chord_sequences_out = []
     track_count = 0
+    rows_seen = 0
+    log_every = 5000
 
     use_tqdm = sys.stdout.isatty()
     for row in tqdm(
@@ -144,6 +146,7 @@ def _load_sequences_from_hf():
         dynamic_ncols=True,
         mininterval=1.0,
     ):
+        rows_seen += 1
         # Try multiple field names — MidiCaps uses "chords" in some versions
         all_chords = row.get("all_chords") or row.get("chords") or []
         if isinstance(all_chords, str):
@@ -186,7 +189,12 @@ def _load_sequences_from_hf():
             chord_sequences_out.append(chord_seq)
             track_count += 1
 
-    logger.info(f"✅ Built {track_count:,} note sequences from HF dataset")
+        if (not use_tqdm) and (rows_seen % log_every == 0):
+            logger.info(
+                f"🌐 HF streaming progress: rows_seen={rows_seen:,}, usable_sequences={track_count:,}"
+            )
+
+    logger.info(f"✅ Built {track_count:,} note sequences from HF dataset (rows_seen={rows_seen:,})")
     return note_sequences, chord_sequences_out, track_count
 
 

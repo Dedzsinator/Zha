@@ -22,9 +22,9 @@ try:
     HAS_CUPY = True
     logger.info("✅ CuPy detected and working - GPU acceleration enabled")
 except ImportError:
-    logger.warning("⚠️ CuPy not found - falling back to CPU computation")
+    logger.info("ℹ️ CuPy not found - using PyTorch CUDA/CPU backend")
 except Exception as e:
-    logger.warning(f"⚠️ CuPy found but not working ({e}) - falling back to CPU computation")
+    logger.info(f"ℹ️ CuPy found but not working ({e}) - using PyTorch CUDA/CPU backend")
     HAS_CUPY = False
 
 class CUDAOptimizer:
@@ -567,7 +567,13 @@ class MarkovChain:
         
         # Use KMeans to initialize hidden states
         if len(features) >= self.n_hidden_states:
-            features_array = np.array(features)
+            features_array = np.asarray(features, dtype=np.float64)
+
+            # Normalize feature scales for better HMM numerical stability
+            feature_mean = features_array.mean(axis=0, keepdims=True)
+            feature_std = features_array.std(axis=0, keepdims=True)
+            feature_std[feature_std < 1e-6] = 1.0
+            features_array = (features_array - feature_mean) / feature_std
             
             # GPU-accelerated clustering if available
             if self.use_gpu:
@@ -575,9 +581,9 @@ class MarkovChain:
                     from cuml.cluster import KMeans as cuKMeans
                     kmeans = cuKMeans(n_clusters=self.n_hidden_states, random_state=42)
                     cluster_labels = kmeans.fit_predict(features_array)
-                    cluster_labels = cp.asnumpy(cluster_labels) if hasattr(cluster_labels, 'get') else cluster_labels
+                    cluster_labels = cluster_labels.get() if hasattr(cluster_labels, 'get') else np.asarray(cluster_labels)
                 except ImportError:
-                    logger.warning("cuML not available, using sklearn KMeans")
+                    logger.info("cuML not available, using sklearn KMeans")
                     kmeans = KMeans(n_clusters=self.n_hidden_states, random_state=42)
                     cluster_labels = kmeans.fit_predict(features_array)
             else:
@@ -588,7 +594,8 @@ class MarkovChain:
             self.hmm_model = hmm.GaussianHMM(
                 n_components=self.n_hidden_states,
                 covariance_type="diag",
-                n_iter=100,
+                n_iter=75,
+                tol=1e-2,
                 random_state=42,
                 min_covar=1e-3,
             )
@@ -611,52 +618,17 @@ class MarkovChain:
             if len(sequence) < 5:
                 continue
                 
-            # Extract raw data — support both plain-int sequences and (pitch, dur, vel) tuples
-            if isinstance(sequence[0], (int, float, np.integer)):
-                pitches_raw = list(sequence)
-                durations   = [0.5] * len(sequence)
-                velocities  = [80.0] * len(sequence)
-            else:
-                pitches_raw = [item[0] for item in sequence]
-                durations   = [item[1] if len(item) > 1 else 0.5 for item in sequence]
-                velocities  = [item[2] if len(item) > 2 else 80.0 for item in sequence]
-            
-            # --- FIX: Flatten pitches to handle chords ---
-            pitches = []
-            for p in pitches_raw:
-                if isinstance(p, (list, tuple)):
-                    pitches.extend(p)
-                else:
-                    pitches.append(p)
-            # --- END FIX ---
-
-            if not pitches:
+            seq_features = self._sequence_to_features(sequence)
+            if not seq_features:
                 continue
 
-            # Calculate features
-            pitch_mean = np.mean(pitches) if pitches else 60.0
-            pitch_std = np.std(pitches) if pitches else 0.0
-            duration_mean = np.mean(durations) if durations else 0.5
-            velocity_mean = np.mean(velocities) if velocities else 80.0
-            
-            # Calculate interval features
-            intervals = np.diff([p for p in pitches if isinstance(p, int)])
-            interval_mean = np.mean(intervals) if len(intervals) > 0 else 0.0
-            interval_std = np.std(intervals) if len(intervals) > 0 else 0.0
-            
-            # Note density (notes per quarter length)
-            total_duration = sum(durations)
-            note_density = len(pitches) / total_duration if total_duration > 0 else 0.0
-            
-            feature_vector = [
-                pitch_mean, pitch_std, duration_mean, velocity_mean,
-                interval_mean, interval_std, note_density
-            ]
-            # Build temporal chunks so HMM can learn transitions within each sequence
-            seq_feature_count = max(1, len(pitches) // 4)
-            sequence_lengths.append(seq_feature_count)
-            for _ in range(seq_feature_count):
-                features.append(feature_vector)
+            # Limit per-sequence frames to keep HMM init tractable on large corpora.
+            max_frames_per_sequence = 256
+            if len(seq_features) > max_frames_per_sequence:
+                seq_features = seq_features[-max_frames_per_sequence:]
+
+            sequence_lengths.append(len(seq_features))
+            features.extend(seq_features)
                 
         if return_lengths:
             # lengths sum must equal number of rows in features_array
@@ -766,7 +738,7 @@ class MarkovChain:
         
         # Initialize GPU arrays if available and working
         gpu_transitions = None
-        use_gpu_for_this = self.use_gpu and HAS_CUPY
+        use_gpu_for_this = self.use_gpu
         
         if use_gpu_for_this:
             try:
@@ -819,9 +791,11 @@ class MarkovChain:
                                 logger.warning(f"GPU operation failed, switching to CPU: {e}")
                                 use_gpu_for_this = False
                                 # Convert back to CPU and continue
-                                if hasattr(gpu_transitions, 'get'):
+                                if isinstance(gpu_transitions, torch.Tensor):
                                     self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
-                                gpu_transitions = self.transitions
+                                    gpu_transitions = self.transitions
+                                else:
+                                    gpu_transitions = self.transitions
                                 gpu_transitions[prev_note, next_note] += 1
                         else:
                             gpu_transitions[prev_note, next_note] += 1
@@ -845,7 +819,7 @@ class MarkovChain:
                 
         # Normalize transition matrix with GPU acceleration if possible
         try:
-            if use_gpu_for_this and HAS_CUPY and hasattr(gpu_transitions, 'get'):
+            if use_gpu_for_this and isinstance(gpu_transitions, torch.Tensor):
                 logger.info("🚀 Normalizing matrices on GPU...")
                 gpu_transitions = self.gpu_opt.normalize_gpu(gpu_transitions, axis=1)
                 self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
