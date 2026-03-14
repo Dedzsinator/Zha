@@ -1,6 +1,7 @@
 import torch, os, json, warnings
 import math
 import sys
+import time
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.amp import GradScaler
@@ -124,7 +125,7 @@ def train_transformer_model(
         if use_tqdm:
             tqdm.write(message)
         else:
-            print(message)
+            print(message, flush=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🧠 Training on: {device}")
@@ -221,6 +222,8 @@ def train_transformer_model(
     all_metrics = []
 
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
+    if not use_tqdm:
+        _progress_log("⏳ Transformer training started (heartbeat logs enabled)")
 
     epoch_pbar = tqdm(
         range(epochs),
@@ -232,10 +235,15 @@ def train_transformer_model(
         mininterval=1.0,
     )
     for epoch in epoch_pbar:
+        epoch_start_time = time.time()
+        if not use_tqdm:
+            _progress_log(f"🚀 Epoch {epoch+1}/{epochs} started")
+
         # Custom training loop for Transformer with conditioning
         model.train()
         epoch_loss = 0.0
         num_batches = 0
+        last_heartbeat_time = time.time()
 
         batch_pbar = tqdm(
             dataloader,
@@ -324,6 +332,18 @@ def train_transformer_model(
             
             epoch_loss += loss.item()
             num_batches += 1
+
+            if not use_tqdm:
+                now = time.time()
+                # Emit heartbeat at least every 60s or every 500 batches.
+                if ((batch_idx + 1) % 500 == 0) or (now - last_heartbeat_time >= 60.0):
+                    elapsed = now - epoch_start_time
+                    _progress_log(
+                        f"🎵 Epoch {epoch+1}: batch={batch_idx+1}, "
+                        f"avg_loss={epoch_loss/max(1, num_batches):.4f}, "
+                        f"lr={scheduler.get_last_lr()[0]:.2e}, elapsed={elapsed/60:.1f}m"
+                    )
+                    last_heartbeat_time = now
 
             if use_tqdm:
                 batch_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
