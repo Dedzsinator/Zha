@@ -733,22 +733,22 @@ class MarkovChain:
             
         logger.info("Enhanced musical features processed")
 
-        def _sequence_to_pitch_tensor(self, sequence, use_gpu=False):
-            """Extract a 1D int64 pitch tensor from heterogeneous sequence items."""
-            pitches = []
-            for note_data in sequence:
-                if isinstance(note_data, int):
-                    pitches.append(note_data)
-                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    first_note = note_data[0]
-                    if isinstance(first_note, int):
-                        pitches.append(first_note)
+    def _sequence_to_pitch_tensor(self, sequence, use_gpu=False):
+        """Extract a 1D int64 pitch tensor from heterogeneous sequence items."""
+        pitches = []
+        for note_data in sequence:
+            if isinstance(note_data, int):
+                pitches.append(note_data)
+            elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
+                first_note = note_data[0]
+                if isinstance(first_note, int):
+                    pitches.append(first_note)
 
-            if len(pitches) < 2:
-                return None
+        if len(pitches) < 2:
+            return None
 
-            device = self.device if use_gpu else 'cpu'
-            return torch.tensor(pitches, dtype=torch.long, device=device)
+        device = self.device if use_gpu else 'cpu'
+        return torch.tensor(pitches, dtype=torch.long, device=device)
         
     def _train_enhanced_note_transitions(self, midi_sequences, progress_callback=None):
         """GPU-accelerated note transition training with HMM awareness"""
