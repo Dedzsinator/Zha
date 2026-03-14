@@ -115,9 +115,10 @@ _QUALITY_INTERVALS = {
 }
 _NAME_TO_PC = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
 
-def _chord_to_notes(chord: dict, base_octave: int = 5) -> list:
-    """Convert a MidiCaps chord dict to a short list of MIDI note numbers."""
+def _chord_to_notes(chord: dict, base_octaves=(4, 5)) -> list:
+    """Convert a MidiCaps chord dict to a richer list of MIDI note numbers."""
     root_str = chord.get('root') or chord.get('Root') or 'C'
+    bass_str = chord.get('bass') or chord.get('Bass') or root_str
     quality  = (chord.get('quality') or chord.get('Quality') or 'major').lower()
 
     # Parse root note → pitch class
@@ -125,7 +126,11 @@ def _chord_to_notes(chord: dict, base_octave: int = 5) -> list:
     if len(root_str) > 1:
         root_pc += root_str[1:].count('#') - root_str[1:].count('b')
     root_pc %= 12
-    root_midi = root_pc + base_octave * 12  # e.g. C5 = 60
+
+    bass_pc = _NAME_TO_PC.get(bass_str[0].upper(), 0)
+    if len(bass_str) > 1:
+        bass_pc += bass_str[1:].count('#') - bass_str[1:].count('b')
+    bass_pc %= 12
 
     intervals = _QUALITY_INTERVALS.get('major')  # fallback
     for qname, ivs in _QUALITY_INTERVALS.items():
@@ -133,7 +138,16 @@ def _chord_to_notes(chord: dict, base_octave: int = 5) -> list:
             intervals = ivs
             break
 
-    return [min(127, max(0, root_midi + i)) for i in intervals]
+    notes = []
+    for octv in base_octaves:
+        root_midi = root_pc + octv * 12
+        notes.extend(min(127, max(0, root_midi + i)) for i in intervals)
+
+    # Add bass reinforcement in lower octave for better movement diversity
+    bass_midi = bass_pc + 3 * 12
+    notes.append(min(127, max(0, bass_midi)))
+
+    return sorted(set(notes))
 
 
 def _load_sequences_from_hf():
@@ -288,6 +302,14 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         n_hidden_states=n_hidden_states,
         use_gpu=use_gpu
     )
+    logger.info(
+        f"⚙️ Markov backend: use_gpu={model.use_gpu}, device={model.device}, "
+        f"note_transition_backend={'torch-cuda' if model.use_gpu else 'numpy-cpu'}"
+    )
+    logger.info(
+        "ℹ️ Training mixes CPU-heavy counting loops with some GPU tensor ops; "
+        "seeing one CPU core at high usage is expected."
+    )
 
     # -----------------------------------------------------------------------
     # Data loading: HuggingFace streaming OR local preprocessed file
@@ -349,6 +371,9 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     # --- 3. Clean Up Memory ---
     logger.info("🧹 Cleaning up memory...")
     demo_sequences = model.musical_features.get('demo_sequences', [])
+    if not demo_sequences and note_sequences:
+        # Keep a tiny sample for post-train HMM demonstration.
+        demo_sequences = note_sequences[:2]
     del note_sequences
     gc.collect()
     log_memory_usage("after training cleanup")

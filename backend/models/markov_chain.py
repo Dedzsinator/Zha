@@ -675,8 +675,9 @@ class MarkovChain:
         else:
             logger.info("Large dataset detected, using simplified feature extraction")
         
-        # **BATCH TRAINING** - Process sequences in batches to avoid memory overflow
-        batch_size = 1000  # Process 1000 sequences at a time
+        # Global transition statistics must be accumulated over the full dataset.
+        # Multi-batch chunking here can overwrite normalized stats with the final chunk.
+        batch_size = max(1, len(midi_sequences))
         total_batches = (len(midi_sequences) - 1) // batch_size + 1
         
         if total_batches > 1:
@@ -731,6 +732,23 @@ class MarkovChain:
             self.musical_features['phrase_boundaries'] = dict(phrase_counter.most_common(15))
             
         logger.info("Enhanced musical features processed")
+
+        def _sequence_to_pitch_tensor(self, sequence, use_gpu=False):
+            """Extract a 1D int64 pitch tensor from heterogeneous sequence items."""
+            pitches = []
+            for note_data in sequence:
+                if isinstance(note_data, int):
+                    pitches.append(note_data)
+                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
+                    first_note = note_data[0]
+                    if isinstance(first_note, int):
+                        pitches.append(first_note)
+
+            if len(pitches) < 2:
+                return None
+
+            device = self.device if use_gpu else 'cpu'
+            return torch.tensor(pitches, dtype=torch.long, device=device)
         
     def _train_enhanced_note_transitions(self, midi_sequences, progress_callback=None):
         """GPU-accelerated note transition training with HMM awareness"""
@@ -762,48 +780,37 @@ class MarkovChain:
         logger.info(f"Processing {len(midi_sequences)} sequences...")
         
         for sequence in midi_sequences:
-            pitches = []
-            for note_data in sequence:
-                if isinstance(note_data, int):
-                    pitches.append(note_data)
-                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    # Extract first element from chord
-                    first_note = note_data[0]
-                    if isinstance(first_note, int):
-                        pitches.append(first_note)
-                    
-            if len(pitches) < 2:
+            pitch_tensor = self._sequence_to_pitch_tensor(sequence, use_gpu=use_gpu_for_this)
+            if pitch_tensor is None:
                 continue
                 
             # Single-order transitions with error handling
             try:
-                for i in range(len(pitches) - 1):
-                    prev_note, next_note = pitches[i], pitches[i + 1]
-                    # Ensure both are integers for comparison
-                    if not isinstance(prev_note, int) or not isinstance(next_note, int):
-                        continue
-                    if 0 <= prev_note < 128 and 0 <= next_note < 128:
-                        if use_gpu_for_this and gpu_transitions is not None:
-                            try:
-                                gpu_transitions[prev_note, next_note] += 1
-                            except Exception as e:
-                                # If GPU operation fails, switch to CPU
-                                logger.warning(f"GPU operation failed, switching to CPU: {e}")
-                                use_gpu_for_this = False
-                                # Convert back to CPU and continue
-                                if isinstance(gpu_transitions, torch.Tensor):
-                                    self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
-                                    gpu_transitions = self.transitions
-                                else:
-                                    gpu_transitions = self.transitions
-                                gpu_transitions[prev_note, next_note] += 1
-                        else:
-                            gpu_transitions[prev_note, next_note] += 1
+                prev_notes = pitch_tensor[:-1]
+                next_notes = pitch_tensor[1:]
+                valid = (
+                    (prev_notes >= 0) & (prev_notes < 128) &
+                    (next_notes >= 0) & (next_notes < 128)
+                )
+
+                if torch.any(valid):
+                    prev_valid = prev_notes[valid]
+                    next_valid = next_notes[valid]
+
+                    if use_gpu_for_this and isinstance(gpu_transitions, torch.Tensor):
+                        flat_idx = prev_valid * 128 + next_valid
+                        counts = torch.bincount(flat_idx, minlength=128 * 128).reshape(128, 128)
+                        gpu_transitions += counts.to(gpu_transitions.dtype)
+                    else:
+                        prev_np = prev_valid.detach().cpu().numpy()
+                        next_np = next_valid.detach().cpu().numpy()
+                        np.add.at(gpu_transitions, (prev_np, next_np), 1)
             except Exception as e:
                 logger.warning(f"Error processing sequence: {e}")
                 continue
             
             # Multi-order transitions (up to order 6)
+            pitches = pitch_tensor.detach().cpu().tolist()
             max_order = min(6, self.order)
             for order in range(2, max_order + 1):
                 if len(pitches) > order:
@@ -862,56 +869,58 @@ class MarkovChain:
         """Enhanced interval transition training with GPU support"""
         logger.info("Training enhanced interval transitions...")
         
-        # Use defaultdict with GPU arrays if available
+        # Dense counting matrix: row=prev_note, col=interval_index
         if self.use_gpu:
-            interval_counts = defaultdict(lambda: self.gpu_opt.zeros_like_gpu(self.interval_range, dtype=np.float32))
+            interval_counts = torch.zeros((128, self.interval_range), dtype=torch.float32, device=self.device)
         else:
-            interval_counts = defaultdict(lambda: np.zeros(self.interval_range, dtype=np.float32))
+            interval_counts = np.zeros((128, self.interval_range), dtype=np.float32)
         
         total_processed = 0
         
         for sequence in midi_sequences:
-            pitches = []
-            for note_data in sequence:
-                if isinstance(note_data, int):
-                    pitches.append(note_data)
-                elif isinstance(note_data, (list, tuple)) and len(note_data) >= 1:
-                    # Extract first element from chord
-                    first_note = note_data[0]
-                    if isinstance(first_note, int):
-                        pitches.append(first_note)
-                    
-            if len(pitches) < 2:
+            pitch_tensor = self._sequence_to_pitch_tensor(sequence, use_gpu=self.use_gpu)
+            if pitch_tensor is None:
                 continue
-                
-            for i in range(len(pitches) - 1):
-                prev_note = pitches[i]
-                next_note = pitches[i + 1]
-                
-                # Ensure both are integers for comparison
-                if not isinstance(prev_note, int) or not isinstance(next_note, int):
-                    continue
-                if 0 <= prev_note < 128 and 0 <= next_note < 128:
-                    interval_val = next_note - prev_note
-                    if -self.max_interval <= interval_val <= self.max_interval:
-                        interval_index = interval_val + self.max_interval
-                        interval_counts[prev_note][interval_index] += 1
+
+            prev_notes = pitch_tensor[:-1]
+            next_notes = pitch_tensor[1:]
+            valid_notes = (
+                (prev_notes >= 0) & (prev_notes < 128) &
+                (next_notes >= 0) & (next_notes < 128)
+            )
+
+            if torch.any(valid_notes):
+                prev_valid = prev_notes[valid_notes]
+                next_valid = next_notes[valid_notes]
+                interval_vals = next_valid - prev_valid
+                valid_intervals = (
+                    (interval_vals >= -self.max_interval) &
+                    (interval_vals <= self.max_interval)
+                )
+
+                if torch.any(valid_intervals):
+                    prev_final = prev_valid[valid_intervals]
+                    interval_index = (interval_vals[valid_intervals] + self.max_interval).long()
+
+                    if self.use_gpu and isinstance(interval_counts, torch.Tensor):
+                        flat_idx = prev_final * self.interval_range + interval_index
+                        counts = torch.bincount(flat_idx, minlength=128 * self.interval_range).reshape(128, self.interval_range)
+                        interval_counts += counts.to(interval_counts.dtype)
+                    else:
+                        prev_np = prev_final.detach().cpu().numpy()
+                        interval_np = interval_index.detach().cpu().numpy()
+                        np.add.at(interval_counts, (prev_np, interval_np), 1)
                         
             total_processed += 1
             if progress_callback and total_processed % 100 == 0:
                 progress_callback(0.3 + 0.3 * total_processed / len(midi_sequences))
                 
         # Normalize and store with GPU optimization
-        for prev_note, counts in interval_counts.items():
-            if self.use_gpu:
-                counts_cpu = self.gpu_opt.to_cpu(counts)
-                row_sum = counts_cpu.sum()
-            else:
-                row_sum = counts.sum()
-                counts_cpu = counts
-                
-            if row_sum > 0:
-                self.interval_transitions[prev_note] = counts_cpu / row_sum
+        counts_cpu = interval_counts.detach().cpu().numpy() if isinstance(interval_counts, torch.Tensor) else interval_counts
+        row_sums = counts_cpu.sum(axis=1, keepdims=True)
+        nonzero_rows = np.where(row_sums.squeeze() > 0)[0]
+        for prev_note in nonzero_rows:
+            self.interval_transitions[int(prev_note)] = counts_cpu[prev_note] / row_sums[prev_note, 0]
                 
         logger.info(f"Enhanced interval features trained on {total_processed} sequences")
         
