@@ -393,17 +393,13 @@ def train_transformer_model(
         # Report metrics
         _progress_log(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
 
-        if avg_loss < best_loss_so_far:
+        improved = avg_loss < best_loss_so_far
+        if improved:
             best_loss_so_far = avg_loss
 
         # Step scheduler if it is configured to update per epoch
         if not scheduler_wrapper.step_every_batch:
             scheduler_wrapper.step()
-
-        # Early stopping check
-        if early_stopping(avg_loss):
-            _progress_log(f"⚠️ Early stopping triggered after {epoch+1} epochs")
-            break
 
         # Save checkpoints
         checkpoint_payload = {
@@ -428,10 +424,15 @@ def train_transformer_model(
             },
         }
         torch.save(checkpoint_payload, "output/trained_models/transformer_latest.pt")
-        if avg_loss <= best_loss_so_far:
+        if improved:
             torch.save(checkpoint_payload, "output/trained_models/transformer_best.pt")
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
             torch.save(checkpoint_payload, f"output/trained_models/transformer_ep{epoch+1}.pt")
+
+        # Early stopping check (after checkpoint save, so state is always recoverable)
+        if early_stopping(avg_loss):
+            _progress_log(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            break
 
     # Save final model and JIT scripted version for faster inference
     torch.save(model.state_dict(), "output/trained_models/trained_transformer.pt")
