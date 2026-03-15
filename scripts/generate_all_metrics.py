@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Master script to generate ALL thesis metrics
-Runs all three metric generation scripts in sequence
+Master script to generate real inference-based capability metrics.
 """
 
 import subprocess
@@ -30,15 +29,13 @@ def main():
     scripts_dir = Path(__file__).parent
     
     scripts = [
-        scripts_dir / "generate_markov_metrics.py",
-        scripts_dir / "generate_vae_metrics.py",
-        scripts_dir / "generate_transformer_metrics.py"
+        scripts_dir / "generate_model_capability_metrics.py"
     ]
     
     print("="*70)
     print("THESIS METRICS GENERATION - MASTER SCRIPT")
     print("="*70)
-    print(f"\nWill run {len(scripts)} metric generation scripts:")
+    print(f"\nWill run {len(scripts)} metric generation script:")
     for script in scripts:
         print(f"  - {script.name}")
     print()
@@ -69,10 +66,8 @@ def main():
     
     if success_count == total_count:
         print("\n🎉 ALL METRICS GENERATED SUCCESSFULLY!")
-        print("\n📁 Output directories:")
-        print("   - output/metrics/markov/")
-        print("   - output/metrics/vae/")
-        print("   - output/metrics/transformer/")
+        print("\n📁 Output directory:")
+        print("   - output/metrics/capabilities/")
     else:
         print("\n⚠️  Some scripts failed. Please check the errors above.")
         sys.exit(1)

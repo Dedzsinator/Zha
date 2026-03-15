@@ -22,6 +22,20 @@ MIDI_DIR="dataset/midi"
 mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "output/metrics"
 export PYTHONPATH="${PYTHONPATH:-.}:."
 
+# Auto-resume flags (only if checkpoints exist)
+GOLC_RESUME_ARG=""
+TRANSFORMER_RESUME_ARG=""
+
+if [ -f "$OUTPUT_DIR/golc_vae_latest.pt" ]; then
+    GOLC_RESUME_ARG="--resume"
+    echo "♻️  GOLC-VAE checkpoint found: will resume from latest"
+fi
+
+if [ -f "$OUTPUT_DIR/transformer_latest.pt" ]; then
+    TRANSFORMER_RESUME_ARG="--resume"
+    echo "♻️  Transformer checkpoint found: will resume from latest"
+fi
+
 # Optional conda activation (set CONDA_ENV before sbatch if needed)
 if [[ -n "${CONDA_ENV:-}" ]]; then
     if [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
@@ -83,6 +97,7 @@ python3 -m backend.trainers.train_golc_vae \
     --epochs 100 \
     --batch-size 128 \
     --lr 1e-3 \
+    $GOLC_RESUME_ARG \
     $USE_HF \
     2>&1 | tee "$LOG_DIR/golc_vae.log"
 
@@ -92,6 +107,7 @@ echo "--------------------------------------------------------"
 echo "4️⃣  TRAINING TRANSFORMER MODEL"
 echo "--------------------------------------------------------"
 python3 -m backend.trainers.train_transformer \
+    $TRANSFORMER_RESUME_ARG \
     $USE_HF \
     2>&1 | tee "$LOG_DIR/transformer.log"
 

@@ -206,7 +206,7 @@ class GOLC_VAE_Trainer:
         
         return epoch_losses
     
-    def train(self, num_epochs=100, temperature_schedule=None):
+    def train(self, num_epochs=100, temperature_schedule=None, start_epoch=0):
         """
         Complete training loop with optional temperature annealing
         
@@ -221,7 +221,7 @@ class GOLC_VAE_Trainer:
         print(f"{'='*60}\n")
         
         epoch_pbar = tqdm(
-            range(num_epochs),
+            range(start_epoch, num_epochs),
             desc="🎵 Epochs",
             unit="epoch",
             position=0,
@@ -340,6 +340,18 @@ class GOLC_VAE_Trainer:
         # Always save latest
         path = self.save_dir / 'golc_vae_latest.pt'
         torch.save(checkpoint, path)
+
+    def load_checkpoint(self, checkpoint_path: str):
+        """Load training state from checkpoint and return next epoch index."""
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        self.best_val_loss = checkpoint.get('best_val_loss', self.best_val_loss)
+        self.history = checkpoint.get('history', self.history)
+        start_epoch = int(checkpoint.get('epoch', -1)) + 1
+        self._progress_log(f"♻️ Resumed GOLC-VAE from {checkpoint_path} at epoch {start_epoch}")
+        return start_epoch
     
     def save_history(self):
         """Save training history as JSON"""
@@ -437,6 +449,8 @@ def main():
                        help='Stream data from HuggingFace (amaai-lab/MidiCaps) instead of local')
     parser.add_argument('--genre', nargs='*', default=None,
                        help='Genre filter for HF dataset, e.g. --genre pop rock')
+    parser.add_argument('--resume', nargs='?', const='latest', default=None,
+                       help='Resume from checkpoint path, or use --resume for latest')
     
     args = parser.parse_args()
     
@@ -496,9 +510,23 @@ def main():
         device=device,
         save_dir=args.output_dir
     )
+
+    start_epoch = 0
+    if args.resume:
+        if args.resume == 'latest':
+            resume_path = str(Path(args.output_dir) / 'golc_vae_latest.pt')
+        elif args.resume == 'best':
+            resume_path = str(Path(args.output_dir) / 'golc_vae_best.pt')
+        else:
+            resume_path = args.resume
+
+        if Path(resume_path).exists():
+            start_epoch = trainer.load_checkpoint(resume_path)
+        else:
+            print(f"⚠️ Resume checkpoint not found: {resume_path}. Starting fresh.")
     
     # Train model
-    trainer.train(num_epochs=args.epochs)
+    trainer.train(num_epochs=args.epochs, start_epoch=start_epoch)
 
 
 if __name__ == '__main__':

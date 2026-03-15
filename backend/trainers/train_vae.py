@@ -250,7 +250,7 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
 def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=128,
                    grad_accum_steps=1, patience=10, cache_size=500, beta=0.5,
                    consistency_weight=0.2, use_preprocessed=True, track_type='full',
-                   use_huggingface=False, hf_genre_filter=None):
+                   use_huggingface=False, hf_genre_filter=None, resume_checkpoint=None):
     """VAE model training with beta-VAE and consistency loss for better music generation
     
     Args:
@@ -313,11 +313,44 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     # Training loop setup
     os.makedirs("output/trained_models", exist_ok=True)
     all_metrics = []
+    start_epoch = 0
+    best_loss_so_far = float('inf')
+
+    # Optional resume from checkpoint
+    if resume_checkpoint:
+        resume_path = resume_checkpoint
+        if resume_checkpoint == "latest":
+            resume_path = "output/trained_models/vae_latest.pt"
+        if os.path.exists(resume_path):
+            ckpt = torch.load(resume_path, map_location=device)
+            if isinstance(ckpt, dict) and 'model_state_dict' in ckpt:
+                model.load_state_dict(ckpt['model_state_dict'])
+                if 'optimizer_state_dict' in ckpt:
+                    optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+                if 'scheduler_state_dict' in ckpt:
+                    try:
+                        scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+                    except Exception as e:
+                        _progress_log(f"⚠️ Could not restore scheduler state: {e}")
+                if scaler is not None and 'scaler_state_dict' in ckpt and ckpt['scaler_state_dict'] is not None:
+                    try:
+                        scaler.load_state_dict(ckpt['scaler_state_dict'])
+                    except Exception as e:
+                        _progress_log(f"⚠️ Could not restore scaler state: {e}")
+                start_epoch = int(ckpt.get('epoch', -1)) + 1
+                all_metrics = ckpt.get('history', []) or []
+                best_loss_so_far = float(ckpt.get('best_loss', best_loss_so_far))
+                _progress_log(f"♻️ Resumed VAE from {resume_path} at epoch {start_epoch}")
+            else:
+                model.load_state_dict(ckpt)
+                _progress_log(f"♻️ Loaded model weights from {resume_path} (optimizer state not found)")
+        else:
+            _progress_log(f"⚠️ Resume checkpoint not found: {resume_path}. Starting fresh.")
 
     print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
     epoch_pbar = tqdm(
-        range(epochs),
+        range(start_epoch, epochs),
         desc="🎵 Epochs",
         unit="epoch",
         position=0,
@@ -358,6 +391,9 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
         # Report metrics
         _progress_log(
             f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} "
+                    if metrics['loss'] < best_loss_so_far:
+                        best_loss_so_far = metrics['loss']
+
             f"(Recon={metrics['recon_loss']:.4f}, KL={metrics['kl_loss']:.4f}, "
             f"Consistency={metrics['consistency_loss']:.4f}), "
             f"LR={scheduler.get_last_lr()[0]:.6f}"
@@ -378,8 +414,30 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
                 )
 
         # Save checkpoints
+        checkpoint_payload = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'scaler_state_dict': scaler.state_dict() if scaler is not None else None,
+            'best_loss': best_loss_so_far,
+            'history': all_metrics,
+            'hyperparams': {
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'learning_rate': learning_rate,
+                'latent_dim': latent_dim,
+                'beta': beta,
+                'consistency_weight': consistency_weight,
+                'grad_accum_steps': grad_accum_steps,
+                'track_type': track_type,
+            },
+        }
+        torch.save(checkpoint_payload, "output/trained_models/vae_latest.pt")
+        if metrics['loss'] <= best_loss_so_far:
+            torch.save(checkpoint_payload, "output/trained_models/vae_best.pt")
         if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            torch.save(model.state_dict(), f"output/trained_models/vae_ep{epoch+1}.pt")
+            torch.save(checkpoint_payload, f"output/trained_models/vae_ep{epoch+1}.pt")
 
     # Save final model
     torch.save(model.state_dict(), "output/trained_models/trained_vae.pt")
@@ -420,6 +478,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--hf", action="store_true", help="Stream from HuggingFace instead of local data")
     p.add_argument("--genre", nargs="*", default=None, help="Genre filter for HF dataset, e.g. --genre pop rock")
+    p.add_argument("--resume", nargs="?", const="latest", default=None,
+                   help="Resume from checkpoint path, or use --resume for latest")
     args = p.parse_args()
     train_vae_model(
         epochs=100,
@@ -433,4 +493,5 @@ if __name__ == "__main__":
         track_type='full',
         use_huggingface=args.hf,
         hf_genre_filter=args.genre,
+        resume_checkpoint=args.resume,
     )
