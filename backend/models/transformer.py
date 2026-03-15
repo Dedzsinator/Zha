@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional
 
 class PositionalEncoding(nn.Module):
     """
@@ -242,7 +243,7 @@ class TransformerModel(nn.Module):
             # Add conditioning if enabled
             if self.enable_conditioning and (chord_conditioning is not None or tempo_conditioning is not None):
                 conditioning_emb = self._get_conditioning_embedding(x_emb.size(0), x_emb.size(1), 
-                                                                  chord_conditioning, tempo_conditioning, x.device)
+                                                                  chord_conditioning, tempo_conditioning)
                 x_emb = x_emb + conditioning_emb
             
             x_emb = self.pos_encoder(x_emb)
@@ -317,7 +318,13 @@ class TransformerModel(nn.Module):
                     melody_out = melody_out.squeeze(1)
                 return melody_out
 
-    def _get_conditioning_embedding(self, batch_size, seq_len, chord_conditioning, tempo_conditioning, device):
+    def _get_conditioning_embedding(
+        self,
+        batch_size: int,
+        seq_len: int,
+        chord_conditioning: Optional[torch.Tensor],
+        tempo_conditioning: Optional[torch.Tensor],
+    ) -> torch.Tensor:
         """
         Create conditioning embeddings from chord and tempo information.
         
@@ -326,11 +333,17 @@ class TransformerModel(nn.Module):
             seq_len: Sequence length
             chord_conditioning: Chord conditioning tensor [batch_size, seq_len, chord_dim] or None
             tempo_conditioning: Tempo conditioning tensor [batch_size, seq_len, 1] or None
-            device: Target device
             
         Returns:
             Conditioning embedding tensor [batch_size, seq_len, embed_dim]
         """
+        if chord_conditioning is not None:
+            device = chord_conditioning.device
+        elif tempo_conditioning is not None:
+            device = tempo_conditioning.device
+        else:
+            device = self.embedding.weight.device
+
         conditioning_parts = []
         
         if chord_conditioning is not None:

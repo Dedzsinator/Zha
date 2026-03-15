@@ -115,6 +115,88 @@ _QUALITY_INTERVALS = {
 }
 _NAME_TO_PC = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
 
+
+def _note_name_to_pc(name: str) -> int:
+    """Convert note name (e.g. C#, Bb) to pitch class 0..11."""
+    if not name:
+        return 0
+    pc = _NAME_TO_PC.get(name[0].upper(), 0)
+    if len(name) > 1:
+        pc += name[1:].count('#') - name[1:].count('b')
+    return pc % 12
+
+
+def _scale_pcs_from_key(key_str: str):
+    """Return diatonic pitch classes from key string."""
+    tokens = str(key_str or "").split()
+    if not tokens:
+        return {0, 2, 4, 5, 7, 9, 11}
+
+    root_pc = _note_name_to_pc(tokens[0])
+    is_minor = len(tokens) > 1 and 'minor' in tokens[1].lower()
+    intervals = [0, 2, 3, 5, 7, 8, 10] if is_minor else [0, 2, 4, 5, 7, 9, 11]
+    return {(root_pc + i) % 12 for i in intervals}
+
+
+def _nearest_note(candidates, target):
+    """Pick the nearest MIDI note to target from a non-empty list."""
+    return min(candidates, key=lambda n: abs(n - target))
+
+
+def _build_note_sequence_from_chords(all_chords, key_str="C major"):
+    """Build a richer melodic note sequence from chord metadata with simple voice-leading."""
+    if not isinstance(all_chords, list) or len(all_chords) == 0:
+        return []
+
+    scale_pcs = _scale_pcs_from_key(key_str)
+    note_seq = []
+    prev_note = 60
+
+    for idx, chord in enumerate(all_chords):
+        if not isinstance(chord, dict):
+            continue
+
+        chord_notes = _chord_to_notes(chord, base_octaves=(3, 4, 5, 6))
+        if not chord_notes:
+            continue
+
+        melodic_pool = [n for n in chord_notes if 48 <= n <= 84] or chord_notes
+        anchor = _nearest_note(melodic_pool, prev_note)
+
+        below = [n for n in melodic_pool if n <= anchor]
+        above = [n for n in melodic_pool if n >= anchor]
+        lower = max(below) if below else anchor
+        upper = min(above) if above else anchor
+
+        # Determine next harmonic target for simple approach tone.
+        next_root_pc = None
+        if idx + 1 < len(all_chords) and isinstance(all_chords[idx + 1], dict):
+            next_root = all_chords[idx + 1].get('root') or all_chords[idx + 1].get('Root') or ''
+            next_root_pc = _note_name_to_pc(next_root)
+
+        approach = anchor
+        if next_root_pc is not None:
+            candidates = [
+                n for n in range(max(36, anchor - 7), min(96, anchor + 8))
+                if (n % 12) == next_root_pc or (n % 12) in scale_pcs
+            ]
+            if candidates:
+                approach = _nearest_note(candidates, anchor + (1 if next_root_pc >= (anchor % 12) else -1) * 2)
+
+        bass_note = min(chord_notes, key=lambda n: abs(n - 43))
+
+        phrase = [anchor, upper, approach, lower, bass_note, anchor]
+        for n in phrase:
+            n = int(min(127, max(0, n)))
+            if note_seq and note_seq[-1] == n:
+                # avoid exact consecutive duplicates to create more transition diversity
+                n = min(127, max(0, n + (12 if n <= 72 else -12)))
+            note_seq.append(n)
+
+        prev_note = note_seq[-1]
+
+    return note_seq
+
 def _chord_to_notes(chord: dict, base_octaves=(4, 5)) -> list:
     """Convert a MidiCaps chord dict to a richer list of MIDI note numbers."""
     root_str = chord.get('root') or chord.get('Root') or 'C'
@@ -189,13 +271,13 @@ def _load_sequences_from_hf():
         note_seq = []
         chord_seq = []
 
-        # Build a note sequence by expanding each chord into its pitches
-        for chord in (all_chords if isinstance(all_chords, list) else []):
-            if not isinstance(chord, dict):
-                continue
-            notes = _chord_to_notes(chord)
-            note_seq.extend(notes)
-            chord_seq.append(tuple(sorted(notes)))
+        # Build a richer note sequence from chord progression metadata
+        if isinstance(all_chords, list) and all_chords:
+            note_seq = _build_note_sequence_from_chords(all_chords, key_str=str(row.get("key") or "C major"))
+            for chord in all_chords:
+                if isinstance(chord, dict):
+                    notes = _chord_to_notes(chord)
+                    chord_seq.append(tuple(sorted(notes)))
 
         # Fallback: synthesise a scale from key metadata when no chord data
         if len(note_seq) < 4:
