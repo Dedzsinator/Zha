@@ -133,6 +133,26 @@ class MarkovChain:
         self.gamma = None  # State posterior probabilities
         self.xi = None     # Transition posterior probabilities
         self.log_likelihood = None  # Model likelihood
+
+        # Feature scaling stats used for HMM train/inference consistency
+        self.hmm_feature_mean = None
+        self.hmm_feature_std = None
+
+    def _prepare_hmm_observations(self, observations):
+        """Prepare and normalize HMM observations using training-time stats."""
+        obs_array = np.array(observations)
+        if obs_array.ndim == 1:
+            obs_array = obs_array.reshape(-1, 1)
+        obs_array = obs_array.astype(np.float64, copy=False)
+
+        if self.hmm_feature_mean is not None and self.hmm_feature_std is not None:
+            try:
+                if obs_array.shape[1] == self.hmm_feature_mean.shape[1]:
+                    obs_array = (obs_array - self.hmm_feature_mean) / self.hmm_feature_std
+            except Exception as e:
+                logger.debug(f"Skipping HMM normalization for observations: {e}")
+
+        return obs_array
         
     def forward_algorithm(self, observations):
         """
@@ -258,12 +278,16 @@ class MarkovChain:
             
         try:
             # Ensure observations are in correct format
-            obs_array = np.array(observations).reshape(-1, 1) if np.array(observations).ndim == 1 else np.array(observations)
+            obs_array = self._prepare_hmm_observations(observations)
             
             # Use hmmlearn's decode method which implements Viterbi
             log_prob, state_sequence = self.hmm_model.decode(obs_array, algorithm="viterbi")
-            
-            logger.info(f"Viterbi algorithm completed. Log probability: {log_prob:.4f}")
+
+            per_step_log_prob = log_prob / max(len(obs_array), 1)
+            logger.info(
+                f"Viterbi algorithm completed. Log probability: {log_prob:.4f} "
+                f"(per-step: {per_step_log_prob:.4f}, steps: {len(obs_array)})"
+            )
             
             # Store for analysis
             self.state_history = list(state_sequence)
@@ -529,7 +553,7 @@ class MarkovChain:
                 return 0.5
                 
             # Use state probability as confidence measure
-            obs_array = np.array(features[-1]).reshape(1, -1)
+            obs_array = self._prepare_hmm_observations([features[-1]])
             log_prob = self.hmm_model.score(obs_array)
             
             # Convert log probability to confidence score (0-1)
@@ -573,6 +597,8 @@ class MarkovChain:
             feature_mean = features_array.mean(axis=0, keepdims=True)
             feature_std = features_array.std(axis=0, keepdims=True)
             feature_std[feature_std < 1e-6] = 1.0
+            self.hmm_feature_mean = feature_mean
+            self.hmm_feature_std = feature_std
             features_array = (features_array - feature_mean) / feature_std
             
             # GPU-accelerated clustering if available
@@ -1459,6 +1485,8 @@ class MarkovChain:
             'n_hidden_states': self.n_hidden_states,
             'musical_features': self.musical_features,
             'hmm_state': hmm_state,
+            'hmm_feature_mean': self.hmm_feature_mean,
+            'hmm_feature_std': self.hmm_feature_std,
         }
         
         np.save(filepath, data_to_save, allow_pickle=True)
@@ -1476,6 +1504,8 @@ class MarkovChain:
             self.interval_transitions = data.get('interval_transitions', {})
             self.order = data.get('order', 1)
             self.n_hidden_states = data.get('n_hidden_states', self.n_hidden_states)
+            self.hmm_feature_mean = data.get('hmm_feature_mean', None)
+            self.hmm_feature_std = data.get('hmm_feature_std', None)
             
             # Load musical features with proper defaults
             loaded_features = data.get('musical_features', {})

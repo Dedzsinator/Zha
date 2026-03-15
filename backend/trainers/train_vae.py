@@ -388,12 +388,12 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
                 'kl': f"{metrics['kl_loss']:.4f}",
             })
 
+        if metrics['loss'] < best_loss_so_far:
+            best_loss_so_far = metrics['loss']
+
         # Report metrics
         _progress_log(
             f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} "
-                    if metrics['loss'] < best_loss_so_far:
-                        best_loss_so_far = metrics['loss']
-
             f"(Recon={metrics['recon_loss']:.4f}, KL={metrics['kl_loss']:.4f}, "
             f"Consistency={metrics['consistency_loss']:.4f}), "
             f"LR={scheduler.get_last_lr()[0]:.6f}"

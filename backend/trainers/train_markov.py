@@ -88,7 +88,11 @@ def demonstrate_hmm_algorithms(model, sequences):
         logger.info("🔄 Running Viterbi Algorithm...")
         state_sequence, log_prob = model.viterbi_algorithm(features)
         if state_sequence is not None:
-            logger.info(f"✅ Viterbi Algorithm - Log Probability: {log_prob:.4f}")
+            per_step_log_prob = log_prob / max(len(features), 1)
+            logger.info(
+                f"✅ Viterbi Algorithm - Log Probability: {log_prob:.4f} "
+                f"(per-step: {per_step_log_prob:.4f}, steps: {len(features)})"
+            )
             logger.info(f"🎯 Optimal state sequence (first 10): {state_sequence[:10]}...")
         else:
             logger.warning("⚠️ Viterbi Algorithm failed.")
