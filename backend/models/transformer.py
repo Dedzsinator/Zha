@@ -190,14 +190,14 @@ class TransformerModel(nn.Module):
             self.output_projection = nn.Linear(embed_dim, input_dim)
         
         # Initialize memory structures
-        self.memory = None
+        self.memory = torch.jit.Attribute(None, Optional[torch.Tensor])
         self.memory_length = 0
         self.section_memories = {}
         
         # Multi-track memory (if enabled)
         if enable_multitrack:
-            self.bass_memory = None
-            self.drum_memory = None
+            self.bass_memory = torch.jit.Attribute(None, Optional[torch.Tensor])
+            self.drum_memory = torch.jit.Attribute(None, Optional[torch.Tensor])
         
         # Initialize mask for auto-regressive generation
         self._generate_square_subsequent_mask = self._generate_mask

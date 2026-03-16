@@ -5,6 +5,7 @@ Master script to generate real inference-based capability metrics.
 
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 def run_script(script_name):
@@ -14,10 +15,21 @@ def run_script(script_name):
     print('='*70)
     
     try:
+        project_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            str(project_root)
+            if not existing_pythonpath
+            else f"{project_root}:{existing_pythonpath}"
+        )
+
         result = subprocess.run(
             [sys.executable, script_name],
             check=True,
-            capture_output=False
+            capture_output=False,
+            cwd=str(project_root),
+            env=env,
         )
         print(f"✅ {script_name} completed successfully")
         return True
