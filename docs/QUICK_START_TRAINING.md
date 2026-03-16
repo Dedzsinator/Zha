@@ -1,4 +1,4 @@
-# 🚀 Quick Start: Markov Chain Training
+# Quick Start: Markov Chain Training
 
 ## Basic Usage
 
@@ -8,16 +8,16 @@ python backend/trainers/train_markov.py
 
 ## New Features
 
-### ⏭️ Skip Processing (Press 's')
+### Skip Processing (Press 's')
 
 While MIDI files are being processed, press **'s'** to skip the rest and start training immediately:
 
 ```
-🎵 Processing 5000 MIDI files...
-📦 Processing batch 5/50...
+ Processing 5000 MIDI files...
+ Processing batch 5/50...
 [Press 's']
-⏭️  Skip requested! Stopping after current batch...
-🧠 Training ENHANCED Markov model with HMM...
+Skip requested! Stopping after current batch...
+ Training ENHANCED Markov model with HMM...
 ```
 
 **Use cases:**
@@ -25,14 +25,14 @@ While MIDI files are being processed, press **'s'** to skip the rest and start t
 - Resume training after interruption
 - Preview results before full processing
 
-### 💾 Processed File Cache
+### Processed File Cache
 
 Files are automatically cached after processing. On subsequent runs:
 
 ```
-✅ Found 5000 MIDI files
-⏭️  Skipping 4500 already processed files
-🎵 Processing 500 new/modified files
+Found 5000 MIDI files
+Skipping 4500 already processed files
+ Processing 500 new/modified files
 ```
 
 **Cache location:** `output/trained_models/.processed_cache.json`
@@ -42,7 +42,7 @@ Files are automatically cached after processing. On subsequent runs:
 rm output/trained_models/.processed_cache.json
 ```
 
-### ⚡ Performance Boost
+### Performance Boost
 
 - **2x faster batches**: 100 files/batch (GPU) or 200 files/batch (CPU)
 - **2-3x faster reruns**: Skip already processed files

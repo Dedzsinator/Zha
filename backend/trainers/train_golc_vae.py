@@ -222,7 +222,7 @@ class GOLC_VAE_Trainer:
         
         epoch_pbar = tqdm(
             range(start_epoch, num_epochs),
-            desc="🎵 Epochs",
+            desc=" Epochs",
             unit="epoch",
             position=0,
             disable=not self.use_tqdm,
@@ -289,7 +289,7 @@ class GOLC_VAE_Trainer:
                 self.best_val_loss = val_losses['total']
                 self.patience_counter = 0
                 self.save_checkpoint(epoch, is_best=True)
-                self._progress_log(f"  ✓ New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
+                self._progress_log(f"   New best model saved! (Val Loss: {self.best_val_loss:.4f}, LR: {current_lr:.6f})")
             else:
                 self.patience_counter += 1
                 
@@ -350,7 +350,7 @@ class GOLC_VAE_Trainer:
         self.best_val_loss = checkpoint.get('best_val_loss', self.best_val_loss)
         self.history = checkpoint.get('history', self.history)
         start_epoch = int(checkpoint.get('epoch', -1)) + 1
-        self._progress_log(f"♻️ Resumed GOLC-VAE from {checkpoint_path} at epoch {start_epoch}")
+        self._progress_log(f" Resumed GOLC-VAE from {checkpoint_path} at epoch {start_epoch}")
         return start_epoch
     
     def save_history(self):
@@ -460,7 +460,7 @@ def main():
     
     # Load data
     if getattr(args, 'hf', False):
-        print(f"🌐 Streaming from HuggingFace (amaai-lab/MidiCaps), genre={getattr(args, 'genre', None)}")
+        print(f"Streaming from HuggingFace (amaai-lab/MidiCaps), genre={getattr(args, 'genre', None)}")
         train_loader = build_hf_dataloader(
             batch_size=args.batch_size,
             genre_filter=getattr(args, 'genre', None),
@@ -523,7 +523,7 @@ def main():
         if Path(resume_path).exists():
             start_epoch = trainer.load_checkpoint(resume_path)
         else:
-            print(f"⚠️ Resume checkpoint not found: {resume_path}. Starting fresh.")
+            print(f"Resume checkpoint not found: {resume_path}. Starting fresh.")
     
     # Train model
     trainer.train(num_epochs=args.epochs, start_epoch=start_epoch)

@@ -32,13 +32,13 @@ def run_script(script_path):
             capture_output=False,
             cwd=script_path.parent.parent  # Run from project root
         )
-        print(f"✅ {script_path.name} completed successfully")
+        print(f"{script_path.name} completed successfully")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ {script_path.name} failed with error code {e.returncode}")
+        print(f"{script_path.name} failed with error code {e.returncode}")
         return False
     except FileNotFoundError:
-        print(f"⚠️  Script not found: {script_path}")
+        print(f"Script not found: {script_path}")
         return False
 
 def main():
@@ -69,7 +69,7 @@ def main():
     print("="*80)
     print("THESIS DIAGRAM GENERATION - MASTER SCRIPT")
     print("="*80)
-    print(f"\n✅ ALL SCRIPTS NOW COMPLETE - NO TRAINING REQUIRED!")
+    print(f"\nALL SCRIPTS NOW COMPLETE - NO TRAINING REQUIRED!")
     print(f"\nWill run {len(diagram_scripts)} diagram generation scripts:\n")
     for i, script in enumerate(diagram_scripts, 1):
         script_name = Path(script).stem.replace('generate_', '').replace('_diagrams', '')
@@ -84,9 +84,9 @@ def main():
         import seaborn
         import numpy
         import torch
-        print("✅ All Python packages available")
+        print("All Python packages available")
     except ImportError as e:
-        print(f"❌ Missing package: {e}")
+        print(f"Missing package: {e}")
         print("Install with: pip install matplotlib seaborn numpy torch graphviz pillow music21")
         return 1
     
@@ -107,11 +107,11 @@ def main():
     print(f"\nCompleted: {successful}/{total} scripts")
     print("\nResults:")
     for script, success in results.items():
-        status = "✅ SUCCESS" if success else "❌ FAILED"
+        status = "SUCCESS" if success else "FAILED"
         print(f"  {status}: {script}")
     
-    print(f"\n📁 Output directory: output/figures/thesis/")
-    print(f"📝 Copy figures to: docs/thesis/figures/")
+    print(f"\n Output directory: output/figures/thesis/")
+    print(f" Copy figures to: docs/thesis/figures/")
     
     return 0 if successful == total else 1
 

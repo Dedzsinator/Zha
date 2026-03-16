@@ -34,7 +34,7 @@ def save_figure(fig, filename):
     """Save figure as PNG"""
     png_path = OUTPUT_DIR / f"{filename}.png"
     fig.savefig(png_path, dpi=300, bbox_inches='tight')
-    print(f"✅ Saved: {png_path.name}")
+    print(f" Saved: {png_path.name}")
     plt.close(fig)
 
 
@@ -325,7 +325,7 @@ def main():
     print("="*80)
     print("GENERATING MULTI-TRACK DIAGRAMS")
     print("="*80)
-    print(f"📁 Output directory: {OUTPUT_DIR}")
+    print(f" Output directory: {OUTPUT_DIR}")
     print("\nNote: Using simulated data (no trained model required)")
     print("-"*80)
     
@@ -336,20 +336,20 @@ def main():
         generate_cross_attention_impact()   # Bonus diagram
         
         print("\n" + "="*80)
-        print("✅ SUCCESS: Generated 4 Multi-track diagrams")
+        print(" SUCCESS: Generated 4 Multi-track diagrams")
         print("="*80)
-        print(f"\n📁 Files saved to: {OUTPUT_DIR.absolute()}")
+        print(f"\n Files saved to: {OUTPUT_DIR.absolute()}")
         print("\nGenerated diagrams:")
         print("  1. harmonic_coherence.png - Track coordination over time")
         print("  2. drum_pattern_consistency.png - Consistent vs inconsistent drums")
         print("  3. multitrack_generation_example.png - 3-track visualization")
         print("  4. cross_attention_impact.png - Cross-attention effectiveness")
-        print("\n📋 Next step: cp output/figures/thesis/multitrack/*.png docs/thesis/figures/")
+        print("\n Next step: cp output/figures/thesis/multitrack/*.png docs/thesis/figures/")
         
         return 0
         
     except Exception as e:
-        print(f"\n❌ Error generating diagrams: {e}")
+        print(f"\n Error generating diagrams: {e}")
         import traceback
         traceback.print_exc()
         return 1

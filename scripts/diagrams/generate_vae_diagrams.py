@@ -27,7 +27,7 @@ sns.set_style("whitegrid")
 def save_figure(fig, filename):
     png_path = OUTPUT_DIR / f"{filename}.png"
     fig.savefig(png_path, dpi=300, bbox_inches='tight')
-    print(f"✅ Saved: {png_path.name}")
+    print(f" Saved: {png_path.name}")
     plt.close(fig)
 
 
@@ -165,7 +165,7 @@ def generate_training_curves():
             kl_div = np.array(data['kl_divergence'])
             recon_loss = np.array(data['reconstruction_loss'])
             beta_schedule = np.array(data.get('beta', np.minimum(x / 20, 1.0)))
-            print(f"✅ Loaded REAL training data from metrics ({epochs} epochs)")
+            print(f" Loaded REAL training data from metrics ({epochs} epochs)")
         else:
             # Fallback to training_history.json
             history_path = Path("output/trained_models/training_history.json")
@@ -179,10 +179,10 @@ def generate_training_curves():
             kl_div = np.array([ep['kl'] for ep in train_data])
             recon_loss = np.array([ep['recon'] for ep in train_data])
             beta_schedule = np.minimum(x / 20, 1.0)  # Estimate beta schedule
-            print(f"✅ Loaded REAL training data from history ({epochs} epochs)")
+            print(f" Loaded REAL training data from history ({epochs} epochs)")
             
     except Exception as e:
-        print(f"⚠️  Could not load real data ({e}), using simulated data")
+        print(f"  Could not load real data ({e}), using simulated data")
         # Fallback to simulated data
         epochs = 100
         x = np.arange(1, epochs + 1)
@@ -208,12 +208,12 @@ def generate_latent_kl_boxplot():
             # Extract real KL values
             kl_per_dim = np.array(data['kl_per_dimension'])
             latent_dim = len(kl_per_dim)
-            print(f"✅ Loaded REAL KL divergence data ({latent_dim} dimensions)")
+            print(f" Loaded REAL KL divergence data ({latent_dim} dimensions)")
         else:
             raise FileNotFoundError("KL metrics not found")
             
     except Exception as e:
-        print(f"⚠️  Could not load real KL data ({e}), using simulated data")
+        print(f"  Could not load real KL data ({e}), using simulated data")
         # Fallback to simulated data
         latent_dim = 64
         
@@ -291,12 +291,12 @@ def generate_temperature_ablation():
             import pandas as pd
             df = pd.read_csv(temp_path)
             temperatures = df['temperature'].unique()
-            print(f"✅ Loaded REAL temperature ablation data ({len(temperatures)} temperatures)")
+            print(f" Loaded REAL temperature ablation data ({len(temperatures)} temperatures)")
             use_real_data = True
         else:
             raise FileNotFoundError("Temperature metrics not found")
     except Exception as e:
-        print(f"⚠️  Could not load real temperature data ({e}), using simulated data")
+        print(f"  Could not load real temperature data ({e}), using simulated data")
         temperatures = [0.5, 0.8, 1.0, 1.2, 1.5]
         use_real_data = False
     
@@ -385,7 +385,7 @@ def main():
     generate_temperature_ablation()
     
     print("\n" + "="*80)
-    print(f"✅ VAE diagrams saved to: {OUTPUT_DIR}")
+    print(f" VAE diagrams saved to: {OUTPUT_DIR}")
     print("="*80)
     
     return 0

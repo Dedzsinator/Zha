@@ -20,11 +20,11 @@ try:
     test_array = cp.array([1, 2, 3])
     _ = test_array + 1  # Simple operation to verify it works
     HAS_CUPY = True
-    logger.info("✅ CuPy detected and working - GPU acceleration enabled")
+    logger.info("CuPy detected and working - GPU acceleration enabled")
 except ImportError:
-    logger.info("ℹ️ CuPy not found - using PyTorch CUDA/CPU backend")
+    logger.info("ℹ CuPy not found - using PyTorch CUDA/CPU backend")
 except Exception as e:
-    logger.info(f"ℹ️ CuPy found but not working ({e}) - using PyTorch CUDA/CPU backend")
+    logger.info(f"ℹ CuPy found but not working ({e}) - using PyTorch CUDA/CPU backend")
     HAS_CUPY = False
 
 class CUDAOptimizer:
@@ -32,7 +32,7 @@ class CUDAOptimizer:
     
     def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        logger.info(f"🔥 CUDA Optimizer initialized on device: {self.device}")
+        logger.info(f" CUDA Optimizer initialized on device: {self.device}")
     
     def to_gpu(self, array):
         """Convert numpy array to torch tensor on GPU"""
@@ -84,11 +84,11 @@ class MarkovChain:
         if self.use_gpu:
             self.transitions = self.gpu_opt.zeros_like_gpu((128, 128))
             self.higher_order_transitions = {}  # Will store torch tensors
-            logger.info(f"✅ Using GPU ({self.device}) for transition matrices")
+            logger.info(f"Using GPU ({self.device}) for transition matrices")
         else:
             self.transitions = np.zeros((128, 128), dtype=np.float32)
             self.higher_order_transitions = {}
-            logger.info("⚠️ Using CPU for transition matrices")
+            logger.info("Using CPU for transition matrices")
             
         # Sparse interval transitions for memory efficiency
         self.interval_transitions = {}
@@ -787,9 +787,9 @@ class MarkovChain:
         if use_gpu_for_this:
             try:
                 gpu_transitions = self.gpu_opt.zeros_like_gpu((128, 128))
-                logger.info("🚀 GPU arrays initialized successfully")
+                logger.info(" GPU arrays initialized successfully")
             except Exception as e:
-                logger.warning(f"⚠️ GPU array initialization failed: {e}, falling back to CPU")
+                logger.warning(f"GPU array initialization failed: {e}, falling back to CPU")
                 use_gpu_for_this = False
                 gpu_transitions = None
         
@@ -853,11 +853,11 @@ class MarkovChain:
         # Normalize transition matrix with GPU acceleration if possible
         try:
             if use_gpu_for_this and isinstance(gpu_transitions, torch.Tensor):
-                logger.info("🚀 Normalizing matrices on GPU...")
+                logger.info(" Normalizing matrices on GPU...")
                 gpu_transitions = self.gpu_opt.normalize_gpu(gpu_transitions, axis=1)
                 self.transitions = self.gpu_opt.to_cpu(gpu_transitions)
             else:
-                logger.info("💻 Normalizing matrices on CPU...")
+                logger.info(" Normalizing matrices on CPU...")
                 # Handle both PyTorch tensors and NumPy arrays
                 if isinstance(gpu_transitions, torch.Tensor):
                     # PyTorch tensor normalization
@@ -889,7 +889,7 @@ class MarkovChain:
                     note: count/total for note, count in transitions.items()
                 }
                 
-        logger.info(f"✅ Enhanced note transitions trained on {total_processed} sequences")
+        logger.info(f"Enhanced note transitions trained on {total_processed} sequences")
         
     def _train_enhanced_interval_transitions(self, midi_sequences, progress_callback=None):
         """Enhanced interval transition training with GPU support"""

@@ -37,7 +37,7 @@ def save_figure(fig, filename):
     """Save figure as PNG"""
     png_path = OUTPUT_DIR / f"{filename}.png"
     fig.savefig(png_path, dpi=300, bbox_inches='tight')
-    print(f"✅ Saved: {png_path.name}")
+    print(f" Saved: {png_path.name}")
     plt.close(fig)
 
 
@@ -250,14 +250,14 @@ def generate_training_curves():
                 train_loss = np.array([ep['train_loss'] for ep in epochs_data])
                 val_loss = np.array([ep['val_loss'] for ep in epochs_data])
                 epochs = len(x)
-                print(f"✅ Loaded REAL transformer training data ({epochs} checkpoints)")
+                print(f" Loaded REAL transformer training data ({epochs} checkpoints)")
             else:
                 raise ValueError("No valid checkpoint data")
         else:
             raise FileNotFoundError("Not enough transformer checkpoints")
             
     except Exception as e:
-        print(f"⚠️  Could not load real transformer data ({e}), using simulated data")
+        print(f"  Could not load real transformer data ({e}), using simulated data")
         # Fallback to simulated data
         epochs = 100
         x = np.arange(epochs)
@@ -436,7 +436,7 @@ def main():
     print("="*80)
     print("GENERATING TRANSFORMER DIAGRAMS")
     print("="*80)
-    print(f"📁 Output directory: {OUTPUT_DIR}")
+    print(f" Output directory: {OUTPUT_DIR}")
     print("\nNote: Using simulated data (no trained model required)")
     print("-"*80)
     
@@ -450,9 +450,9 @@ def main():
         generate_memory_mechanism_viz()      # Bonus diagram
         
         print("\n" + "="*80)
-        print("✅ SUCCESS: Generated 7 Transformer diagrams")
+        print(" SUCCESS: Generated 7 Transformer diagrams")
         print("="*80)
-        print(f"\n📁 Files saved to: {OUTPUT_DIR.absolute()}")
+        print(f"\n Files saved to: {OUTPUT_DIR.absolute()}")
         print("\nGenerated diagrams:")
         print("  1. sampling_strategies.png - Greedy/Nucleus/Temperature comparison")
         print("  2. attention_heatmaps.png - 8-head attention visualization")
@@ -461,12 +461,12 @@ def main():
         print("  5. perplexity_analysis.png - Perplexity vs sequence length")
         print("  6. quality_metrics.png - Model comparison metrics")
         print("  7. memory_mechanism.png - Memory buffer visualization")
-        print("\n📋 Next step: cp output/figures/thesis/transformer/*.png docs/thesis/figures/")
+        print("\n Next step: cp output/figures/thesis/transformer/*.png docs/thesis/figures/")
         
         return 0
         
     except Exception as e:
-        print(f"\n❌ Error generating diagrams: {e}")
+        print(f"\n Error generating diagrams: {e}")
         import traceback
         traceback.print_exc()
         return 1

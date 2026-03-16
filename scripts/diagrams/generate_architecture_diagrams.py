@@ -40,7 +40,7 @@ def save_figure(fig, filename, dpi=300):
     output_path = OUTPUT_DIR / filename
     fig.savefig(output_path, dpi=dpi, bbox_inches='tight', 
                 facecolor='white', edgecolor='none')
-    print(f"✅ Saved: {output_path}")
+    print(f" Saved: {output_path}")
     plt.close(fig)
 
 
@@ -204,12 +204,12 @@ def generate_transformer_architecture():
             num_layers = config.get('num_layers', 8)
             dim_feedforward = config.get('dim_feedforward', 2048)
             
-            print(f"✅ Loaded REAL transformer config: {num_layers} layers, {num_heads} heads, dim={embed_dim}")
+            print(f" Loaded REAL transformer config: {num_layers} layers, {num_heads} heads, dim={embed_dim}")
         else:
             raise FileNotFoundError("Config not found")
             
     except Exception as e:
-        print(f"⚠️  Could not load real config ({e}), using default values")
+        print(f"  Could not load real config ({e}), using default values")
         embed_dim = 512
         num_heads = 8
         num_layers = 8
@@ -609,7 +609,7 @@ def main():
     generate_structured_generation_flowchart()
     
     print("\n" + "="*80)
-    print(f"✅ All architecture diagrams saved to: {OUTPUT_DIR}")
+    print(f" All architecture diagrams saved to: {OUTPUT_DIR}")
     print("="*80)
     print("\nGenerated files:")
     for file in sorted(OUTPUT_DIR.glob("*.png")):

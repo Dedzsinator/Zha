@@ -110,7 +110,7 @@ def generate_stationary_distribution(model, output_path):
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"✅ Saved to: {output_path}")
+    print(f"Saved to: {output_path}")
     
     return stationary
 
@@ -204,8 +204,8 @@ def generate_entropy_comparison(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f"Saved table to: {csv_path}")
+    print(f"Saved plot to: {output_path}")
     
     return df
 
@@ -217,7 +217,7 @@ def generate_hmm_interpretation(model, output_path):
     print("\n=== Generating HMM Hidden State Interpretation ===")
     
     if model.hmm_model is None:
-        print("⚠️ No HMM model found, creating dummy interpretation")
+        print("No HMM model found, creating dummy interpretation")
         n_states = 16
         means = np.random.randn(n_states, 7)  # 7D feature vectors
     else:
@@ -306,8 +306,8 @@ def generate_hmm_interpretation(model, output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f"Saved table to: {csv_path}")
+    print(f"Saved plot to: {output_path}")
     
     return df
 
@@ -406,8 +406,8 @@ def benchmark_gpu(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f"Saved table to: {csv_path}")
+    print(f"Saved plot to: {output_path}")
     
     return df
 
@@ -419,7 +419,7 @@ def profile_memory(output_path):
     print("\n=== Profiling GPU Memory Usage ===")
     
     if not torch.cuda.is_available():
-        print("⚠️ CUDA not available, skipping memory profiling")
+        print("CUDA not available, skipping memory profiling")
         return None
     
     memory_allocated = []
@@ -487,8 +487,8 @@ Max Delta: {max(abs(deltas)):.2f} MB
     csv_path = output_path.with_suffix('.csv')
     df.to_csv(csv_path, index=False)
     
-    print(f"✅ Saved data to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f"Saved data to: {csv_path}")
+    print(f"Saved plot to: {output_path}")
     
     return df
 
@@ -547,8 +547,8 @@ def main():
     )
     
     print("\n" + "="*60)
-    print("✅ ALL MARKOV METRICS GENERATED SUCCESSFULLY")
-    print(f"📁 Output directory: {OUTPUT_DIR.absolute()}")
+    print("ALL MARKOV METRICS GENERATED SUCCESSFULLY")
+    print(f" Output directory: {OUTPUT_DIR.absolute()}")
     print("="*60)
 
 if __name__ == "__main__":

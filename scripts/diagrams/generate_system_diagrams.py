@@ -35,7 +35,7 @@ def save_figure(fig, filename):
     """Save figure as PNG"""
     png_path = OUTPUT_DIR / f"{filename}.png"
     fig.savefig(png_path, dpi=300, bbox_inches='tight')
-    print(f"✅ Saved: {png_path.name}")
+    print(f" Saved: {png_path.name}")
     plt.close(fig)
 
 
@@ -377,7 +377,7 @@ def main():
     print("="*80)
     print("GENERATING SYSTEM INTEGRATION DIAGRAMS")
     print("="*80)
-    print(f"📁 Output directory: {OUTPUT_DIR}")
+    print(f" Output directory: {OUTPUT_DIR}")
     print("\nNote: Using simulated evaluation data")
     print("-"*80)
     
@@ -387,19 +387,19 @@ def main():
         generate_system_performance_metrics()     # Bonus diagram
         
         print("\n" + "="*80)
-        print("✅ SUCCESS: Generated 3 System Integration diagrams")
+        print(" SUCCESS: Generated 3 System Integration diagrams")
         print("="*80)
-        print(f"\n📁 Files saved to: {OUTPUT_DIR.absolute()}")
+        print(f"\n Files saved to: {OUTPUT_DIR.absolute()}")
         print("\nGenerated diagrams:")
         print("  1. musical_notation_examples.png - Staff notation of outputs")
         print("  2. user_preference_analysis.png - A/B testing results")
         print("  3. system_performance_metrics.png - Speed/quality/memory")
-        print("\n📋 Next step: cp output/figures/thesis/system/*.png docs/thesis/figures/")
+        print("\n Next step: cp output/figures/thesis/system/*.png docs/thesis/figures/")
         
         return 0
         
     except Exception as e:
-        print(f"\n❌ Error generating diagrams: {e}")
+        print(f"\n Error generating diagrams: {e}")
         import traceback
         traceback.print_exc()
         return 1

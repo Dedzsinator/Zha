@@ -83,7 +83,7 @@ class VAEComparison:
         model.to(self.device)
         model.eval()
         
-        print(f"✓ Loaded baseline VAE from {checkpoint_path}")
+        print(f" Loaded baseline VAE from {checkpoint_path}")
         return model
     
     def _load_golc_vae(self, checkpoint_path: str) -> GOLC_VAE:
@@ -110,7 +110,7 @@ class VAEComparison:
         model.to(self.device)
         model.eval()
         
-        print(f"✓ Loaded GOLC-VAE from {checkpoint_path}")
+        print(f" Loaded GOLC-VAE from {checkpoint_path}")
         return model
     
     def _load_test_data(self, data_path: str) -> torch.Tensor:
@@ -122,7 +122,7 @@ class VAEComparison:
         data_tensor = torch.FloatTensor(data).to(self.device)
         data_tensor = torch.clamp(data_tensor, 0, 1)
         
-        print(f"✓ Loaded {len(data_tensor)} test samples")
+        print(f" Loaded {len(data_tensor)} test samples")
         return data_tensor
     
     def generate_samples(self, model, num_samples: int = 100, temperature: float = 0.8):
@@ -242,7 +242,7 @@ class VAEComparison:
             
             improvements[metric] = improvement
             
-            status = "✓ IMPROVED" if better else "✗ WORSE"
+            status = " IMPROVED" if better else " WORSE"
             print(f"{metric.upper():20s}: {status}")
             print(f"  Baseline: {baseline_val:.6f}")
             print(f"  GOLC:     {golc_val:.6f}")
@@ -260,7 +260,7 @@ class VAEComparison:
         with open(results_path, 'w') as f:
             json.dump(self.results, f, indent=2)
         
-        print(f"\n✓ Results saved to {results_path}")
+        print(f"\n Results saved to {results_path}")
     
     def plot_comparison(self):
         """Create comprehensive comparison visualizations"""
@@ -345,7 +345,7 @@ class VAEComparison:
         # Save plot
         plot_path = self.output_dir / 'vae_comparison.png'
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Comparison plot saved to {plot_path}")
+        print(f" Comparison plot saved to {plot_path}")
         
         plt.close()
     
@@ -393,26 +393,26 @@ class VAEComparison:
             # OLD analysis
             old_improvement = self.results['comparison']['improvements']['old']
             if old_improvement > 0:
-                f.write(f"- ✓ **Orbit Latent Distance** improved by {old_improvement:.2f}%, ")
+                f.write(f"-  **Orbit Latent Distance** improved by {old_improvement:.2f}%, ")
                 f.write("indicating better invariance to musical transformations.\n")
             else:
-                f.write(f"- ✗ **Orbit Latent Distance** degraded by {abs(old_improvement):.2f}%\n")
+                f.write(f"-  **Orbit Latent Distance** degraded by {abs(old_improvement):.2f}%\n")
             
             # KL Variance analysis
             kl_improvement = self.results['comparison']['improvements']['kl_variance']
             if kl_improvement > 0:
-                f.write(f"- ✓ **KL Variance** reduced by {kl_improvement:.2f}%, ")
+                f.write(f"-  **KL Variance** reduced by {kl_improvement:.2f}%, ")
                 f.write("suggesting less posterior collapse.\n")
             else:
-                f.write(f"- ✗ **KL Variance** increased by {abs(kl_improvement):.2f}%\n")
+                f.write(f"-  **KL Variance** increased by {abs(kl_improvement):.2f}%\n")
             
             # Pitch Entropy analysis
             pitch_improvement = self.results['comparison']['improvements']['pitch_entropy']
             if pitch_improvement > 0:
-                f.write(f"- ✓ **Pitch-Class Entropy** increased by {pitch_improvement:.2f}%, ")
+                f.write(f"-  **Pitch-Class Entropy** increased by {pitch_improvement:.2f}%, ")
                 f.write("showing more diverse tonal content.\n")
             else:
-                f.write(f"- ✗ **Pitch-Class Entropy** decreased by {abs(pitch_improvement):.2f}%\n")
+                f.write(f"-  **Pitch-Class Entropy** decreased by {abs(pitch_improvement):.2f}%\n")
             
             f.write("\n## Conclusion\n\n")
             if avg_improvement > 0:
@@ -421,7 +421,7 @@ class VAEComparison:
             else:
                 f.write("The results are mixed. Further hyperparameter tuning may be needed.\n")
         
-        print(f"✓ Report saved to {report_path}")
+        print(f" Report saved to {report_path}")
 
 
 def main():

@@ -28,12 +28,12 @@ TRANSFORMER_RESUME_ARG=""
 
 if [ -f "$OUTPUT_DIR/golc_vae_latest.pt" ]; then
     GOLC_RESUME_ARG="--resume"
-    echo "♻️  GOLC-VAE checkpoint found: will resume from latest"
+    echo "  GOLC-VAE checkpoint found: will resume from latest"
 fi
 
 if [ -f "$OUTPUT_DIR/transformer_latest.pt" ]; then
     TRANSFORMER_RESUME_ARG="--resume"
-    echo "♻️  Transformer checkpoint found: will resume from latest"
+    echo "  Transformer checkpoint found: will resume from latest"
 fi
 
 # Optional conda activation (set CONDA_ENV before sbatch if needed)
@@ -45,40 +45,40 @@ if [[ -n "${CONDA_ENV:-}" ]]; then
         source "$HOME/anaconda3/etc/profile.d/conda.sh"
         conda activate "$CONDA_ENV"
     else
-        echo "⚠️  CONDA_ENV is set, but conda.sh was not found; continuing without activation."
+        echo "WARNING: CONDA_ENV is set, but conda.sh was not found; continuing without activation."
     fi
 fi
 
 # GPU / CUDA check
 if python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
     GPU_NAME=$(python3 -c "import torch; print(torch.cuda.get_device_name(0))")
-    echo "🟢 GPU detected: $GPU_NAME"
+    echo " GPU detected: $GPU_NAME"
 else
-    echo "⚠️  WARNING: No CUDA GPU detected — training will run on CPU (very slow)."
+    echo "WARNING: No CUDA GPU detected — training will run on CPU (very slow)."
 fi
 
 # Optional --local flag skips HF and uses local preprocessed data
 USE_HF="--hf"
 if [[ "$1" == "--local" ]]; then
     USE_HF=""
-    echo "ℹ️  Using LOCAL preprocessed data"
+    echo "ℹ  Using LOCAL preprocessed data"
     if [ ! -f "$DATASET_PATH" ]; then
-        echo "🔄 Preprocessing MIDI files from $MIDI_DIR..."
+        echo "Preprocessing MIDI files from $MIDI_DIR..."
         python3 scripts/preprocess_dataset.py --midi-dir "$MIDI_DIR" --output-file "$DATASET_PATH"
     fi
 else
-    echo "🌐 Using HuggingFace dataset (amaai-lab/MidiCaps, ALL genres)"
+    echo "Using HuggingFace dataset (amaai-lab/MidiCaps, ALL genres)"
 fi
 
 echo ""
 echo "========================================================"
-echo "🚀 STARTING FULL PRODUCTION TRAINING PIPELINE"
+echo " STARTING FULL PRODUCTION TRAINING PIPELINE"
 echo "========================================================"
 
 # 1. Markov
 echo ""
 echo "--------------------------------------------------------"
-echo "1️⃣  TRAINING MARKOV CHAIN MODEL"
+echo "1⃣  TRAINING MARKOV CHAIN MODEL"
 echo "--------------------------------------------------------"
 python3 -m backend.trainers.train_markov \
     --order 4 \
@@ -91,7 +91,7 @@ python3 -m backend.trainers.train_markov \
 # 2. GOLC-VAE
 echo ""
 echo "--------------------------------------------------------"
-echo "3️⃣  TRAINING GOLC-VAE MODEL"
+echo "3⃣  TRAINING GOLC-VAE MODEL"
 echo "--------------------------------------------------------"
 python3 -m backend.trainers.train_golc_vae \
     --epochs 100 \
@@ -104,7 +104,7 @@ python3 -m backend.trainers.train_golc_vae \
 # 3. Transformer
 echo ""
 echo "--------------------------------------------------------"
-echo "4️⃣  TRAINING TRANSFORMER MODEL"
+echo "4⃣  TRAINING TRANSFORMER MODEL"
 echo "--------------------------------------------------------"
 python3 -m backend.trainers.train_transformer \
     $TRANSFORMER_RESUME_ARG \
@@ -113,7 +113,7 @@ python3 -m backend.trainers.train_transformer \
 
 echo ""
 echo "========================================================"
-echo "✅ ALL MODELS TRAINED SUCCESSFULLY!"
+echo "ALL MODELS TRAINED SUCCESSFULLY!"
 echo "   Metrics: output/metrics/"
 echo "   Weights: output/trained_models/"
 echo "   Logs:    output/logs/"

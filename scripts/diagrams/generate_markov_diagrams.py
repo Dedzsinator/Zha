@@ -39,7 +39,7 @@ def save_figure(fig, filename):
     
     fig.savefig(png_path, dpi=300, bbox_inches='tight')
     
-    print(f"✅ Saved: {png_path}")
+    print(f" Saved: {png_path}")
     plt.close(fig)
 
 
@@ -59,10 +59,10 @@ def generate_stationary_distribution():
         script_dir = Path(__file__).parent.parent.parent  # Go up to project root
         model_path = script_dir / "output" / "trained_models" / "markov.npy"
         
-        print(f"🔍 Looking for model at: {model_path}")
+        print(f" Looking for model at: {model_path}")
         
         if model_path.exists():
-            print(f"✅ Found model file!")
+            print(f" Found model file!")
             markov_model = MarkovChain()
             markov_model.load(str(model_path))
             
@@ -79,14 +79,14 @@ def generate_stationary_distribution():
                 stationary = np.abs(stationary) / np.abs(stationary).sum()
                 
                 midi_notes = np.arange(128)
-                print(f"✅ Loaded REAL Markov model stationary distribution")
+                print(f" Loaded REAL Markov model stationary distribution")
             else:
                 raise ValueError("Markov model has no transition matrix")
         else:
             raise FileNotFoundError("Markov model not found")
             
     except Exception as e:
-        print(f"⚠️  Could not load real Markov model ({e}), using simulated data")
+        print(f"  Could not load real Markov model ({e}), using simulated data")
         # Fallback to simulated distribution
         midi_notes = np.arange(128)
         
@@ -253,7 +253,7 @@ Train models first with:
 After generating metrics, copy figures to thesis:
     cp output/figures/thesis/markov/*.png docs/thesis/figures/
 """)
-    print(f"✅ Created: {note_path}")
+    print(f" Created: {note_path}")
 
 
 def main():
@@ -265,7 +265,7 @@ def main():
     # Check for trained models
     model_path = Path("output/trained_models/")
     if not model_path.exists():
-        print("\n⚠️  Warning: No trained Markov models found")
+        print("\n  Warning: No trained Markov models found")
         print(f"   Expected location: {model_path}")
         print("   Generating diagrams with simulated data...")
     
@@ -274,13 +274,13 @@ def main():
     generate_placeholder_note()
     
     print("\n" + "="*80)
-    print(f"✅ Markov diagrams saved to: {OUTPUT_DIR}")
+    print(f" Markov diagrams saved to: {OUTPUT_DIR}")
     print("="*80)
     print("\nGenerated files:")
     for file in sorted(OUTPUT_DIR.glob("*.p*")):
-        print(f"  📄 {file.name}")
+        print(f"   {file.name}")
     
-    print("\n💡 Tip: Run scripts/generate_markov_metrics.py for metric tables")
+    print("\n Tip: Run scripts/generate_markov_metrics.py for metric tables")
     
     return 0
 

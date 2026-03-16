@@ -141,8 +141,8 @@ def generate_parameter_table(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
     print(f"   Total parameters: {total:,}")
 
 def generate_memory_utilization(output_path):
@@ -203,8 +203,8 @@ def generate_memory_utilization(output_path):
     with open(json_path, 'w') as f:
         json.dump(data, f, indent=2)
     
-    print(f"✅ Saved plot to: {output_path}")
-    print(f"✅ Saved data to: {json_path}")
+    print(f" Saved plot to: {output_path}")
+    print(f" Saved data to: {json_path}")
 
 def generate_section_coherence(output_path):
     """
@@ -276,8 +276,8 @@ def generate_section_coherence(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_sampling_comparison(output_path):
     """
@@ -349,8 +349,8 @@ def generate_sampling_comparison(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_attention_heatmaps(output_path):
     """
@@ -431,7 +431,7 @@ def generate_attention_heatmaps(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_training_curves(output_path):
     """
@@ -487,8 +487,8 @@ def generate_training_curves(output_path):
     with open(json_path, 'w') as f:
         json.dump(data, f, indent=2)
     
-    print(f"✅ Saved plot to: {output_path}")
-    print(f"✅ Saved data to: {json_path}")
+    print(f" Saved plot to: {output_path}")
+    print(f" Saved data to: {json_path}")
 
 def generate_perplexity_analysis(output_path):
     """
@@ -552,8 +552,8 @@ def generate_perplexity_analysis(output_path):
     with open(json_path, 'w') as f:
         json.dump(data, f, indent=2)
     
-    print(f"✅ Saved plot to: {output_path}")
-    print(f"✅ Saved data to: {json_path}")
+    print(f" Saved plot to: {output_path}")
+    print(f" Saved data to: {json_path}")
 
 def generate_quality_metrics_table(output_path):
     """
@@ -656,8 +656,8 @@ def generate_quality_metrics_table(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_computational_cost(output_path):
     """
@@ -743,8 +743,8 @@ def generate_computational_cost(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_limitation_analysis(output_path):
     """
@@ -818,7 +818,7 @@ def generate_limitation_analysis(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved plot to: {output_path}")
 
 def main():
     """Generate all Transformer metrics"""
@@ -862,8 +862,8 @@ def main():
     generate_limitation_analysis(OUTPUT_DIR / "32_limitation_analysis.png")
     
     print("\n" + "="*60)
-    print("✅ ALL TRANSFORMER METRICS GENERATED SUCCESSFULLY")
-    print(f"📁 Output directory: {OUTPUT_DIR.absolute()}")
+    print("ALL TRANSFORMER METRICS GENERATED SUCCESSFULLY")
+    print(f" Output directory: {OUTPUT_DIR.absolute()}")
     print("="*60)
 
 if __name__ == "__main__":

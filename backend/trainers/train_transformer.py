@@ -45,10 +45,10 @@ class TransformerMIDIDataset(MIDIDataset):
                             self.chord_sequences.append([])
                             self.tempo_sequences.append([])
                     
-                    print(f"✅ Loaded conditioning data for {len(self.chord_sequences)} sequences")
+                    print(f"Loaded conditioning data for {len(self.chord_sequences)} sequences")
                     
                 except Exception as e:
-                    print(f"⚠️ Error loading conditioning data: {e}")
+                    print(f"Error loading conditioning data: {e}")
                     self.chord_sequences = [[]] * len(self.processed_sequences)
                     self.tempo_sequences = [[]] * len(self.processed_sequences)
     
@@ -129,10 +129,10 @@ def train_transformer_model(
             print(message, flush=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"🧠 Training on: {device}")
+    print(f"Training on: {device}")
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        print(f"📊 GPU: {torch.cuda.get_device_name(0)}")
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # Initialize model
     model = TransformerModel(
@@ -144,8 +144,8 @@ def train_transformer_model(
         dropout=dropout,
         enable_conditioning=True  # Enable chord/tempo conditioning
     ).to(device)
-    print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
-    print(f"💾 Using preprocessed data: {use_preprocessed}, track: {track_type}")
+    print(f"Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
+    print(f"Using preprocessed data: {use_preprocessed}, track: {track_type}")
 
     # Optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -156,9 +156,9 @@ def train_transformer_model(
     early_stopping = EarlyStopping(patience=patience)
 
     # Data loading with memory-efficient caching
-    print("📂 Setting up data loader...")
+    print("Setting up data loader...")
     if use_huggingface:
-        print(f"🌐 Streaming from HuggingFace (amaai-lab/MidiCaps), genre_filter={hf_genre_filter}")
+        print(f"Streaming from HuggingFace (amaai-lab/MidiCaps), genre_filter={hf_genre_filter}")
         # HF dataset returns plain tensors; wrap them to match the dict format the loop expects
         _hf_base = build_hf_dataloader(
             batch_size=batch_size,
@@ -207,7 +207,7 @@ def train_transformer_model(
             final_div_factor=1e4
         )
         scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=True)
-        print(f"📉 Scheduler: OneCycleLR ({total_optimizer_steps} optimizer steps)")
+        print(f" Scheduler: OneCycleLR ({total_optimizer_steps} optimizer steps)")
     else:
         # Streaming/unknown-length dataloaders cannot safely use OneCycleLR total_steps.
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -216,7 +216,7 @@ def train_transformer_model(
             eta_min=learning_rate * 0.01,
         )
         scheduler_wrapper = LRSchedulerWithBatchOption(scheduler, step_every_batch=False)
-        print("📉 Scheduler: CosineAnnealingLR (epoch-based, unknown dataloader length)")
+        print(" Scheduler: CosineAnnealingLR (epoch-based, unknown dataloader length)")
 
     # Training loop
     os.makedirs("output/trained_models", exist_ok=True)
@@ -239,29 +239,29 @@ def train_transformer_model(
                     try:
                         scheduler.load_state_dict(ckpt['scheduler_state_dict'])
                     except Exception as e:
-                        _progress_log(f"⚠️ Could not restore scheduler state: {e}")
+                        _progress_log(f"Could not restore scheduler state: {e}")
                 if scaler is not None and 'scaler_state_dict' in ckpt and ckpt['scaler_state_dict'] is not None:
                     try:
                         scaler.load_state_dict(ckpt['scaler_state_dict'])
                     except Exception as e:
-                        _progress_log(f"⚠️ Could not restore scaler state: {e}")
+                        _progress_log(f"Could not restore scaler state: {e}")
                 start_epoch = int(ckpt.get('epoch', -1)) + 1
                 all_metrics = ckpt.get('history', []) or []
                 best_loss_so_far = float(ckpt.get('best_loss', best_loss_so_far))
-                _progress_log(f"♻️ Resumed Transformer from {resume_path} at epoch {start_epoch}")
+                _progress_log(f" Resumed Transformer from {resume_path} at epoch {start_epoch}")
             else:
                 model.load_state_dict(ckpt)
-                _progress_log(f"♻️ Loaded model weights from {resume_path} (optimizer state not found)")
+                _progress_log(f" Loaded model weights from {resume_path} (optimizer state not found)")
         else:
-            _progress_log(f"⚠️ Resume checkpoint not found: {resume_path}. Starting fresh.")
+            _progress_log(f"Resume checkpoint not found: {resume_path}. Starting fresh.")
 
-    print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
+    print(f" Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
     if not use_tqdm:
-        _progress_log("⏳ Transformer training started (heartbeat logs enabled)")
+        _progress_log(" Transformer training started (heartbeat logs enabled)")
 
     epoch_pbar = tqdm(
         range(start_epoch, epochs),
-        desc="🎵 Epochs",
+        desc=" Epochs",
         unit="epoch",
         position=0,
         disable=not use_tqdm,
@@ -271,7 +271,7 @@ def train_transformer_model(
     for epoch in epoch_pbar:
         epoch_start_time = time.time()
         if not use_tqdm:
-            _progress_log(f"🚀 Epoch {epoch+1}/{epochs} started")
+            _progress_log(f" Epoch {epoch+1}/{epochs} started")
 
         # Custom training loop for Transformer with conditioning
         model.train()
@@ -373,7 +373,7 @@ def train_transformer_model(
                 if ((batch_idx + 1) % 500 == 0) or (now - last_heartbeat_time >= 60.0):
                     elapsed = now - epoch_start_time
                     _progress_log(
-                        f"🎵 Epoch {epoch+1}: batch={batch_idx+1}, "
+                        f" Epoch {epoch+1}: batch={batch_idx+1}, "
                         f"avg_loss={epoch_loss/max(1, num_batches):.4f}, "
                         f"lr={scheduler.get_last_lr()[0]:.2e}, elapsed={elapsed/60:.1f}m"
                     )
@@ -391,7 +391,7 @@ def train_transformer_model(
             epoch_pbar.set_postfix({'loss': f"{avg_loss:.4f}", 'lr': f"{scheduler.get_last_lr()[0]:.2e}"})
 
         # Report metrics
-        _progress_log(f"📈 Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
+        _progress_log(f"Epoch {epoch+1}: Loss={avg_loss:.4f}, LR={scheduler.get_last_lr()[0]:.6f}")
 
         improved = avg_loss < best_loss_so_far
         if improved:
@@ -431,7 +431,7 @@ def train_transformer_model(
 
         # Early stopping check (after checkpoint save, so state is always recoverable)
         if early_stopping(avg_loss):
-            _progress_log(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            _progress_log(f"Early stopping triggered after {epoch+1} epochs")
             break
 
     # Save final model and JIT scripted version for faster inference
@@ -453,17 +453,34 @@ def train_transformer_model(
                 'grad_accum_steps': grad_accum_steps, 'track_type': track_type
             }
         }, f, indent=2)
-    print(f"📊 Metrics saved to {metrics_path}")
+    print(f"Metrics saved to {metrics_path}")
+    
+    # Also save training history to trained_models directory for consistency
+    history_path = "output/trained_models/transformer_history.json"
+    with open(history_path, 'w') as f:
+        json.dump({
+            'epochs_run': len(all_metrics),
+            'final_loss': all_metrics[-1]['loss'] if all_metrics else None,
+            'best_loss': min(m['loss'] for m in all_metrics) if all_metrics else None,
+            'loss': [m['loss'] for m in all_metrics],
+            'hyperparams': {
+                'epochs': epochs, 'batch_size': batch_size, 'learning_rate': learning_rate,
+                'embed_dim': embed_dim, 'num_heads': num_heads, 'num_layers': num_layers,
+                'dim_feedforward': dim_feedforward, 'dropout': dropout,
+                'grad_accum_steps': grad_accum_steps, 'track_type': track_type
+            }
+        }, f, indent=2)
+    print(f"Training history saved to {history_path}")
 
     # Create a JIT compiled version for faster inference
     try:
         scripted_model = torch.jit.script(model.cpu())
         scripted_model.save("output/trained_models/trained_transformer_jit.pt")
-        print("✅ JIT compiled model saved for faster inference")
+        print("JIT compiled model saved for faster inference")
     except Exception as e:
-        print(f"⚠️ JIT compilation failed: {e}")
+        print(f"JIT compilation failed: {e}")
 
-    print("✅ Training complete! Model saved to output/trained_models/trained_transformer.pt")
+    print("Training complete! Model saved to output/trained_models/trained_transformer.pt")
     return model, all_metrics
 
 if __name__ == "__main__":

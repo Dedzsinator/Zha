@@ -27,9 +27,9 @@ warnings.filterwarnings("ignore")
 def log_memory_usage(stage=""):
     """Log current memory usage."""
     mem = psutil.virtual_memory()
-    logger.info(f"🧠 Memory {stage}: {mem.percent:.1f}% used ({mem.used/1e9:.2f}GB / {mem.total/1e9:.2f}GB available)")
+    logger.info(f"Memory {stage}: {mem.percent:.1f}% used ({mem.used/1e9:.2f}GB / {mem.total/1e9:.2f}GB available)")
     if mem.percent > 85:
-        logger.warning(f"⚠️ Memory usage is very high ({mem.percent:.1f}%)!")
+        logger.warning(f"Memory usage is very high ({mem.percent:.1f}%)!")
 
 def log_process_memory(stage=""):
     """Log current process RSS/VMS to make htop RES/VIRT interpretation explicit."""
@@ -37,7 +37,7 @@ def log_process_memory(stage=""):
         proc = psutil.Process(os.getpid())
         mem = proc.memory_info()
         logger.info(
-            f"🧾 Process memory {stage}: RSS={mem.rss/1e9:.2f}GB, VMS={mem.vms/1e9:.2f}GB"
+            f" Process memory {stage}: RSS={mem.rss/1e9:.2f}GB, VMS={mem.vms/1e9:.2f}GB"
         )
     except Exception as e:
         logger.debug(f"Could not read process memory: {e}")
@@ -54,53 +54,53 @@ def detect_gpu_capabilities():
         gpu_info['device_count'] = torch.cuda.device_count()
         try:
             gpu_info['memory_gb'] = torch.cuda.get_device_properties(0).total_memory / 1e9
-            logger.info(f"🚀 CUDA detected: {gpu_info['device_count']} device(s), {gpu_info['memory_gb']:.1f}GB memory")
+            logger.info(f" CUDA detected: {gpu_info['device_count']} device(s), {gpu_info['memory_gb']:.1f}GB memory")
         except Exception as e:
             logger.error(f"Could not get GPU properties: {e}")
             gpu_info['cuda_available'] = False
     else:
-        logger.warning("❌ CUDA not available - Training will use CPU")
+        logger.warning("GPU not available. Training will use CPU")
     
     return gpu_info
 
 def demonstrate_hmm_algorithms(model, sequences):
     """Demonstrate the HMM algorithms with sample sequences."""
-    logger.info("🔬 Running HMM Algorithm Demonstrations...")
+    logger.info("Running HMM Algorithm Demonstrations...")
     
     if not sequences or not model.hmm_model:
-        logger.warning("⚠️ No sequences or HMM model available for demonstration.")
+        logger.warning("No sequences or HMM model available for demonstration.")
         return
     
     try:
         demo_sequence = sequences[0]
         if len(demo_sequence) < 10:
-            logger.warning("⚠️ Demo sequence too short, skipping HMM demonstration.")
+            logger.warning("Demo sequence too short, skipping HMM demonstration.")
             return
             
         features = model._sequence_to_features(demo_sequence)
         if not features:
-            logger.warning("⚠️ Could not extract features for demonstration.")
+            logger.warning("Could not extract features for demonstration.")
             return
             
-        logger.info(f"📊 Demo sequence length: {len(demo_sequence)} notes")
+        logger.info(f"Demo sequence length: {len(demo_sequence)} notes")
         
         # Viterbi Algorithm Demonstration
-        logger.info("🔄 Running Viterbi Algorithm...")
+        logger.info("Running Viterbi Algorithm...")
         state_sequence, log_prob = model.viterbi_algorithm(features)
         if state_sequence is not None:
             per_step_log_prob = log_prob / max(len(features), 1)
             logger.info(
-                f"✅ Viterbi Algorithm - Log Probability: {log_prob:.4f} "
+                f"Viterbi Algorithm - Log Probability: {log_prob:.4f} "
                 f"(per-step: {per_step_log_prob:.4f}, steps: {len(features)})"
             )
-            logger.info(f"🎯 Optimal state sequence (first 10): {state_sequence[:10]}...")
+            logger.info(f"Optimal state sequence (first 10): {state_sequence[:10]}...")
         else:
-            logger.warning("⚠️ Viterbi Algorithm failed.")
+            logger.warning("Viterbi Algorithm failed.")
         
-        logger.info("✅ HMM Algorithm demonstration completed successfully!")
+        logger.info("HMM Algorithm demonstration completed successfully!")
         
     except Exception as e:
-        logger.error(f"❌ HMM demonstration failed: {e}")
+        logger.error(f"HMM demonstration failed: {e}")
         logger.debug(traceback.format_exc())
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ def _load_sequences_from_hf():
             "The 'datasets' library is required.  pip install datasets"
         ) from e
 
-    logger.info("🌐 Streaming from HuggingFace (amaai-lab/MidiCaps) — ALL genres...")
+    logger.info("Streaming from HuggingFace (amaai-lab/MidiCaps) — ALL genres...")
     ds = load_dataset("amaai-lab/MidiCaps", split="train", streaming=True)
 
     note_sequences = []
@@ -257,7 +257,7 @@ def _load_sequences_from_hf():
     use_tqdm = sys.stdout.isatty()
     for row in tqdm(
         ds,
-        desc="🌐 Loading from HF",
+        desc="Loading from HF",
         disable=not use_tqdm,
         dynamic_ncols=True,
         mininterval=1.0,
@@ -307,25 +307,25 @@ def _load_sequences_from_hf():
 
         if (not use_tqdm) and (rows_seen % log_every == 0):
             logger.info(
-                f"🌐 HF streaming progress: rows_seen={rows_seen:,}, usable_sequences={track_count:,}"
+                f"HF streaming progress: rows_seen={rows_seen:,}, usable_sequences={track_count:,}"
             )
 
-    logger.info(f"✅ Built {track_count:,} note sequences from HF dataset (rows_seen={rows_seen:,})")
+    logger.info(f"Built {track_count:,} note sequences from HF dataset (rows_seen={rows_seen:,})")
     return note_sequences, chord_sequences_out, track_count
 
 
 def _load_sequences_from_local(track_type: str):
     """Load note sequences from the local preprocessed .pt file."""
     processed_data_path = "dataset/processed/full_dataset.pt"
-    logger.info(f"💾 Loading pre-processed data from '{processed_data_path}' (track: {track_type})...")
+    logger.info(f"Loading pre-processed data from '{processed_data_path}' (track: {track_type})...")
 
     if not os.path.exists(processed_data_path):
         old_path = "dataset/processed/markov_sequences.pt"
         if os.path.exists(old_path):
-            logger.warning(f"⚠️ '{processed_data_path}' not found, falling back to '{old_path}'")
+            logger.warning(f"'{processed_data_path}' not found, falling back to '{old_path}'")
             processed_data_path = old_path
         else:
-            logger.error(f"❌ Processed data file not found at '{processed_data_path}'.")
+            logger.error(f"Processed data file not found at '{processed_data_path}'.")
             logger.error("Run: python scripts/preprocess_dataset.py")
             return None
 
@@ -354,16 +354,16 @@ def _load_sequences_from_local(track_type: str):
                     if chord_seq:
                         chord_sequences.append(chord_seq)
 
-        logger.info(f"✅ Loaded {len(note_sequences)} {track_type} sequences from {track_count} files.")
+        logger.info(f"Loaded {len(note_sequences)} {track_type} sequences from {track_count} files.")
 
         if len(note_sequences) == 0:
-            logger.error(f"❌ No {track_type} sequences found in '{processed_data_path}'.")
+            logger.error(f"No {track_type} sequences found in '{processed_data_path}'.")
             return None
 
         return note_sequences, chord_sequences, track_count
 
     except Exception as e:
-        logger.error(f"❌ Failed to load pre-processed data: {e}\n{traceback.format_exc()}")
+        logger.error(f"Failed to load pre-processed data: {e}\n{traceback.format_exc()}")
         return None
 
 
@@ -378,10 +378,21 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         use_huggingface: If True, stream note sequences from amaai-lab/MidiCaps
                          on HuggingFace instead of the local preprocessed file.
     """
+    # Initialize training history
+    training_history = {
+        'order': order,
+        'max_interval': max_interval,
+        'n_hidden_states': n_hidden_states,
+        'track_type': track_type,
+        'use_huggingface': use_huggingface,
+        'training_start_time': time.time(),
+        'training_metrics': {}
+    }
+    
     gpu_info = detect_gpu_capabilities()
     use_gpu = use_gpu and gpu_info['cuda_available']
     
-    logger.info(f"🚀 Initializing Markov model (order={order}, hidden_states={n_hidden_states}, track={track_type})")
+    logger.info(f" Initializing Markov model (order={order}, hidden_states={n_hidden_states}, track={track_type})")
     model = MarkovChain(
         order=order, 
         max_interval=max_interval, 
@@ -389,11 +400,11 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         use_gpu=use_gpu
     )
     logger.info(
-        f"⚙️ Markov backend: use_gpu={model.use_gpu}, device={model.device}, "
+        f" Markov backend: use_gpu={model.use_gpu}, device={model.device}, "
         f"note_transition_backend={'torch-cuda' if model.use_gpu else 'numpy-cpu'}"
     )
     logger.info(
-        "ℹ️ Training mixes CPU-heavy counting loops with some GPU tensor ops; "
+        "ℹ Training mixes CPU-heavy counting loops with some GPU tensor ops; "
         "seeing one CPU core at high usage is expected."
     )
 
@@ -411,11 +422,11 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     log_process_memory("after data load")
     
     # --- 2. Train the Model ---
-    logger.info("🧠 Training Markov model with HMM...")
+    logger.info("Training Markov model with HMM...")
     use_tqdm = sys.stdout.isatty()
     progress_bar = tqdm(
         total=100,
-        desc="🚀 Training",
+        desc=" Training",
         unit="%",
         disable=not use_tqdm,
         dynamic_ncols=True,
@@ -423,7 +434,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     )
     start_time = time.time()
     last_logged_percent = -1
-    logger.info("⏳ Markov training started (progress logs every 5%)")
+    logger.info(" Markov training started (progress logs every 5%)")
     
     def update_progress(percent):
         nonlocal last_logged_percent
@@ -434,7 +445,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
                 elapsed = time.time() - start_time
                 eta = (elapsed / current) * (100 - current) if current > 0 else 0.0
                 logger.info(
-                    f"🚀 Training progress: {current}% | elapsed={elapsed/60:.1f}m | eta={eta/60:.1f}m"
+                    f" Training progress: {current}% | elapsed={elapsed/60:.1f}m | eta={eta/60:.1f}m"
                 )
                 last_logged_percent = current
     
@@ -451,11 +462,11 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
         markov_model_logger.setLevel(previous_markov_level)
     progress_bar.close()
     elapsed_total = time.time() - start_time
-    logger.info(f"✅ Markov training phase finished in {elapsed_total/60:.1f} minutes")
+    logger.info(f"Markov training phase finished in {elapsed_total/60:.1f} minutes")
     log_process_memory("after model.train")
     
     # --- 3. Clean Up Memory ---
-    logger.info("🧹 Cleaning up memory...")
+    logger.info("Cleaning up memory...")
     demo_sequences = model.musical_features.get('demo_sequences', [])
     if not demo_sequences and note_sequences:
         # Keep a tiny sample for post-train HMM demonstration.
@@ -466,7 +477,7 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     log_process_memory("after cleanup")
     
     if not training_success:
-        logger.error("❌ Training failed.")
+        logger.error("Training failed.")
         return None
 
     # --- 4. Demonstrate HMM Algorithms ---
@@ -479,29 +490,29 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     
     try:
         model.save(output_path)
-        logger.info(f"💾 Model saved to {output_path}")
+        logger.info(f"Model saved to {output_path}")
         model.save(backup_path)
-        logger.info(f"🔒 Backup saved to {backup_path}")
+        logger.info(f" Backup saved to {backup_path}")
     except Exception as e:
-        logger.error(f"❌ Failed to save model: {e}")
+        logger.error(f"Failed to save model: {e}")
 
     # --- 6. Display Model Statistics ---
-    logger.info("\n" + "="*60 + "\n🎼 MODEL STATISTICS\n" + "="*60)
+    logger.info("\n" + "="*60 + "\n MODEL STATISTICS\n" + "="*60)
     if hasattr(model.transitions, 'shape'):
         non_zero = np.count_nonzero(model.transitions) if isinstance(model.transitions, np.ndarray) else model.transitions.to_sparse()._nnz()
         total_possible = model.transitions.shape[0] * model.transitions.shape[1]
         sparsity = (1 - non_zero / total_possible) * 100 if total_possible > 0 else 0
-        logger.info(f"🎯 Note transitions: {model.transitions.shape} ({non_zero:,} non-zero, {sparsity:.1f}% sparse)")
+        logger.info(f"Note transitions: {model.transitions.shape} ({non_zero:,} non-zero, {sparsity:.1f}% sparse)")
     
     total_higher_order = sum(len(transitions) for transitions in model.higher_order_transitions.values())
-    logger.info(f"🧠 Higher-order transitions: {total_higher_order:,} contexts")
+    logger.info(f"Higher-order transitions: {total_higher_order:,} contexts")
     
     if model.hmm_model:
-        logger.info(f"🔮 HMM: {model.n_hidden_states} hidden states (ENABLED)")
+        logger.info(f" HMM: {model.n_hidden_states} hidden states (ENABLED)")
     else:
-        logger.info("🔮 HMM: DISABLED")
+        logger.info(" HMM: DISABLED")
         
-    logger.info("="*60 + "\n✅ TRAINING COMPLETE!\n" + "="*60)
+    logger.info("="*60 + "\nTRAINING COMPLETE!\n" + "="*60)
     
     # Export model statistics to JSON
     os.makedirs(output_dir, exist_ok=True)
@@ -541,7 +552,19 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     os.makedirs("output/metrics", exist_ok=True)
     with open(metrics_path, 'w') as f:
         json.dump(stats, f, indent=2)
-    logger.info(f"📊 Metrics saved to {metrics_path}")
+    logger.info(f"Metrics saved to {metrics_path}")
+    
+    # Save training history
+    training_history['training_end_time'] = time.time()
+    training_history['training_duration_seconds'] = training_history['training_end_time'] - training_history['training_start_time']
+    training_history['training_duration_minutes'] = training_history['training_duration_seconds'] / 60
+    training_history['training_metrics'] = stats
+    
+    history_path = os.path.join("output/trained_models", "markov_history.json")
+    os.makedirs("output/trained_models", exist_ok=True)
+    with open(history_path, 'w') as f:
+        json.dump(training_history, f, indent=2)
+    logger.info(f"Training history saved to {history_path}")
     
     return model
 
@@ -557,13 +580,13 @@ if __name__ == "__main__":
                    help="Stream data from HuggingFace (amaai-lab/MidiCaps) instead of local file")
     args = p.parse_args()
 
-    logger.info("🚀 MARKOV TRAINING INITIATED 🚀")
-    logger.info(f"🧠 Order: {args.order}")
-    logger.info(f"🎵 Max interval: {args.max_interval}")
-    logger.info(f"🔮 Hidden states: {args.hidden_states}")
-    logger.info(f"⚡ GPU acceleration: {'DISABLED' if args.no_gpu else 'ENABLED'}")
-    logger.info(f"🎼 Track type: {args.track}")
-    logger.info(f"🌐 Data source: {'HuggingFace' if args.hf else 'local'}")
+    logger.info(" MARKOV TRAINING INITIATED ")
+    logger.info(f"Order: {args.order}")
+    logger.info(f" Max interval: {args.max_interval}")
+    logger.info(f" Hidden states: {args.hidden_states}")
+    logger.info(f"GPU acceleration: {'DISABLED' if args.no_gpu else 'ENABLED'}")
+    logger.info(f" Track type: {args.track}")
+    logger.info(f"Data source: {'HuggingFace' if args.hf else 'local'}")
 
     train_markov_model(
         order=args.order,

@@ -105,8 +105,8 @@ def generate_training_curves(output_path):
     with open(json_path, 'w') as f:
         json.dump(data, f, indent=2)
     
-    print(f"✅ Saved plot to: {output_path}")
-    print(f"✅ Saved data to: {json_path}")
+    print(f" Saved plot to: {output_path}")
+    print(f" Saved data to: {json_path}")
 
 def generate_dimensionwise_kl(output_path):
     """
@@ -213,8 +213,8 @@ def generate_dimensionwise_kl(output_path):
     with open(json_path, 'w') as f:
         json.dump(stats, f, indent=2)
     
-    print(f"✅ Saved plot to: {output_path}")
-    print(f"✅ Saved stats to: {json_path}")
+    print(f" Saved plot to: {output_path}")
+    print(f" Saved stats to: {json_path}")
 
 def generate_parameter_table(output_path):
     """
@@ -297,8 +297,8 @@ def generate_parameter_table(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
     
     return df
 
@@ -385,8 +385,8 @@ def generate_temperature_ablation(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_golc_comparison(output_path):
     """
@@ -479,8 +479,8 @@ def generate_golc_comparison(output_path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Saved table to: {csv_path}")
-    print(f"✅ Saved plot to: {output_path}")
+    print(f" Saved table to: {csv_path}")
+    print(f" Saved plot to: {output_path}")
 
 def generate_tsne_visualization(output_path):
     """
@@ -579,8 +579,8 @@ def generate_tsne_visualization(output_path):
     with open(json_path, 'w') as f:
         json.dump(data, f, indent=2)
     
-    print(f"✅ Saved plot to: {output_path}")
-    print(f"✅ Saved data to: {json_path}")
+    print(f" Saved plot to: {output_path}")
+    print(f" Saved data to: {json_path}")
 
 def main():
     """Generate all VAE metrics"""
@@ -624,8 +624,8 @@ def main():
     )
     
     print("\n" + "="*60)
-    print("✅ ALL VAE METRICS GENERATED SUCCESSFULLY")
-    print(f"📁 Output directory: {OUTPUT_DIR.absolute()}")
+    print(" ALL VAE METRICS GENERATED SUCCESSFULLY")
+    print(f" Output directory: {OUTPUT_DIR.absolute()}")
     print("="*60)
 
 if __name__ == "__main__":

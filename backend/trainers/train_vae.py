@@ -22,10 +22,10 @@ class MIDIDataset(Dataset):
         if use_preprocessed:
             # Load from preprocessed data
             processed_data_path = "dataset/processed/markov_sequences.pt"
-            print(f"💾 Loading preprocessed data from {processed_data_path} (track: {track_type})...")
+            print(f"Loading preprocessed data from {processed_data_path} (track: {track_type})...")
             
             if not os.path.exists(processed_data_path):
-                print(f"⚠️ Preprocessed data not found, falling back to MIDI processing")
+                print(f"Preprocessed data not found, falling back to MIDI processing")
                 self.use_preprocessed = False
                 midi_dir = midi_dir or "dataset/midi/"
             else:
@@ -68,15 +68,15 @@ class MIDIDataset(Dataset):
                             self.processed_sequences.append(torch.from_numpy(feature).float())
                             valid_files += 1
                     
-                    print(f"✅ Loaded {len(self.processed_sequences)} {track_type} sequences from {valid_files} files")
+                    print(f"Loaded {len(self.processed_sequences)} {track_type} sequences from {valid_files} files")
                     
                     if len(self.processed_sequences) == 0:
-                        print(f"⚠️ No {track_type} sequences found, falling back to MIDI processing")
+                        print(f"No {track_type} sequences found, falling back to MIDI processing")
                         self.use_preprocessed = False
                         midi_dir = midi_dir or "dataset/midi/"
                         
                 except Exception as e:
-                    print(f"⚠️ Error loading preprocessed data: {e}, falling back to MIDI processing")
+                    print(f"Error loading preprocessed data: {e}, falling back to MIDI processing")
                     self.use_preprocessed = False
                     midi_dir = midi_dir or "dataset/midi/"
         
@@ -86,14 +86,14 @@ class MIDIDataset(Dataset):
             self.file_list = []
             
             # Find MIDI files in directory structure
-            print("🔍 Scanning for MIDI files...")
+            print(" Scanning for MIDI files...")
             for root, _, files in os.walk(midi_dir):
                 for file in files:
                     if file.endswith(('.mid', '.midi')):
                         self.file_list.append(os.path.join(os.path.relpath(root, midi_dir), file))
                         if max_files and len(self.file_list) >= max_files:
                             break
-            print(f"✓ Found {len(self.file_list)} MIDI files")
+            print(f" Found {len(self.file_list)} MIDI files")
 
     def __len__(self):
         if self.use_preprocessed:
@@ -146,7 +146,7 @@ class MIDIDataset(Dataset):
             return tensor
 
         except Exception as e:
-            print(f"⚠️ Error processing {midi_path}: {e}")
+            print(f"Error processing {midi_path}: {e}")
             return torch.zeros(128, dtype=torch.float32)
 
 def train_epoch(model, dataloader, optimizer, scheduler, device, scaler=None,
@@ -270,16 +270,16 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
             print(message)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"🧠 Training on: {device}")
+    print(f"Training on: {device}")
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        print(f"📊 GPU: {torch.cuda.get_device_name(0)}")
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # Initialize model
     model = VAEModel(input_dim=128, latent_dim=latent_dim, beta=beta).to(device)
-    print(f"🔄 Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
-    print(f"🎵 Using beta={beta}, consistency_weight={consistency_weight}")
-    print(f"💾 Using preprocessed data: {use_preprocessed}, track: {track_type}")
+    print(f"Model initialized: {sum(p.numel() for p in model.parameters())} parameters")
+    print(f" Using beta={beta}, consistency_weight={consistency_weight}")
+    print(f"Using preprocessed data: {use_preprocessed}, track: {track_type}")
 
     # Optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -294,9 +294,9 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
     early_stopping = EarlyStopping(patience=patience, verbose=True)
 
     # Data loading
-    print("📂 Setting up data loader...")
+    print("Setting up data loader...")
     if use_huggingface:
-        print(f"🌐 Streaming from HuggingFace (amaai-lab/MidiCaps), genre_filter={hf_genre_filter}")
+        print(f"Streaming from HuggingFace (amaai-lab/MidiCaps), genre_filter={hf_genre_filter}")
         dataloader = build_hf_dataloader(
             batch_size=batch_size,
             genre_filter=hf_genre_filter,
@@ -331,27 +331,27 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
                     try:
                         scheduler.load_state_dict(ckpt['scheduler_state_dict'])
                     except Exception as e:
-                        _progress_log(f"⚠️ Could not restore scheduler state: {e}")
+                        _progress_log(f"Could not restore scheduler state: {e}")
                 if scaler is not None and 'scaler_state_dict' in ckpt and ckpt['scaler_state_dict'] is not None:
                     try:
                         scaler.load_state_dict(ckpt['scaler_state_dict'])
                     except Exception as e:
-                        _progress_log(f"⚠️ Could not restore scaler state: {e}")
+                        _progress_log(f"Could not restore scaler state: {e}")
                 start_epoch = int(ckpt.get('epoch', -1)) + 1
                 all_metrics = ckpt.get('history', []) or []
                 best_loss_so_far = float(ckpt.get('best_loss', best_loss_so_far))
-                _progress_log(f"♻️ Resumed VAE from {resume_path} at epoch {start_epoch}")
+                _progress_log(f" Resumed VAE from {resume_path} at epoch {start_epoch}")
             else:
                 model.load_state_dict(ckpt)
-                _progress_log(f"♻️ Loaded model weights from {resume_path} (optimizer state not found)")
+                _progress_log(f" Loaded model weights from {resume_path} (optimizer state not found)")
         else:
-            _progress_log(f"⚠️ Resume checkpoint not found: {resume_path}. Starting fresh.")
+            _progress_log(f"Resume checkpoint not found: {resume_path}. Starting fresh.")
 
-    print(f"🚀 Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
+    print(f" Starting training: {epochs} epochs (gradient accumulation: {grad_accum_steps} steps)")
 
     epoch_pbar = tqdm(
         range(start_epoch, epochs),
-        desc="🎵 Epochs",
+        desc=" Epochs",
         unit="epoch",
         position=0,
         disable=not use_tqdm,
@@ -393,7 +393,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
 
         # Report metrics
         _progress_log(
-            f"📈 Epoch {epoch+1}: Loss={metrics['loss']:.4f} "
+            f"Epoch {epoch+1}: Loss={metrics['loss']:.4f} "
             f"(Recon={metrics['recon_loss']:.4f}, KL={metrics['kl_loss']:.4f}, "
             f"Consistency={metrics['consistency_loss']:.4f}), "
             f"LR={scheduler.get_last_lr()[0]:.6f}"
@@ -401,7 +401,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
 
         # Early stopping check
         if early_stopping(metrics['loss']):
-            _progress_log(f"⚠️ Early stopping triggered after {epoch+1} epochs")
+            _progress_log(f"Early stopping triggered after {epoch+1} epochs")
             break
 
         # Generate samples periodically
@@ -441,7 +441,7 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
 
     # Save final model
     torch.save(model.state_dict(), "output/trained_models/trained_vae.pt")
-    print("✅ Training complete! Model saved to output/trained_models/trained_vae.pt")
+    print("Training complete! Model saved to output/trained_models/trained_vae.pt")
 
     # Save full metrics history to JSON
     os.makedirs("output/metrics", exist_ok=True)
@@ -461,15 +461,15 @@ def train_vae_model(epochs=100, batch_size=128, learning_rate=2e-4, latent_dim=1
                 'grad_accum_steps': grad_accum_steps, 'track_type': track_type
             }
         }, f, indent=2)
-    print(f"📊 Metrics saved to {metrics_path}")
+    print(f"Metrics saved to {metrics_path}")
 
     # Export to ONNX format
     try:
         onnx_path = "output/trained_models/trained_vae.onnx"
         model.export_to_onnx(onnx_path)
-        print(f"✅ Model exported to ONNX format: {onnx_path}")
+        print(f"Model exported to ONNX format: {onnx_path}")
     except Exception as e:
-        print(f"⚠️ ONNX export failed: {e}")
+        print(f"ONNX export failed: {e}")
 
     return model, all_metrics
 

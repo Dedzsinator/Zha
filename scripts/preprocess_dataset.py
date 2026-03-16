@@ -158,10 +158,10 @@ def check_memory_and_cleanup(force=False):
     """Check memory usage and cleanup if needed."""
     mem_percent = get_memory_usage()
     if force or mem_percent > MAX_MEMORY_PERCENT:
-        logger.info(f"🧹 Memory usage at {mem_percent:.1f}%, forcing cleanup...")
+        logger.info(f" Memory usage at {mem_percent:.1f}%, forcing cleanup...")
         force_memory_cleanup()
         new_mem = get_memory_usage()
-        logger.info(f"✅ Memory after cleanup: {new_mem:.1f}%")
+        logger.info(f" Memory after cleanup: {new_mem:.1f}%")
         return True
     return False
 
@@ -169,13 +169,13 @@ def check_memory_before_chunk():
     """Check if memory is safe to start a new chunk."""
     mem_percent = get_memory_usage()
     if mem_percent > MAX_MEMORY_PERCENT:
-        logger.warning(f"⚠️ Memory usage too high ({mem_percent:.1f}%) before starting chunk. Forcing cleanup...")
+        logger.warning(f" Memory usage too high ({mem_percent:.1f}%) before starting chunk. Forcing cleanup...")
         force_memory_cleanup()
         new_mem = get_memory_usage()
         if new_mem > MAX_MEMORY_PERCENT:
-            logger.error(f"❌ Memory still too high ({new_mem:.1f}%) after cleanup. Skipping chunk for safety.")
+            logger.error(f" Memory still too high ({new_mem:.1f}%) after cleanup. Skipping chunk for safety.")
             return False
-        logger.info(f"✅ Memory reduced to {new_mem:.1f}% after cleanup.")
+        logger.info(f" Memory reduced to {new_mem:.1f}% after cleanup.")
     return True
 
 def get_optimal_workers():
@@ -213,7 +213,7 @@ def load_processed_cache(cache_file):
         try:
             with open(cache_file, 'r') as f:
                 cache = json.load(f)
-            logger.info(f"✅ Loaded cache with {len(cache)} entries")
+            logger.info(f" Loaded cache with {len(cache)} entries")
             return cache
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not load cache file {cache_file}: {e}")
@@ -225,7 +225,7 @@ def save_processed_cache(cache_file, cache):
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         with open(cache_file, 'w') as f:
             json.dump(cache, f, indent=2)
-        logger.info(f"💾 Saved cache with {len(cache)} entries")
+        logger.info(f" Saved cache with {len(cache)} entries")
     except IOError as e:
         logger.warning(f"Could not save cache file {cache_file}: {e}")
 
@@ -243,7 +243,7 @@ def get_cached_sequence(file_path, cache_file):
     if file_path in _memory_cache:
         cached_data = _memory_cache[file_path]
         if cached_data['hash'] == file_hash:
-            logger.debug(f"💾 Memory cache hit for {file_path}")
+            logger.debug(f" Memory cache hit for {file_path}")
             return cached_data['sequences']
         else:
             # File changed, remove from cache
@@ -269,7 +269,7 @@ def get_cached_sequence(file_path, cache_file):
                                 'sequences': sequences,
                                 'accessed': time.time()
                             }
-                            logger.debug(f"💾 Sequence cache hit for {file_path}")
+                            logger.debug(f" Sequence cache hit for {file_path}")
                             return sequences
                         except Exception as e:
                             logger.debug(f"Failed to decompress cached sequences: {e}")
@@ -281,7 +281,7 @@ def get_cached_sequence(file_path, cache_file):
                             'sequences': sequences,
                             'accessed': time.time()
                         }
-                        logger.debug(f"💾 Sequence cache hit for {file_path}")
+                        logger.debug(f" Sequence cache hit for {file_path}")
                         return sequences
         except Exception as e:
             logger.debug(f"Could not load from sequence cache: {e}")
@@ -515,7 +515,7 @@ def save_and_merge_data(output_file, temp_files, cached_sequences=None):
     if cached_sequences is None:
         cached_sequences = []
         
-    logger.info(f"💾 Merging {len(temp_files)} temporary files and {len(cached_sequences)} cached sequences into '{output_file}'...")
+    logger.info(f" Merging {len(temp_files)} temporary files and {len(cached_sequences)} cached sequences into '{output_file}'...")
     
     # 1. Load only the PATHS from the existing file (not the full sequences)
     existing_paths = set()
@@ -525,7 +525,7 @@ def save_and_merge_data(output_file, temp_files, cached_sequences=None):
             existing_paths = {item['path'] for item in existing_data.get('sequences', [])}
             logger.info(f"Found {len(existing_paths)} existing sequences in main file.")
         except Exception as e:
-            logger.warning(f"⚠️ Could not load existing output file '{output_file}': {e}. Starting fresh.")
+            logger.warning(f" Could not load existing output file '{output_file}': {e}. Starting fresh.")
 
     # 2. Collect NEW sequences from temp files and cached sequences (skip duplicates)
     new_sequences = []
@@ -551,7 +551,7 @@ def save_and_merge_data(output_file, temp_files, cached_sequences=None):
                     else:
                         duplicate_count += 1
         except Exception as e:
-            logger.warning(f"⚠️ Could not load temp file '{temp_file}': {e}")
+            logger.warning(f" Could not load temp file '{temp_file}': {e}")
 
     if duplicate_count > 0:
         logger.info(f"Skipped {duplicate_count} duplicate sequences.")
@@ -564,24 +564,24 @@ def save_and_merge_data(output_file, temp_files, cached_sequences=None):
                 existing_data = torch.load(output_file, weights_only=False)
                 existing_data['sequences'].extend(new_sequences)
                 torch.save(existing_data, output_file)
-                logger.info(f"✅ Appended {len(new_sequences)} new sequences to existing file.")
+                logger.info(f" Appended {len(new_sequences)} new sequences to existing file.")
             except Exception as e:
-                logger.error(f"❌ Failed to append to existing file: {e}")
+                logger.error(f" Failed to append to existing file: {e}")
                 # Fallback: save new sequences to a new file
                 try:
                     os.makedirs(os.path.dirname(output_file), exist_ok=True)
                     torch.save({'sequences': new_sequences, 'created_at': time.time()}, output_file)
-                    logger.info(f"✅ Saved {len(new_sequences)} sequences to '{output_file}'")
+                    logger.info(f" Saved {len(new_sequences)} sequences to '{output_file}'")
                 except Exception as e2:
-                    logger.error(f"❌ Fallback save also failed: {e2}")
+                    logger.error(f" Fallback save also failed: {e2}")
         else:
             # No existing file, create new
             try:
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
                 torch.save({'sequences': new_sequences, 'created_at': time.time()}, output_file)
-                logger.info(f"✅ Saved {len(new_sequences)} sequences to '{output_file}'")
+                logger.info(f" Saved {len(new_sequences)} sequences to '{output_file}'")
             except Exception as e:
-                logger.error(f"❌ Failed to save: {e}")
+                logger.error(f" Failed to save: {e}")
     else:
         logger.info("No new sequences to save.")
 
@@ -591,8 +591,8 @@ def save_and_merge_data(output_file, temp_files, cached_sequences=None):
             try:
                 os.remove(temp_file)
             except OSError as e:
-                logger.warning(f"⚠️ Could not delete temp file '{temp_file}': {e}")
-    logger.info("🧹 Cleaned up temporary files.")
+                logger.warning(f" Could not delete temp file '{temp_file}': {e}")
+    logger.info(" Cleaned up temporary files.")
     
     # Return total count
     total_count = len(existing_paths)
@@ -602,7 +602,7 @@ def create_final_merged_file(output_file, output_dir, cached_sequences=None):
     """
     Creates the final merged file from individual sequence files and cached sequences.
     """
-    logger.info(f"🔄 Creating final merged file from individual sequences...")
+    logger.info(f" Creating final merged file from individual sequences...")
 
     all_sequences = []
     if cached_sequences:
@@ -610,33 +610,33 @@ def create_final_merged_file(output_file, output_dir, cached_sequences=None):
 
     # Load all individual files
     individual_files = glob.glob(os.path.join(output_dir, "*.pt"))
-    logger.info(f"📂 Found {len(individual_files)} individual sequence files")
+    logger.info(f" Found {len(individual_files)} individual sequence files")
 
-    for individual_file in tqdm(individual_files, desc="📖 Loading sequences", unit="files"):
+    for individual_file in tqdm(individual_files, desc=" Loading sequences", unit="files"):
         try:
             data = torch.load(individual_file, weights_only=False)
             all_sequences.append(data)
         except Exception as e:
-            logger.warning(f"⚠️ Failed to load {individual_file}: {e}")
+            logger.warning(f" Failed to load {individual_file}: {e}")
 
     # Save merged file
     try:
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         torch.save({'sequences': all_sequences, 'created_at': time.time()}, output_file)
-        logger.info(f"✅ Saved {len(all_sequences)} sequences to '{output_file}'")
+        logger.info(f" Saved {len(all_sequences)} sequences to '{output_file}'")
 
         # Clean up individual files
-        logger.info("🧹 Cleaning up individual files...")
+        logger.info(" Cleaning up individual files...")
         for individual_file in individual_files:
             try:
                 os.remove(individual_file)
             except Exception as e:
-                logger.warning(f"⚠️ Failed to remove {individual_file}: {e}")
+                logger.warning(f" Failed to remove {individual_file}: {e}")
 
         return len(all_sequences)
 
     except Exception as e:
-        logger.error(f"❌ Failed to create merged file: {e}")
+        logger.error(f" Failed to create merged file: {e}")
         return 0
 
 
@@ -668,13 +668,13 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
         cache_dir = args.cache_dir
         max_files = args.max_files
 
-    logger.info("🚀 Starting ROBUST parallel MIDI preprocessing script with STREAMING.")
+    logger.info(" Starting ROBUST parallel MIDI preprocessing script with STREAMING.")
     
     # --- 1. Setup Stop Flag ---
     stop_file = ".stop_preprocessing"
     if os.path.exists(stop_file):
         os.remove(stop_file)
-    logger.info(f"✅ To gracefully stop, create a file named '{stop_file}' in the root directory.")
+    logger.info(f" To gracefully stop, create a file named '{stop_file}' in the root directory.")
     logger.info(f"(You can run this command in a separate terminal: touch {stop_file})")
     
     # Setup output directory for individual files
@@ -682,22 +682,22 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
     os.makedirs(output_dir, exist_ok=True)
 
     # --- 2. Scan for MIDI files ---
-    logger.info(f"🔍 Scanning for MIDI files in '{midi_dir}'...")
+    logger.info(f" Scanning for MIDI files in '{midi_dir}'...")
     patterns = ['**/*.mid', '**/*.midi', '**/*.MID', '**/*.MIDI']
     midi_files = sorted(list(set(
         f for p in patterns for f in glob.glob(os.path.join(midi_dir, p), recursive=True)
     )))
     
     if not midi_files:
-        logger.error(f"❌ No MIDI files found in '{midi_dir}'. Exiting.")
+        logger.error(f" No MIDI files found in '{midi_dir}'. Exiting.")
         return
 
-    logger.info(f"✅ Found {len(midi_files)} total MIDI files.")
+    logger.info(f" Found {len(midi_files)} total MIDI files.")
 
     # Apply max_files limit if specified
     if max_files and max_files > 0:
         midi_files = midi_files[:max_files]
-        logger.info(f"📏 Limited to processing {len(midi_files)} files (--max-files={max_files})")
+        logger.info(f" Limited to processing {len(midi_files)} files (--max-files={max_files})")
 
     # --- 3. Handle Caching ---
     cache_file = os.path.join(cache_dir, ".preprocess_cache.json")
@@ -708,7 +708,7 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
     files_needing_processing = []
     cached_sequences = []
     
-    logger.info("🧠 Checking cache for processed files...")
+    logger.info(" Checking cache for processed files...")
     for fp, current_hash in files_to_process_map.items():
         cached_seq = get_cached_sequence(fp, cache_file)
         if cached_seq is not None:
@@ -727,38 +727,38 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
             # File needs processing (not cached or cache is outdated)
             files_needing_processing.append(fp)
     
-    logger.info(f"🧠 Loaded {len(cached_sequences)} sequences from cache")
-    logger.info(f"🎵 Found {len(files_needing_processing)} files needing processing")
+    logger.info(f" Loaded {len(cached_sequences)} sequences from cache")
+    logger.info(f" Found {len(files_needing_processing)} files needing processing")
 
     # If we have cached sequences and no new files to process, just save and exit
     if not files_needing_processing and cached_sequences:
-        logger.info("✅ All sequences available from cache. Updating output file...")
+        logger.info(" All sequences available from cache. Updating output file...")
         torch.save({'sequences': cached_sequences}, output_file)
-        logger.info(f"💾 Saved {len(cached_sequences)} cached sequences to {output_file}")
+        logger.info(f" Saved {len(cached_sequences)} cached sequences to {output_file}")
         return
 
     if not files_needing_processing and not cached_sequences:
-        logger.info("✅ All MIDI files are up-to-date. No new processing needed.")
+        logger.info(" All MIDI files are up-to-date. No new processing needed.")
         if not os.path.exists(output_file):
-            logger.warning(f"⚠️ Output file '{output_file}' not found. Reprocessing all files.")
+            logger.warning(f" Output file '{output_file}' not found. Reprocessing all files.")
             files_needing_processing = midi_files
         else:
             return
 
-    logger.info(f"🧠 Loaded {len(cached_sequences)} sequences from cache")
-    logger.info(f"🎵 Found {len(files_needing_processing)} new or modified files to process.")
+    logger.info(f" Loaded {len(cached_sequences)} sequences from cache")
+    logger.info(f" Found {len(files_needing_processing)} new or modified files to process.")
 
     # If we have cached sequences and no new files to process, just save and exit
     if not files_needing_processing and cached_sequences:
-        logger.info("✅ All sequences available from cache. Saving to output file...")
+        logger.info(" All sequences available from cache. Saving to output file...")
         torch.save({'sequences': cached_sequences}, output_file)
-        logger.info(f"💾 Saved {len(cached_sequences)} cached sequences to {output_file}")
+        logger.info(f" Saved {len(cached_sequences)} cached sequences to {output_file}")
         return
 
     if not files_needing_processing and not cached_sequences:
-        logger.info("✅ All MIDI files are up-to-date. No new processing needed.")
+        logger.info(" All MIDI files are up-to-date. No new processing needed.")
         if not os.path.exists(output_file):
-            logger.warning(f"⚠️ Output file '{output_file}' not found. Reprocessing all files.")
+            logger.warning(f" Output file '{output_file}' not found. Reprocessing all files.")
             files_needing_processing = midi_files
         else:
             return
@@ -767,30 +767,30 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
     # SAFETY CHECK: Don't start if memory is already too high
     initial_mem = get_memory_usage()
     if initial_mem > MAX_MEMORY_PERCENT:
-        logger.error(f"❌ Initial memory usage too high ({initial_mem:.1f}%). Please free up memory before running preprocessing.")
+        logger.error(f" Initial memory usage too high ({initial_mem:.1f}%). Please free up memory before running preprocessing.")
         return
 
-    logger.info(f"🧠 Initial memory usage: {initial_mem:.1f}%")
+    logger.info(f" Initial memory usage: {initial_mem:.1f}%")
 
     total_failed = 0
     start_time = time.time()
     processed_paths_in_session = set()
     files_processed = 0
 
-    logger.info(f"🚀 Starting ultra-fast streaming processing with worker recycling...")
-    logger.info(f"⚡ Max workers: {MAX_WORKERS} (conservative for memory safety)")
-    logger.info(f"🧠 Memory limit: {MAX_MEMORY_PERCENT}% (strict limit to prevent crashes)")
-    logger.info(f"🔄 Worker restart every {WORKER_RESTART_INTERVAL} files")
-    logger.info(f"🧹 Memory cleanup every {MEMORY_CLEANUP_INTERVAL} files")
-    logger.info(f"🗑️ Force GC every {FORCE_GC_EVERY_N_FILES} files")
+    logger.info(f" Starting ultra-fast streaming processing with worker recycling...")
+    logger.info(f" Max workers: {MAX_WORKERS} (conservative for memory safety)")
+    logger.info(f" Memory limit: {MAX_MEMORY_PERCENT}% (strict limit to prevent crashes)")
+    logger.info(f" Worker restart every {WORKER_RESTART_INTERVAL} files")
+    logger.info(f" Memory cleanup every {MEMORY_CLEANUP_INTERVAL} files")
+    logger.info(f" Force GC every {FORCE_GC_EVERY_N_FILES} files")
 
     # Warn if settings might be too aggressive
     if MAX_WORKERS > 16:
-        logger.warning(f"⚠️ MAX_WORKERS ({MAX_WORKERS}) is very high! This may cause memory issues.")
+        logger.warning(f" MAX_WORKERS ({MAX_WORKERS}) is very high! This may cause memory issues.")
     if STREAMING_BATCH_SIZE > 500:
-        logger.warning(f"⚠️ STREAMING_BATCH_SIZE ({STREAMING_BATCH_SIZE}) is large! This may cause memory spikes.")
+        logger.warning(f" STREAMING_BATCH_SIZE ({STREAMING_BATCH_SIZE}) is large! This may cause memory spikes.")
 
-    pbar = tqdm(total=len(files_needing_processing), desc="🎵 Processing MIDI", unit="files")
+    pbar = tqdm(total=len(files_needing_processing), desc=" Processing MIDI", unit="files")
 
     try:
         # Process files in chunks with worker recycling (simplified)
@@ -798,11 +798,11 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
         for i in range(0, len(files_needing_processing), chunk_size):
             # Check memory before starting chunk
             if not check_memory_before_chunk():
-                logger.warning(f"⏭️ Skipping chunk {i//chunk_size + 1} due to high memory usage")
+                logger.warning(f" Skipping chunk {i//chunk_size + 1} due to high memory usage")
                 continue
 
             chunk = files_needing_processing[i:i + chunk_size]
-            logger.info(f"📦 Processing chunk {i//chunk_size + 1}/{(len(files_needing_processing) + chunk_size - 1)//chunk_size} ({len(chunk)} files)")
+            logger.info(f" Processing chunk {i//chunk_size + 1}/{(len(files_needing_processing) + chunk_size - 1)//chunk_size} ({len(chunk)} files)")
 
             # Create fresh pool for each chunk to prevent memory leaks
             current_workers = get_optimal_workers()
@@ -814,7 +814,7 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
                 for result in results_iterator:
                     # Check for stop file
                     if os.path.exists(stop_file):
-                        logger.warning(f"\n🛑 Stop file detected. Saving progress...")
+                        logger.warning(f"\n Stop file detected. Saving progress...")
                         break
 
                     path, sequences = result
@@ -846,15 +846,15 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
                             processed_paths_in_session.add(path)
                             save_to_cache(path, sequences, cache_file)
 
-                            logger.debug(f"💾 Saved {os.path.basename(path)} -> {os.path.basename(individual_file)}")
+                            logger.debug(f" Saved {os.path.basename(path)} -> {os.path.basename(individual_file)}")
 
                         except Exception as e:
-                            logger.error(f"❌ Failed to save {path}: {e}")
+                            logger.error(f" Failed to save {path}: {e}")
                             total_failed += 1
                     else:
                         # Failed to process
                         total_failed += 1
-                        logger.debug(f"❌ Failed to process {os.path.basename(path)}")
+                        logger.debug(f" Failed to process {os.path.basename(path)}")
 
                     pbar.update(1)
 
@@ -873,12 +873,12 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
                 break
 
     except KeyboardInterrupt:
-        logger.warning("\n🛑 Keyboard interrupt detected. Stopping and saving progress...")
+        logger.warning("\n Keyboard interrupt detected. Stopping and saving progress...")
     finally:
         pbar.close()
         # --- 5. Final Merge and Cleanup ---
         duration = time.time() - start_time
-        logger.info(f"⏱️ Processing finished in {duration:.2f} seconds.")
+        logger.info(f" Processing finished in {duration:.2f} seconds.")
 
         # Create final merged file from individual files
         total_saved = create_final_merged_file(output_file, output_dir, cached_sequences)
@@ -888,7 +888,7 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
             if path in files_to_process_map:
                 processed_cache[path] = files_to_process_map[path]
         save_processed_cache(cache_file, processed_cache)
-        logger.info(f"💾 Processed file cache updated at '{cache_file}'")
+        logger.info(f" Processed file cache updated at '{cache_file}'")
 
         # --- 7. Final Summary with Track Statistics ---
         total_processed = len(processed_paths_in_session)
@@ -914,18 +914,18 @@ def main(midi_dir="dataset/midi", output_file="dataset/processed/full_dataset.pt
                 pass
         
         logger.info("\n" + "="*60)
-        logger.info("📊 PREPROCESSING SUMMARY 📊")
+        logger.info(" PREPROCESSING SUMMARY ")
         logger.info(f"  - Successfully processed: {total_processed} files")
         logger.info(f"  - Failed to process:     {total_failed} files")
         logger.info(f"  - Success rate:          {success_rate:.1f}%")
         logger.info(f"  - Total sequences saved: {total_saved}")
-        logger.info("\n🎵 TRACK SEPARATION STATISTICS:")
+        logger.info("\n TRACK SEPARATION STATISTICS:")
         logger.info(f"  - Files with bass:       {track_stats['with_bass']}")
         logger.info(f"  - Files with drums:      {track_stats['with_drums']}")
         logger.info(f"  - Files with melody:     {track_stats['with_melody']}")
         logger.info(f"  - Multi-track files:     {track_stats['multi_track']}")
         logger.info("="*60)
-        logger.info("✅ Preprocessing complete with track separation!")
+        logger.info(" Preprocessing complete with track separation!")
         
         # Clean up the stop file
         if os.path.exists(stop_file):
