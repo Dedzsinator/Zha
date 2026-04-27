@@ -800,26 +800,6 @@
 
 \pagestyle{headings}
 
-%% MINTED
-
-\RequirePackage{caption}
-\RequirePackage{subcaption}
-
-% kódrészletek beszúrására és szintaxisszínezésére alkalmas könyvtár
-\RequirePackage[newfloat=true]{minted}
-% a kódrészletek ne vegyék át a másfeles sortávolságot
-\setminted{baselinestretch=1}
-% xcode színséma használata
-\usemintedstyle{xcode}
-
-% a következő szükséges, hogy a minted együttműködjön a magyar babel-lel
-% ld. https://github.com/gpoore/minted/issues/158
-\makeatletter
-\minted@checkstyle{}
-\renewcommand{\fps@listing}{t}
-\SetupFloatingEnvironment{listing}{name=kódrészlet}
-\makeatother
-
 
 \endinput
 

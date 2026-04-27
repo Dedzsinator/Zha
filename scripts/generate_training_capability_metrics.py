@@ -84,52 +84,22 @@ class TrainingMetricsAnalyzer:
     
     @staticmethod
     def generate_fallback_history(model_name: str, model_path: Path) -> Dict:
-        """Generate a realistic fallback history for models without history files."""
+        """Return real metadata fallback when history logs are unavailable."""
         # Check if checkpoint file exists
         if model_path.exists():
             print(f"      Using checkpoint metadata...")
             history = TrainingMetricsAnalyzer.extract_history_from_checkpoint(model_path)
             if history:
                 return history
-        
-        # Generate synthetic but realistic training curves
-        print(f"      Generating synthetic history (model exists but no logs)...")
-        
-        # Simulate training curves based on model type
-        if "markov" in model_name.lower():
-            n_epochs = 50
-            initial_loss = 3.5
-            final_loss = 0.8
-        elif "vae" in model_name.lower():
-            n_epochs = 100
-            initial_loss = 150.0
-            final_loss = 12.0
-        elif "transformer" in model_name.lower():
-            n_epochs = 100
-            initial_loss = 200.0
-            final_loss = 15.0
-        else:
-            n_epochs = 50
-            initial_loss = 100.0
-            final_loss = 10.0
-        
-        # Generate realistic loss curve (exponential decay + noise)
-        epochs = np.arange(n_epochs)
-        # Exponential decay curve
-        base_curve = initial_loss * np.exp(-3 * epochs / n_epochs) + final_loss * 0.5
-        # Add decreasing noise
-        noise = np.random.normal(0, (initial_loss - final_loss) * 0.1 * (1 - epochs / n_epochs), n_epochs)
-        losses = base_curve + noise
-        
-        history = {
-            "loss": losses.tolist(),
-            "val_loss": (losses * 1.05 + np.random.normal(0, 0.5, n_epochs)).tolist(),
-            "learning_rate": [1e-3 * (0.5 ** (e // 20)) for e in range(n_epochs)],
-            "_generated": True,
-            "_note": f"Synthetic history generated for {model_name}"
+
+        print(f"      No real history available for {model_name}; metrics will be marked unavailable")
+        return {
+            "_generated": False,
+            "_note": (
+                f"No tracked history found for {model_name}. "
+                "Run model training with history logging enabled to generate real curves."
+            )
         }
-        
-        return history
     
     @staticmethod
     def analyze_convergence(history: Dict) -> Dict:

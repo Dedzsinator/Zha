@@ -1,3 +1,4 @@
+%!TEX root = ../main.tex
 \chapter{Kiegészítő bizonyítások}
 \label{chap:proofs}
 
@@ -195,7 +196,7 @@ ahol $\epsilon = 10^{-10}$ megakadályozza a nulla osztást.
 
 PyTorch broadcast műveletekkel:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 sums = matrix.sum(dim=-1, keepdim=True)
 sums = torch.where(sums == 0, torch.ones_like(sums), sums)
 normalized = matrix / sums

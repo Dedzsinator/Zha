@@ -434,15 +434,81 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     )
     start_time = time.time()
     last_logged_percent = -1
+    progress_trace = {
+        'progress_percent': [],
+        'elapsed_seconds': [],
+        'transition_sparsity_pct': [],
+        'active_note_count': [],
+        'process_rss_gb': [],
+    }
     logger.info(" Markov training started (progress logs every 5%)")
+
+    def _snapshot_transition_metrics():
+        """Capture real transition-matrix and process metrics during training."""
+        metrics = {
+            'transition_sparsity_pct': None,
+            'active_note_count': None,
+            'process_rss_gb': None,
+        }
+
+        try:
+            transitions = model.transitions
+            if isinstance(transitions, torch.Tensor):
+                if transitions.is_cuda:
+                    non_zero = int(torch.count_nonzero(transitions).item())
+                    row_activity = torch.sum(transitions, dim=1)
+                    col_activity = torch.sum(transitions, dim=0)
+                    active_note_count = int(
+                        torch.count_nonzero((row_activity > 0) | (col_activity > 0)).item()
+                    )
+                else:
+                    non_zero = int(torch.count_nonzero(transitions).item())
+                    row_activity = torch.sum(transitions, dim=1)
+                    col_activity = torch.sum(transitions, dim=0)
+                    active_note_count = int(
+                        torch.count_nonzero((row_activity > 0) | (col_activity > 0)).item()
+                    )
+                shape = transitions.shape
+            else:
+                transitions_np = np.asarray(transitions)
+                non_zero = int(np.count_nonzero(transitions_np))
+                row_activity = transitions_np.sum(axis=1)
+                col_activity = transitions_np.sum(axis=0)
+                active_note_count = int(np.count_nonzero((row_activity > 0) | (col_activity > 0)))
+                shape = transitions_np.shape
+
+            total_possible = int(shape[0] * shape[1]) if len(shape) == 2 else 0
+            sparsity_pct = (1 - non_zero / total_possible) * 100 if total_possible > 0 else 0.0
+
+            metrics['transition_sparsity_pct'] = float(round(sparsity_pct, 4))
+            metrics['active_note_count'] = int(active_note_count)
+        except Exception as e:
+            logger.debug(f"Could not snapshot transition metrics: {e}")
+
+        try:
+            proc = psutil.Process(os.getpid())
+            metrics['process_rss_gb'] = float(proc.memory_info().rss / 1e9)
+        except Exception as e:
+            logger.debug(f"Could not snapshot process RSS: {e}")
+
+        return metrics
     
     def update_progress(percent):
         nonlocal last_logged_percent
         current = int(percent * 100)
         progress_bar.update(current - progress_bar.n)
+
+        elapsed = time.time() - start_time
+        snap = _snapshot_transition_metrics()
+
+        progress_trace['progress_percent'].append(int(current))
+        progress_trace['elapsed_seconds'].append(float(elapsed))
+        progress_trace['transition_sparsity_pct'].append(snap['transition_sparsity_pct'])
+        progress_trace['active_note_count'].append(snap['active_note_count'])
+        progress_trace['process_rss_gb'].append(snap['process_rss_gb'])
+
         if (not use_tqdm) and current >= 0:
             if current >= min(100, last_logged_percent + 5):
-                elapsed = time.time() - start_time
                 eta = (elapsed / current) * (100 - current) if current > 0 else 0.0
                 logger.info(
                     f" Training progress: {current}% | elapsed={elapsed/60:.1f}m | eta={eta/60:.1f}m"
@@ -560,20 +626,25 @@ def train_markov_model(order=3, max_interval=12, output_dir="output/trained_mode
     training_history['training_duration_minutes'] = training_history['training_duration_seconds'] / 60
     training_history['training_metrics'] = stats
     
-    # Generate synthetic loss curve for visualization (Markov trains in one pass)
-    # Use a realistic exponential decay pattern based on training time
-    n_synthetic_epochs = 50
-    final_metric = stats.get('transition_sparsity_pct', 50)
-    initial_metric = 95.0  # Assume started with ~95% sparsity
-    
-    # Exponential decay from 95% to final sparsity
-    synthetic_epochs = np.arange(n_synthetic_epochs)
-    synthetic_loss = initial_metric * np.exp(-4 * synthetic_epochs / n_synthetic_epochs) + (final_metric * 0.1)
-    synthetic_loss = synthetic_loss + np.random.normal(0, 2, n_synthetic_epochs)  # Add realistic noise
-    synthetic_loss = np.maximum(synthetic_loss, final_metric * 0.5)  # Don't go below threshold
-    
-    training_history['loss'] = synthetic_loss.tolist()
-    training_history['_note'] = f"Synthetic loss curve generated for visualization (trained in {training_history['training_duration_minutes']:.1f}m)"
+    # Persist real training trace captured during progress callbacks.
+    valid_sparsity = [x for x in progress_trace['transition_sparsity_pct'] if isinstance(x, (int, float))]
+    if not valid_sparsity:
+        # Ensure at least one real post-train sample exists.
+        final_snap = _snapshot_transition_metrics()
+        progress_trace['progress_percent'].append(100)
+        progress_trace['elapsed_seconds'].append(float(training_history['training_duration_seconds']))
+        progress_trace['transition_sparsity_pct'].append(final_snap['transition_sparsity_pct'])
+        progress_trace['active_note_count'].append(final_snap['active_note_count'])
+        progress_trace['process_rss_gb'].append(final_snap['process_rss_gb'])
+        valid_sparsity = [x for x in progress_trace['transition_sparsity_pct'] if isinstance(x, (int, float))]
+
+    training_history['progress_trace'] = progress_trace
+    training_history['loss'] = [float(x) for x in valid_sparsity]
+    training_history['loss_metric_name'] = 'transition_sparsity_pct'
+    training_history['_note'] = (
+        "Real tracked metrics captured during training progress callbacks; "
+        "loss field stores transition_sparsity_pct samples for backward compatibility."
+    )
     
     history_path = os.path.join("output/trained_models", "markov_history.json")
     os.makedirs("output/trained_models", exist_ok=True)

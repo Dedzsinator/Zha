@@ -1,3 +1,4 @@
+%!TEX root = ../main.tex
 \chapter{Variációs autoenkóderek csoport-orbitális konzisztenciával}
 \label{chap:vae}
 
@@ -81,7 +82,7 @@ A modell architektúrájában reziduális blokkokat és réteg normalizációt a
 \label{fig:residual_block}
 \end{figure}
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 class ResidualBlock(nn.Module):
     def __init__(self, dim):
         self.linear = nn.Linear(dim, dim)
@@ -97,7 +98,7 @@ A kódoló fokozatosan csökkenti a dimenziót a bemenettől a látens térig, m
 
 Tanítás közben minden batch esetén véletlenszerűen választunk néhány transzformációt a csoportból, jellemzően félhangos eltolásokat egy zeneileg értelmes tartományban. Ezeket az orbit-elemeket ez után a látens térbe kódoljuk:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 def compute_orbit_loss(self, x, transformations):
     encodings = []
     for transform in transformations:
@@ -188,7 +189,7 @@ A tanítás során több trükköt alkalmazunk:
 
 A VAE tanítása a rekonstrukciós veszteség és a KL-divergencia egyensúlyára épül. A tanítási ciklus minden epochban végigmegy a batch-eken:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 for epoch in range(num_epochs):  # Iteráció az epochokon keresztül
     for batch in dataloader:  # Batch-ek feldolgozása
         recon, mu, logvar = model(batch)  # Modell elorejelzese: rekonstrukcio es latens parameterek

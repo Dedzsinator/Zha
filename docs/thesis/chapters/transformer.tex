@@ -1,3 +1,4 @@
+%!TEX root = ../main.tex
 \chapter{Transformer hálózatok zenei generáláshoz}
 \label{chap:transformers}
 
@@ -101,7 +102,7 @@ Ez transzláció-invari anciát biztosít, ha az egész szekvenciát eltoljuk, a
 
 A \texttt{lightning\_transformer.py} implementációja hatékonyan alkalmazza a RoPE-ot:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 class RotaryPositionalEmbeddings(nn.Module):
     def __init__(self, d_model, max_seq_len=5000):
         super().__init__()
@@ -118,7 +119,7 @@ class RotaryPositionalEmbeddings(nn.Module):
 
 A \texttt{rotate\_half} segédfüggvény a vektor felét rotálja:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 def rotate_half(x):
     x1, x2 = x[..., :x.shape[-1]//2], x[..., x.shape[-1]//2:]
     return torch.cat((-x2, x1), dim=-1)
@@ -126,7 +127,7 @@ def rotate_half(x):
 
 Ezt követően a lekérdezésre és kulcsra alkalmazzuk:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 cos_q, sin_q = self.rope(x, seq_len=L)
 q = (q * cos_q) + (rotate_half(q) * sin_q)
 k = (k * cos_k) + (rotate_half(k) * sin_k)
@@ -178,7 +179,7 @@ ahol $\mathbf{g} = \sigma(\mathbf{W}_g \mathbf{x}) \in (0, 1)^{d_{ff}}$. Mivel a
 
 \subsection{Implementáció}
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 class GatedFeedForward(nn.Module):
     def __init__(self, d_model, d_ff, dropout=0.1):
         super().__init__()
@@ -201,7 +202,7 @@ class GatedFeedForward(nn.Module):
 
 A \texttt{EnhancedMultiheadAttention} integrálja a pozíciókódolást és a reziduális kapcsolatokat:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 class EnhancedTransformerEncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward, dropout=0.1):
         super().__init__()
@@ -263,7 +264,7 @@ Rétegenkénti breakdown:
 
 Hosszú szekvenciák generálásánál csúszó ablakos memóriát alkalmazunk:
 
-\begin{lstlisting}[language=Python]
+\begin{lstlisting}
 if memory_length + new_length > max_memory:
     trim_length = memory_length + new_length - max_memory
     memory = memory[:, trim_length:, :]

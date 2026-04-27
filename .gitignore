@@ -190,3 +190,4 @@ docs/thesis/*.aux
 **/*.fls
 **/*.fdb_latexmk
 **/*.bbl
+package-lock.json

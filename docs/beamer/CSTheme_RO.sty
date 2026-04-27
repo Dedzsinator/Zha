@@ -1,0 +1,73 @@
+\mode<presentation>
+
+\newif\ifbeamer@secheader
+\beamer@secheaderfalse
+
+\ProcessOptionsBeamer
+
+\useoutertheme[footline=date]{smoothbars}
+\makeatletter 
+
+
+\newcommand{\frameofframes}{/}
+\newcommand{\setframeofframes}[1]{\renewcommand{\frameofframes}{#1}}
+\setbeamertemplate{headline}{%
+\leavevmode%
+  \hbox{%
+  \setbeamercolor{coloredboxstuff}{fg=white,bg=blueCS}
+    \begin{beamercolorbox}[wd=\paperwidth,ht=8ex,dp=2ex,leftskip=.3cm,rightskip=.3cm plus1fil]{coloredboxstuff}%
+     {\usebeamerfont{date in head/foot}\large\Facultate}\hfill \break
+     {\usebeamerfont{date in head/foot}\small\Universitate}%
+    \end{beamercolorbox}%
+  }
+}
+\setbeamertemplate{footline} 
+  {%
+   \begin{beamercolorbox}[ht=2.5ex,dp=1.125ex,leftskip=.3cm,rightskip=.3cm plus1fil]{date in head/foot}%
+      {\usebeamerfont{date in head/foot}\DataPrezentarii}%
+      \hfill%
+      {\usebeamerfont{frame number}\usebeamercolor[fg]{frame number}\insertframenumber~\frameofframes~\inserttotalframenumber}
+    \end{beamercolorbox}%
+  }
+\makeatother
+
+\useinnertheme{circles}
+
+\xdefinecolor{blueCS}{RGB}{0,65,116}  
+\xdefinecolor{yellowCS}{RGB}{245,225,190}  
+
+\setbeamercolor{footline}{bg=white,fg=blueCS}
+\setbeamercolor{frametitle}{bg=white,fg=blueCS}
+\setbeamercolor{title}{bg=blueCS}
+\setbeamerfont{frametitle}{size=\Large}
+
+\setbeamertemplate{bibliography item}[text]
+\setbeamertemplate{caption}[numbered]
+
+\setbeamercolor{palette primary}{fg=blueCS,bg=white}
+\setbeamercolor{palette secondary}{fg=blueCS,bg=white}
+\setbeamercolor{palette tertiary}{fg=blueCS,bg=white}
+\setbeamercolor{palette quaternary}{fg=blueCS,bg=white}
+\setbeamercolor{titlelike}{parent=palette primary}
+
+%% try
+\setbeamercolor{block title}{fg=white,bg=blueCS}
+\setbeamercolor*{block title example}{use={normal text,example text},bg=white,fg=blueCS}
+\setbeamercolor{fine separation line}{}
+\setbeamercolor{item projected}{fg=white}
+\setbeamercolor{palette sidebar primary}{use=normal text,fg=normal text.fg}
+\setbeamercolor{palette sidebar quaternary}{fg=white,bg=blueCS}
+\setbeamercolor{palette sidebar secondary}{fg=blueCS,bg=white}
+\setbeamercolor{palette sidebar tertiary}{fg=blueCS,bg=white}
+\setbeamercolor{section in sidebar}{fg=bluecs}
+\setbeamercolor{section in sidebar shaded}{fg=white}
+\setbeamercolor{separation line}{}
+\setbeamercolor{sidebar}{bg=blueCS}
+\setbeamercolor{sidebar}{parent=palette primary}
+\setbeamercolor{structure}{fg=blueCS}
+\setbeamercolor{subsection in sidebar}{fg=bluecs}
+\setbeamercolor{subsection in sidebar shaded}{fg=white}
+
+
+\mode
+<all>

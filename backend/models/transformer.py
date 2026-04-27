@@ -462,7 +462,7 @@ class TransformerModel(nn.Module):
             self.drum_memory = None
     
     def generate(self, seed, steps=100, temperature=0.8, top_k=5, top_p=0.92,
-                 chord_progression=None, tempo_curve=None):
+                 chord_progression=None, tempo_curve=None, repetition_penalty=1.2):
         """
         Generate a sequence using the transformer
         
@@ -474,6 +474,7 @@ class TransformerModel(nn.Module):
             top_p: Nucleus sampling probability threshold
             chord_progression: List of chord dicts or None for conditioning
             tempo_curve: List of tempo values or None for conditioning
+            repetition_penalty: Penalty applied to previously generated tokens (1.0 = no penalty)
             
         Returns:
             Generated sequence
@@ -516,6 +517,20 @@ class TransformerModel(nn.Module):
             next_token_logits = output[:, -1, :] / temperature
             next_token_logits = torch.nan_to_num(next_token_logits, nan=0.0)
             
+            # Apply repetition penalty
+            if repetition_penalty != 1.0:
+                # Extract the token indices from the generated sequence (one-hot to indices)
+                # Ensure we only penalize in the token dimension
+                generated_indices = torch.argmax(x, dim=-1)
+                
+                for batch_idx in range(seed.size(0)):
+                    for token_idx in set(generated_indices[batch_idx].tolist()):
+                        score = next_token_logits[batch_idx, token_idx]
+                        if score < 0:
+                            next_token_logits[batch_idx, token_idx] = score * repetition_penalty
+                        else:
+                            next_token_logits[batch_idx, token_idx] = score / repetition_penalty
+                            
             # Apply top-k filtering
             if top_k > 0:
                 indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]

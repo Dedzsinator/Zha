@@ -1,3 +1,4 @@
+%!TEX root = ../main.tex
 \chapter{Tanítási és optimalizálási technikák}
 \label{chap:képzés}
 
@@ -171,12 +172,13 @@ Mixed precision & - & Igen & Igen \\
 \subsection{Valós idejű metrika követés}
 A rendszer részletes logging-ot és monitorozást biztosít többplatformos megközelítéssel \cite{zhang2020deep}.
 
-A monitoring rendszer komponensei közé tartozik a TensorBoard integráció, amely valós idejű veszteség és metrika követést biztosít. A Weights & Biases felhőalapú kísérletkövetési szolgáltatás lehetővé teszi a kísérletek összehasonlítását és megosztását. A modell súly hisztogramok vizualizációja segít megérteni a súlyok eloszlásának változásait a képzés során. A gradient flow analysis pedig monitorozza a gradiensek áramlását a hálózat különböző rétegein keresztül.
+A monitoring rendszer komponensei közé tartozik a TensorBoard integráció, amely valós idejű veszteség és metrika követést biztosít. A \emph{Weights \& Biases} felhőalapú kísérletkövetési szolgáltatás lehetővé teszi a kísérletek összehasonlítását és megosztását. A modell súly hisztogramok vizualizációja segít megérteni a súlyok eloszlásának változásait a képzés során. A gradient flow analysis pedig monitorozza a gradiensek áramlását a hálózat különböző rétegein keresztül.
 
 \subsection{Hibakeresési eszközök és anomália detektálás}
 Fejlett hibakeresési funkciók a tanítási problémák azonosítására és megoldására. A hibakeresési algoritmus főbb funkciói közé tartozik a gradiensáramlás-figyelés, amely eltűnő vagy robbanó gradiensek detektálására szolgál. Ez a mechanizmus folyamatosan figyeli a gradiensek normáját és áramlását a hálózat különböző rétegein keresztül, automatikusan figyelmeztetve a felhasználót, ha kritikus értékeket észlel. A veszteség-anomalia detektálás funkció NaN vagy végtelen értékeket, valamint hirtelen változásokat azonosít a veszteségfüggvényben, segítve a numerikus instabilitások korai felismérését. A tanulási ráta adaptáció automatikusan kiigazaitja a tanulási rátát ezek alapján, míg a memóriahasználat-követés optimalizálja a GPU memória használatát, megelőzve a memória kifogyorigotta megszakításokat.
 
 \subsection{Automatizált hiperparaméter optimalizáció}
+
 A rendszer kifinomult hiperparaméter optimalizációt alkalmaz Bayes-i optimalizációs technikákkal, amely intelligensen navigál a nagy paraméter terekben. A VAE modellnél a látens dimenzió (16-128), béta érték (0.1-1.0) és következetességi súly (0.1-0.5) optimalizálásra kerül. A Transformer modellnél a rétegszám (4-8), figyelem fejek száma (4-12), beágyazási dimenzió (256-1024) és eldobási arány (0.05-0.2) paraméterek hangolhatók. A Markov-lánc modellnél a rend (2-6), \texttt{max\_interval} (8-24) és rejtett állapotok (8-32) számok optimalizálhatók \cite{optuna2019}.
 
 A Tree-structured Parzen Estimator (TPE) sampler alkalmazásra kerül, amely hatékonyan feltérképezi a paraméter teret korábbi próbálkozások alapján. A multi-objective optimalizáció egyidejűleg optimalizálja a modell pontosságot, generálási minőséget és inference sebességet, Pareto-optimális megoldásokat keresve. Az adaptive pruning mechanizmus korai leállítja az ígéretelen próbálkozásokat, felgyorsítva az optimalizációs folyamatot.

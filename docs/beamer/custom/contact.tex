@@ -1,0 +1,29 @@
+% Contact slide frame
+\begin{frame}[plain]
+\begin{tikzpicture}[remember picture,overlay]
+% Background image
+\node[above right,inner sep=0pt] at (current page.south west)
+{
+    \includegraphics[width=\paperwidth]{img/blueCS_background.png}
+};
+    
+% Facultate
+\node[color=white,below left=-0.7cm and -10.5cm]{ \small \MakeUppercase\Facultate};
+% Universitate
+\node[color=white,below left=-0.25cm and -9.5cm]{\small \MakeUppercase\Universitate};
+
+% adresa
+\node[color=white,below left=0.5cm and -9.7cm,align=center,text width=4cm]{\footnotesize\Adresa};
+
+% website
+\node[color=white,below left=1.75cm and -8.7cm,align=center]{\small \Website};
+% Logo CS
+\node[below right=3cm and 1cm] at (current page.north west)
+{
+    \includegraphics[width=3cm]{img/CS_white_logo.png}
+};
+\draw[white, ultra thick] (4,0.65) -- (4,-2.15);
+
+\end{tikzpicture}
+    
+\end{frame}

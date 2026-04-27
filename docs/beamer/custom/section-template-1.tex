@@ -1,0 +1,23 @@
+% Section 1 slide frame
+\begin{frame}[plain]
+\begin{tikzpicture}[remember picture,overlay]
+% Background image
+    \node[above right,inner sep=0pt] at (current page.south west)
+    {
+        \includegraphics[width=\paperwidth]{img/blueCS_background.png}
+    };
+% Logo CS
+\node[below right=0.5cm and 10cm] at (current page.north west)
+{
+    \includegraphics[width=2cm]{img/CS_white_logo.png}
+};
+\draw[yellowCS, ultra thick] (0.1,-4) -- (6,-4);
+  
+% section title
+\node[color=white,below right=2.5cm and 0cm] {\huge \sectionTitle};
+\node[color=white,below right=3.2cm and 0cm] {\Large \sectionSubtitle};
+\node[color=white,below left=4.7cm and 1.45cm] (author) at (title.south){ \sectionMotto};
+
+\end{tikzpicture}
+    
+\end{frame}

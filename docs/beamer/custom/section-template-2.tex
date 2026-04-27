@@ -1,0 +1,22 @@
+% Section 2 slide frame
+\begin{frame}[plain]
+\begin{tikzpicture}[remember picture,overlay]
+% Background image
+    \node[above right,inner sep=0pt] at (current page.south west)
+    {
+        \includegraphics[width=\paperwidth]{img/blueCS_background.png}
+    };
+% Logo CS
+\node[below right =6cm and 0.5cm] at (current page.north west)
+{
+    \includegraphics[width=2cm]{img/CS_white_logo.png}
+};
+\draw[yellowCS, ultra thick] (2,-3.25) -- (8,-3.25);
+  
+% section title
+\node[color=yellowCS,below right=2cm and 2cm] {\Huge \sectionTitle};
+\node[color=white,below right=3.5cm and 2cm] {\Large \sectionSubtitle};
+
+\end{tikzpicture}
+    
+\end{frame}

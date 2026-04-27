@@ -1,0 +1,50 @@
+% Title slide frame
+\begin{frame}[plain]
+\begin{tikzpicture}[remember picture,overlay]
+% Background image
+\node[above right,inner sep=0pt] at (current page.south west)
+{
+    \includegraphics[width=\paperwidth]{img/blueCS_background.png}
+};
+    
+% Title
+\node[anchor=center, color=yellowCS, align=center, text width=14cm] (title) at ([yshift=0.5cm]current page.center)
+{
+    \Huge \MyTitle
+};
+
+% Separator Line
+\draw[yellowCS, ultra thick] ([yshift=-0.5cm, xshift=-4cm]title.south) -- ([yshift=-0.5cm, xshift=4cm]title.south);
+
+% Author 
+\node[anchor=north, color=white, align=center] (author) at ([yshift=-1cm]title.south)
+{
+    \Large \MyAuthor
+};
+
+% Facultate
+\node[anchor=north, color=yellowCS, align=center] (date1) at ([yshift=-0.8cm]author.south)
+{
+    \large \Facultate
+};
+
+% Universitate
+\node[anchor=north, color=white, align=center] (date2) at ([yshift=-0.1cm]date1.south)
+{
+    \large \Universitate
+};
+
+% Logo CS
+\node[anchor=north west] at ([xshift=1cm, yshift=-1cm]current page.north west)
+{
+    \includegraphics[width=2cm]{img/CS_white_logo.png}
+};
+
+% Logo UBB
+\node[anchor=north east] at ([xshift=-1cm, yshift=-1cm]current page.north east)
+{
+    \includegraphics[width=2cm]{img/Sigla_UBB_claudiopolitana_alb.png}
+};
+
+\end{tikzpicture}
+\end{frame}

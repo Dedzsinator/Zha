@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate all Markov chapter metrics (Placeholders 1-5)
+Generate all Markov chapter metrics from real trained model/state.
 1. Stationary Distribution Histogram
-2. Entropy Rate Comparison Table
+2. Entropy Rate Summary Table
 3. HMM Hidden State Interpretation Table
 4. GPU Benchmark Table
 5. GPU Memory Usage Plot
@@ -19,7 +19,6 @@ import torch
 import json
 from pathlib import Path
 from backend.models.markov_chain import MarkovChain
-from backend.trainers.train_markov import MarkovTrainer
 import time
 import pandas as pd
 
@@ -30,6 +29,7 @@ plt.rcParams['font.size'] = 10
 
 OUTPUT_DIR = Path("output/metrics/markov")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TRAINED_MODEL_PATH = Path("output/trained_models/markov.npy")
 
 def load_or_train_model(order, use_hmm=False):
     """Load existing model or train new one"""
@@ -114,7 +114,7 @@ def generate_stationary_distribution(model, output_path):
     
     return stationary
 
-def generate_entropy_comparison(output_path):
+def generate_entropy_comparison(model, output_path):
     """
     Placeholder 2: Entropy Rate Comparison Table
     Compare entropy rates across different model orders
@@ -122,56 +122,67 @@ def generate_entropy_comparison(output_path):
     print("\n=== Generating Entropy Rate Comparison ===")
     
     results = []
-    
-    # Train different order models
-    for order in [1, 2, 3]:
-        print(f"\nTraining {order}-order Markov model...")
-        model = MarkovChain(order=order, use_gpu=False)
-        
-        # Simulate training with dummy data
-        # In real implementation, load actual MIDI data
-        dummy_data = np.random.randint(60, 72, size=1000)  # C4 to B4
-        
-        # Build transition matrix
-        for i in range(len(dummy_data) - 1):
-            model.transitions[dummy_data[i], dummy_data[i+1]] += 1
-        
-        # Normalize
-        model.transitions = model.gpu_opt.normalize_gpu(model.transitions, axis=1)
-        
-        # Compute entropy rate: H = -Σ π_i Σ p_ij log(p_ij)
-        if isinstance(model.transitions, torch.Tensor):
-            P = model.transitions.cpu().numpy()
-        else:
-            P = model.transitions
-        
-        # Simple approximation: use uniform stationary distribution
-        stationary = np.ones(128) / 128
-        
-        entropy = 0.0
-        for i in range(128):
-            for j in range(128):
-                if P[i, j] > 0:
-                    entropy -= stationary[i] * P[i, j] * np.log2(P[i, j])
-        
+
+    # Compute entropy rate H = -Σ π_i Σ p_ij log2(p_ij) using real stationary distribution.
+    if isinstance(model.transitions, torch.Tensor):
+        P = model.transitions.detach().cpu().numpy()
+    else:
+        P = np.asarray(model.transitions)
+
+    row_sums = P.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    P = P / row_sums
+
+    eigvals, eigvecs = np.linalg.eig(P.T)
+    idx = int(np.argmin(np.abs(eigvals - 1.0)))
+    stationary = np.real(eigvecs[:, idx])
+    stationary = np.clip(stationary, 0.0, None)
+    if stationary.sum() <= 0:
+        stationary = np.ones(P.shape[0], dtype=np.float64)
+    stationary = stationary / stationary.sum()
+
+    entropy = 0.0
+    for i in range(P.shape[0]):
+        for j in range(P.shape[1]):
+            pij = float(P[i, j])
+            if pij > 0:
+                entropy -= float(stationary[i]) * pij * np.log2(pij)
+
+    results.append({
+        'Model': f'{model.order}-order Markov',
+        'States': int(P.shape[0]),
+        'Entropy Rate (bits)': f'{entropy:.3f}',
+        'Perplexity': f'{2**entropy:.2f}',
+        'Description': 'Computed from real trained transition matrix'
+    })
+
+    if model.hmm_model is not None and hasattr(model.hmm_model, 'transmat_'):
+        hmm_trans = np.asarray(model.hmm_model.transmat_, dtype=np.float64)
+        hmm_row_sums = hmm_trans.sum(axis=1, keepdims=True)
+        hmm_row_sums[hmm_row_sums == 0] = 1.0
+        hmm_trans = hmm_trans / hmm_row_sums
+
+        hmm_eigvals, hmm_eigvecs = np.linalg.eig(hmm_trans.T)
+        hmm_idx = int(np.argmin(np.abs(hmm_eigvals - 1.0)))
+        hmm_stationary = np.real(hmm_eigvecs[:, hmm_idx])
+        hmm_stationary = np.clip(hmm_stationary, 0.0, None)
+        if hmm_stationary.sum() <= 0:
+            hmm_stationary = np.ones(hmm_trans.shape[0], dtype=np.float64)
+        hmm_stationary = hmm_stationary / hmm_stationary.sum()
+
+        hmm_entropy = 0.0
+        for i in range(hmm_trans.shape[0]):
+            for j in range(hmm_trans.shape[1]):
+                pij = float(hmm_trans[i, j])
+                if pij > 0:
+                    hmm_entropy -= float(hmm_stationary[i]) * pij * np.log2(pij)
+
         results.append({
-            'Model': f'{order}-order Markov',
-            'States': 128,
-            'Entropy Rate (bits)': f'{entropy:.3f}',
-            'Perplexity': f'{2**entropy:.2f}',
-            'Description': f'Order-{order} transition model'
-        })
-    
-    # Add HMM models
-    for n_states in [8, 16]:
-        # Approximate HMM entropy (higher due to latent states)
-        entropy = 3.5 + (n_states / 16) * 0.5  # Rough estimate
-        results.append({
-            'Model': f'HMM ({n_states} states)',
-            'States': n_states,
-            'Entropy Rate (bits)': f'{entropy:.3f}',
-            'Perplexity': f'{2**entropy:.2f}',
-            'Description': f'Hidden Markov Model with {n_states} latent states'
+            'Model': f'HMM ({model.hmm_model.n_components} states)',
+            'States': int(model.hmm_model.n_components),
+            'Entropy Rate (bits)': f'{hmm_entropy:.3f}',
+            'Perplexity': f'{2**hmm_entropy:.2f}',
+            'Description': 'Computed from real trained HMM transition matrix'
         })
     
     # Create table
@@ -217,9 +228,23 @@ def generate_hmm_interpretation(model, output_path):
     print("\n=== Generating HMM Hidden State Interpretation ===")
     
     if model.hmm_model is None:
-        print("No HMM model found, creating dummy interpretation")
-        n_states = 16
-        means = np.random.randn(n_states, 7)  # 7D feature vectors
+        print("No trained HMM model found; writing unavailability report")
+        empty_df = pd.DataFrame([
+            {
+                'State': 'N/A',
+                'Name': 'Unavailable',
+                'Pitch Mean': 'N/A',
+                'Pitch Std': 'N/A',
+                'Interval Mean': 'N/A',
+                'Ascending %': 'N/A',
+                'Duration Mean': 'N/A',
+                'Musical Role': 'No trained HMM state available in loaded model'
+            }
+        ])
+        csv_path = output_path.with_suffix('.csv')
+        empty_df.to_csv(csv_path, index=False)
+        print(f"Saved table to: {csv_path}")
+        return empty_df
     else:
         n_states = model.n_hidden_states
         means = model.hmm_model.means_
@@ -329,11 +354,21 @@ def benchmark_gpu(output_path):
         ('Forward Algorithm (16 states, 1000 steps)', 16, 1000),
     ]
     
+    if TRAINED_MODEL_PATH.exists():
+        base_matrix = np.asarray(np.load(TRAINED_MODEL_PATH), dtype=np.float32)
+    else:
+        raise FileNotFoundError(
+            f"Real trained model required for benchmark: {TRAINED_MODEL_PATH}"
+        )
+
     for test_name, dim1, dim2 in tests:
         print(f"\nBenchmarking: {test_name}")
-        
-        # Create random matrix
-        np_matrix = np.random.rand(dim1, dim2).astype(np.float32)
+
+        # Build benchmark inputs by tiling real transition statistics to target shape.
+        repeat_rows = int(np.ceil(dim1 / base_matrix.shape[0]))
+        repeat_cols = int(np.ceil(dim2 / base_matrix.shape[1]))
+        tiled = np.tile(base_matrix, (repeat_rows, repeat_cols))
+        np_matrix = tiled[:dim1, :dim2]
         
         # CPU benchmark
         cpu_times = []
@@ -413,8 +448,8 @@ def benchmark_gpu(output_path):
 
 def profile_memory(output_path):
     """
-    Placeholder 5: GPU Memory Usage Plot
-    Monitor GPU memory during training
+    GPU Memory Usage Plot
+    Monitor GPU memory during repeated normalization over the real transition matrix.
     """
     print("\n=== Profiling GPU Memory Usage ===")
     
@@ -426,13 +461,22 @@ def profile_memory(output_path):
     memory_reserved = []
     iterations = []
     
-    # Simulate training iterations
+    # Use real transition matrix from trained model as profiling workload.
     model = MarkovChain(order=3, use_gpu=True)
-    
+    if not TRAINED_MODEL_PATH.exists() or not model.load(str(TRAINED_MODEL_PATH)):
+        print("Could not load trained model for memory profiling")
+        return None
+
+    if isinstance(model.transitions, torch.Tensor):
+        work_matrix = model.transitions
+        if not work_matrix.is_cuda:
+            work_matrix = work_matrix.to('cuda')
+    else:
+        work_matrix = torch.tensor(model.transitions, dtype=torch.float32, device='cuda')
+
     for i in range(1000):
-        # Simulate some GPU operations
-        dummy_matrix = torch.rand(128, 128, device='cuda')
-        _ = model.gpu_opt.normalize_gpu(dummy_matrix, axis=1)
+        # Real operation: normalize the learned transition matrix.
+        work_matrix = model.gpu_opt.normalize_gpu(work_matrix, axis=1)
         
         if i % 10 == 0:
             iterations.append(i)
@@ -498,21 +542,15 @@ def main():
     print("MARKOV CHAPTER METRICS GENERATION")
     print("="*60)
     
-    # Create a dummy model for testing
-    print("\nInitializing Markov model...")
+    # Load real trained Markov model.
+    print("\nLoading trained Markov model...")
     model = MarkovChain(order=3, n_hidden_states=16, use_gpu=torch.cuda.is_available())
-    
-    # Generate dummy training data
-    print("Creating synthetic training data...")
-    dummy_notes = np.random.randint(60, 72, size=5000)  # C4 to B4 range
-    for i in range(len(dummy_notes) - 1):
-        if isinstance(model.transitions, torch.Tensor):
-            model.transitions[dummy_notes[i], dummy_notes[i+1]] += 1
-        else:
-            model.transitions[dummy_notes[i], dummy_notes[i+1]] += 1
-    
-    # Normalize transitions
-    model.transitions = model.gpu_opt.normalize_gpu(model.transitions, axis=1)
+    if not TRAINED_MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"Trained model not found at {TRAINED_MODEL_PATH}. Run training first."
+        )
+    if not model.load(str(TRAINED_MODEL_PATH)):
+        raise RuntimeError(f"Failed to load Markov model from {TRAINED_MODEL_PATH}")
     
     # Generate all metrics
     print("\n" + "="*60)
@@ -527,6 +565,7 @@ def main():
     
     # 2. Entropy Comparison
     generate_entropy_comparison(
+        model,
         OUTPUT_DIR / "2_entropy_comparison.png"
     )
     

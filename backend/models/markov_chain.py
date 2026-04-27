@@ -1811,7 +1811,9 @@ class MarkovChain:
         # Get scale pitches for filtering
         scale_pitches = self._get_scale_pitches(key_context)
         
-        for _ in range(length - 1):
+        recent_notes_history = []
+        
+        for i in range(length - 1):
             if current_note >= self.transitions.shape[0]:
                 current_note = random.randint(48, 72)
                 
@@ -1826,6 +1828,17 @@ class MarkovChain:
                         
                 if filtered_probs.sum() > 0:
                     probs = filtered_probs / filtered_probs.sum()
+
+            # Apply repetition penalty
+            for past_idx, past_note in enumerate(reversed(recent_notes_history)):
+                # Penalty decreases as distance increases
+                penalty_factor = 0.5 + (0.5 * min(1.0, past_idx / 8.0))
+                if past_note < len(probs):
+                    probs[past_note] *= penalty_factor
+            
+            # Normalize after penalties
+            if probs.sum() > 0:
+                probs = probs / probs.sum()
                     
             # Sample next note
             if probs.sum() == 0:
@@ -1844,6 +1857,10 @@ class MarkovChain:
             sequence.append(next_note)
             current_note = next_note
             
+            recent_notes_history.append(next_note)
+            if len(recent_notes_history) > 8:
+                recent_notes_history.pop(0)
+
         return sequence
         
     def generate_rhythmic_sequence(self, start_note=60, key_context=None,

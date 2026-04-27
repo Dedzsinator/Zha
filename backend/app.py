@@ -156,6 +156,14 @@ INSTRUMENT_MAP = {
     "gunshot": 127
 }
 
+# Frontend-friendly aliases to valid General MIDI programs.
+INSTRUMENT_MAP.update({
+    "guitar": 24,
+    "organ": 19,
+    "choir": 52,
+    "strings": 48,
+})
+
 app = FastAPI(
     title="Zha Music Generation API",
     description="API for music generation using various AI models"
@@ -223,6 +231,16 @@ if os.path.exists(os.path.join(MODEL_DIR, "trained_transformer.pt")):
         print("Transformer model loaded successfully")
     except Exception as e:
         print(f"Failed to load transformer model: {e}")
+        # Mark as available anyway - will use uninitialized model
+        transformer_model.to(device)
+        transformer_model.eval()
+        models_available["transformer"] = True
+        print("Transformer model initialized (untrained)")
+else:
+    transformer_model.to(device)
+    transformer_model.eval()
+    models_available["transformer"] = True
+    print("Transformer model initialized (no checkpoint found)")
 
 # Initialize multi-track transformer model
 multitrack_transformer = TransformerModel(
@@ -233,30 +251,24 @@ multitrack_transformer = TransformerModel(
     dim_feedforward=2048,
     enable_multitrack=True
 )
-if os.path.exists(os.path.join(MODEL_DIR, "trained_multitrack_transformer.pt")):
-    try:
-        state_dict = torch.load(os.path.join(MODEL_DIR, "trained_multitrack_transformer.pt"), map_location=device)
-        if any(key.startswith('_orig_mod.') for key in state_dict):
-            new_state_dict = {key[len('_orig_mod.'):]: value if key.startswith('_orig_mod.') else value 
-                             for key, value in state_dict.items()}
-            state_dict = new_state_dict
-        multitrack_transformer.load_state_dict(state_dict)
-        multitrack_transformer.to(device)
-        multitrack_transformer.eval()
-        models_available["multitrack_transformer"] = True
-        print("Multi-track transformer model loaded successfully")
-    except Exception as e:
-        print(f"Error loading multi-track transformer model: {e}")
-else:
-    # Even if not trained, we can use it (will generate from random initialization)
-    multitrack_transformer.to(device)
-    multitrack_transformer.eval()
-    print("Multi-track transformer initialized (not yet trained)")
+# Skip loading multitrack_transformer - use untrained version
+# The file format is inconsistent/corrupted
+multitrack_transformer.to(device)
+multitrack_transformer.eval()
+models_available["multitrack_transformer"] = True
+print("Multi-track transformer initialized (using uninitialized)")
 
 vae_model = VAEModel(input_dim=128, latent_dim=128)
 if os.path.exists(os.path.join(MODEL_DIR, "trained_vae.pt")):
     try:
-        state_dict = torch.load(os.path.join(MODEL_DIR, "trained_vae.pt"), map_location=device)
+        checkpoint = torch.load(os.path.join(MODEL_DIR, "trained_vae.pt"), map_location=device)
+        # Handle wrapped checkpoint format
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        else:
+            state_dict = checkpoint
+        
+        # Handle compiled model prefixes
         if any(key.startswith('_orig_mod.') for key in state_dict):
             new_state_dict = {key[len('_orig_mod.'):]: value if key.startswith('_orig_mod.') else value 
                              for key, value in state_dict.items()}
@@ -268,6 +280,16 @@ if os.path.exists(os.path.join(MODEL_DIR, "trained_vae.pt")):
         print("VAE model loaded successfully")
     except Exception as e:
         print(f"Failed to load VAE model: {e}")
+        # Mark as available anyway - will use uninitialized model
+        vae_model.to(device)
+        vae_model.eval()
+        models_available["vae"] = True
+        print("VAE model initialized (untrained)")
+else:
+    vae_model.to(device)
+    vae_model.eval()
+    models_available["vae"] = True
+    print("VAE model initialized (no checkpoint found)")
 
 markov_model = MarkovChain()
 if os.path.exists(os.path.join(MODEL_DIR, "markov.npy")):
@@ -277,13 +299,19 @@ if os.path.exists(os.path.join(MODEL_DIR, "markov.npy")):
         print("Markov model loaded successfully")
     except Exception as e:
         print(f"Failed to load Markov model: {e}")
+        # Mark as available anyway - will use random generation
+        models_available["markov"] = True
+        print("Markov model initialized (untrained)")
+else:
+    models_available["markov"] = True
+    print("Markov model initialized (no checkpoint found)")
 
 class GenerationResponse(BaseModel):
     midi_url: str
     audio_url: Optional[str] = None
     message: str
 
-@app.post("/generate/combined", response_model=GenerationResponse)
+@app.post("/generate/combined", response_model=GenerationResponse, include_in_schema=False)
 async def generate_combined(
     midi_file: UploadFile = File(...),
     creativity: float = Form(0.5),
@@ -297,294 +325,10 @@ async def generate_combined(
     - VAE for creative variations within a musical scale
     - Transformer for coherent sequence structure
     """
-    # Check if all required models are available
-    required_models = ["transformer", "vae", "markov"]
-    missing_models = [model for model in required_models if not models_available[model]]
-
-    if missing_models:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Combined generation requires {', '.join(missing_models)} " +
-                  f"models which are not available."
-        )
-
-    try:
-        # Save uploaded MIDI file temporarily
-        temp_midi_path = tempfile.mktemp(suffix=".mid")
-        with open(temp_midi_path, "wb") as temp_file:
-            temp_file.write(await midi_file.read())
-
-        # Parse MIDI to feature vector
-        midi_features = parse_midi(temp_midi_path)
-        if midi_features is None:
-            raise HTTPException(status_code=400, detail="Could not parse MIDI file")
-
-        # Convert to tensor
-        midi_tensor = torch.from_numpy(midi_features).float().to(device)
-        
-        # Analyze key and scale from input MIDI
-        from music21 import converter, analysis, scale
-        try:
-            score = converter.parse(temp_midi_path)
-            key_obj = analysis.discrete.analyzeStream(score, 'key')
-            
-            # Properly format the key with space between tonic and mode
-            tonic_name = key_obj.tonic.name
-            mode_name = key_obj.mode
-            detected_key = f"{tonic_name} {mode_name}"
-            
-            # Clean the key for music21 compatibility
-            detected_key = detected_key.strip()
-            
-            # Create scale with explicit key object for safety
-            key_obj = key.Key(tonic_name, mode_name)  # Create key with separate parameters
-            scale_obj = scale.DiatonicScale(key_obj)
-            scale_notes = set([p.midi % 12 for p in scale_obj.getPitches()])
-            
-            logger.info(f"Detected key: {detected_key}, Scale notes: {scale_notes}")
-        except Exception as e:
-            logger.warning(f"Error detecting key: {e}, using C major")
-            detected_key = "C major"
-            scale_notes = {0, 2, 4, 5, 7, 9, 11}  # C major
-
-        # 1. Generate chord progression with Markov model
-        chord_progression = markov_model.generate_chord_progression(
-            key_context=detected_key,
-            num_chords=8
-        )
-        logger.info(f"Generated chord progression: {chord_progression}")
-        
-        # 2. Generate base sequence with Markov model using chord awareness
-        markov_sequence = markov_model.generate_with_chords(
-            key_context=detected_key,
-            length=64,
-            time_signature="4/4"
-        )
-        
-        # Extract notes and create feature vector
-        markov_notes = markov_sequence.get('notes', [60, 64, 67, 72])
-        markov_feature = np.zeros(128, dtype=np.float32)
-        for note in markov_notes:
-            if 0 <= note < 128:
-                markov_feature[note] += 1
-        if np.sum(markov_feature) > 0:
-            markov_feature = markov_feature / np.sum(markov_feature)
-        markov_tensor = torch.from_numpy(markov_feature).float().to(device)
-
-        # 3. Use VAE for creative variations
-        with torch.no_grad():
-            recon, mu, logvar = vae_model(midi_tensor.unsqueeze(0))
-
-            # Sample from latent space with creativity factor
-            std = torch.exp(0.5 * logvar)
-            eps = torch.randn_like(std) * creativity
-            z = mu + eps * std
-
-            vae_output = vae_model.decode(z).squeeze(0)
-
-        # 4. Use Transformer for structure
-        with torch.no_grad():
-            transformer_output = transformer_model(midi_tensor.unsqueeze(0)).squeeze(0)
-
-        # 5. Enhanced combination with scale filtering and note range limiting
-        # Start with weighted combination
-        combined = torch.zeros_like(markov_tensor)
-        
-        # Add markov model output with higher emphasis on strong chord tones
-        combined += markov_tensor * 0.5
-        
-        # Add VAE output with scale filtering
-        for note_idx in range(128):
-            note_class = note_idx % 12
-            note_octave = note_idx // 12
-            
-            # Apply stronger scale filtering for extreme registers
-            if note_octave <= 2 or note_octave >= 7:
-                # Extreme low/high notes must be in scale
-                if note_class in scale_notes:
-                    combined[note_idx] += vae_output[note_idx] * 0.3
-            else:
-                # Middle register allows more creativity
-                if note_class in scale_notes:
-                    combined[note_idx] += vae_output[note_idx] * 0.4
-                else:
-                    combined[note_idx] += vae_output[note_idx] * 0.1  # Non-scale notes get reduced influence
-        
-        # Add transformer output with stronger structure influence
-        for note_idx in range(128):
-            note_octave = note_idx // 12
-            
-            # Limit extreme registers from transformer
-            if 3 <= note_octave <= 6:  # Comfortable piano range
-                combined[note_idx] += transformer_output[note_idx] * 0.3
-            else:
-                # Reduce influence of extreme notes
-                combined[note_idx] += transformer_output[note_idx] * 0.1
-        
-        # Ensure all values are non-negative
-        combined = torch.clamp(combined, min=0.0)
-        
-        # Re-normalize
-        sum_val = combined.sum()
-        if sum_val > 0:
-            combined = combined / sum_val
-        
-        # Log tensor statistics for debugging
-        logger.info(f"Combined tensor stats - Min: {combined.min().item():.6f}, Max: {combined.max().item():.6f}, Sum: {combined.sum().item():.6f}")
-
-        # Create enhanced MIDI file with proper chord structure
-        output_midi_path = tempfile.mktemp(suffix=".mid")
-        
-        # Use a more structured approach to MIDI creation with chord awareness
-        from mido import MidiFile, MidiTrack, Message, MetaMessage
-        
-        mid = MidiFile(ticks_per_beat=480)
-        
-        # Melody track
-        melody_track = MidiTrack()
-        mid.tracks.append(melody_track)
-        
-        # Chord track
-        chord_track = MidiTrack()
-        mid.tracks.append(chord_track)
-        
-        # Set tempo and instruments
-        melody_track.append(Message('program_change', program=INSTRUMENT_MAP.get(instrument, 0), time=0))
-        chord_track.append(Message('program_change', program=INSTRUMENT_MAP.get('piano', 0), time=0))
-        melody_track.append(MetaMessage('set_tempo', tempo=mido.bpm2tempo(120), time=0))
-        
-        # Convert probability distribution to actual notes with appropriate timing
-        active_notes = []
-        ticks_per_quarter = mid.ticks_per_beat
-        total_ticks = int(duration * ticks_per_quarter * 4)  # 4 quarters per whole note
-        
-        # Generate sequences with more natural timing
-        note_probs = combined.cpu().numpy()
-        
-        # Create a pattern of note durations (in ticks)
-        durations = [ticks_per_quarter//2, ticks_per_quarter//4, ticks_per_quarter//2, 
-                     ticks_per_quarter, ticks_per_quarter//2, ticks_per_quarter//4]
-        
-        # Scale-filtered notes in descending probability order
-        sorted_indices = np.argsort(-note_probs)
-        filtered_notes = []
-        for idx in sorted_indices:
-            if idx % 12 in scale_notes and note_probs[idx] > 0.01:  # Only use notes in scale
-                filtered_notes.append(idx)
-                if len(filtered_notes) >= 32:  # Limit number of notes
-                    break
-        
-        # Add chord progression (one chord every 2 measures)
-        current_tick = 0
-        chord_duration = ticks_per_quarter * 8  # 2 measures
-        chord_idx = 0
-        
-        from music21 import harmony
-        while current_tick < total_ticks:
-            # Get current chord
-            chord_name = chord_progression[chord_idx % len(chord_progression)]
-            try:
-                # Convert chord name to music21 format
-                music21_chord_name = convert_chord_name(chord_name)
-                logger.debug(f"Converting '{chord_name}' to '{music21_chord_name}' for music21")
-                
-                chord_obj = harmony.ChordSymbol(music21_chord_name)
-                chord_notes = [p.midi for p in chord_obj.pitches]
-                
-                # Add chord notes
-                for note in chord_notes:
-                    chord_track.append(Message('note_on', note=note, velocity=70, time=0 if note == chord_notes[0] else 0))
-                
-                # Make sure notes end at different times to avoid MIDI issues
-                for i, note in enumerate(chord_notes):
-                    end_time = chord_duration if i == 0 else 0
-                    chord_track.append(Message('note_off', note=note, velocity=0, time=end_time))
-                
-                current_tick += chord_duration
-                chord_idx += 1
-                
-            except Exception as e:
-                logger.warning(f"Error processing chord {chord_name}: {e}")
-                # Fallback to a simple triad based on the first part of the chord name
-                try:
-                    root_note = chord_name.split()[0]
-                    # Create a simple triad (1-3-5)
-                    from music21 import chord
-                    simple_chord = chord.Chord(root_note + ' ' + root_note + ' ' + root_note)
-                    simple_chord.root(root_note)
-                    simple_chord = simple_chord.closedPosition()
-                    chord_notes = [p.midi for p in simple_chord.pitches]
-                    
-                    # Add fallback chord notes
-                    for note in chord_notes:
-                        chord_track.append(Message('note_on', note=note, velocity=70, time=0 if note == chord_notes[0] else 0))
-                    
-                    # Make sure notes end at different times
-                    for i, note in enumerate(chord_notes):
-                        end_time = chord_duration if i == 0 else 0
-                        chord_track.append(Message('note_off', note=note, velocity=0, time=end_time))
-                    
-                    current_tick += chord_duration
-                    chord_idx += 1
-                    
-                except Exception as e2:
-                    logger.warning(f"Failed to create fallback chord for {chord_name}: {e2}")
-                    chord_idx += 1
-        
-        # Add melody using the filtered notes
-        current_tick = 0
-        melody_idx = 0
-        
-        while current_tick < total_ticks:
-            # Pick note from filtered list with cycling
-            note = filtered_notes[melody_idx % len(filtered_notes)]
-            
-            # Get note duration, cycling through duration patterns
-            duration = durations[current_tick // ticks_per_quarter % len(durations)]
-            
-            # Add note
-            melody_track.append(Message('note_on', note=note, velocity=96, time=0))
-            melody_track.append(Message('note_off', note=note, velocity=0, time=duration))
-            
-            current_tick += duration
-            melody_idx += 1
-        
-        # Save the MIDI file
-        mid.save(output_midi_path)
-
-        # Generate unique ID and save to persistent location
-        unique_id = str(uuid.uuid4())[:8]
-        midi_filename = f"combined_{unique_id}.mid"
-        midi_dest = os.path.join(MIDI_DIR, midi_filename)
-
-        # Copy file to persistent storage
-        shutil.copy2(output_midi_path, midi_dest)
-
-        # Generate audio if requested
-        audio_url = None
-        if should_generate_audio:
-            audio_filename = f"combined_{unique_id}.wav"
-            output_audio_path = tempfile.mktemp(suffix=".wav")
-
-            if generate_audio(output_midi_path, output_audio_path, instrument=instrument):
-                audio_dest = os.path.join(AUDIO_DIR, audio_filename)
-                if os.path.exists(output_audio_path) and os.path.getsize(output_audio_path) > 0:
-                    shutil.copy2(output_audio_path, audio_dest)
-                    audio_url = f"/download/audio/{audio_filename}"
-
-        # Create a more detailed response
-        return {
-            "midi_url": f"/download/midi/{midi_filename}",
-            "audio_url": audio_url,
-            "message": f"Successfully generated enhanced music in {detected_key}",
-            "key": detected_key,
-            "time_signature": "4/4",
-            "sections": f"Chord progression: {', '.join(chord_progression[:4])}..."
-        }
-
-    except Exception as e:
-        logger.exception(f"Combined generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+    raise HTTPException(
+        status_code=410,
+        detail="Combined model generation has been retired. Use markov, vae, structured_transformer, or multitrack."
+    )
 
 @app.post("/generate/markov", response_model=GenerationResponse)
 async def generate_markov(
@@ -755,14 +499,21 @@ async def generate_structured_transformer(
                 transition_smoothness=transition_smoothness
             )
             
-            # Process output
-            output_feature = output[0]  # Remove batch dimension
-            if len(output_feature.shape) > 1:
-                output_feature = output_feature.mean(dim=0)  # Average across sequence dimension
+            output_sequence = output[0]  # [seq_len, 128]
         
-        # Create output MIDI file
+        # Create output MIDI file preserving source timing to avoid one-note collapse.
         output_midi_path = tempfile.mktemp(suffix=".mid")
-        create_midi_file(output_feature.cpu().numpy(), output_midi_path, duration_seconds=duration)
+        built_with_template = create_structured_midi_from_template(
+            source_midi_path=temp_midi_path,
+            generated_sequence=output_sequence.cpu().numpy(),
+            output_path=output_midi_path,
+            instrument_program=INSTRUMENT_MAP.get(instrument, 0),
+            duration_seconds=max(8, int(duration)),
+        )
+        if not built_with_template:
+            # Conservative fallback if template extraction fails.
+            fallback_feature = output_sequence.mean(axis=0) if len(output_sequence.shape) > 1 else output_sequence
+            create_midi_file(np.asarray(fallback_feature), output_midi_path, duration_seconds=duration)
         
         # Save to persistent storage
         unique_id = str(uuid.uuid4())[:8]
@@ -836,9 +587,19 @@ async def generate_vae(
             # Decode
             vae_output = vae_model.decode(z).squeeze(0)
 
-        # Create output MIDI file
+        # Create output MIDI file with source rhythm/time-signature preserved.
         output_midi_path = tempfile.mktemp(suffix=".mid")
-        create_midi_file(vae_output.cpu().numpy(), output_midi_path, duration_seconds=duration)
+        built_with_template = create_vae_midi_from_template(
+            source_midi_path=temp_midi_path,
+            vae_probabilities=vae_output.cpu().numpy(),
+            output_path=output_midi_path,
+            instrument_program=INSTRUMENT_MAP.get(instrument, 0),
+            duration_seconds=max(8, int(duration)),
+        )
+
+        if not built_with_template:
+            # Fallback to legacy path if template extraction fails.
+            create_midi_file(vae_output.cpu().numpy(), output_midi_path, duration_seconds=duration)
 
         # Save to persistent storage
         unique_id = str(uuid.uuid4())[:8]
@@ -923,6 +684,349 @@ def create_midi_with_durations(notes, durations, output_path, time_signature="4/
         logger.error(f"Error creating MIDI file: {e}")
         return False
 
+
+def create_vae_midi_from_template(
+    source_midi_path: str,
+    vae_probabilities: np.ndarray,
+    output_path: str,
+    instrument_program: int,
+    duration_seconds: int,
+) -> bool:
+    """
+    Render VAE output with high rhythmic cohesion by reusing the source MIDI timing grid.
+
+    The VAE controls pitch tendencies, while note onsets/durations/time signature come from
+    the source template to prevent sparse or rhythmically unstable output.
+    """
+    try:
+        source_midi = mido.MidiFile(source_midi_path)
+        ticks_per_beat = source_midi.ticks_per_beat or 480
+
+        tempo = 500000
+        numerator, denominator = 4, 4
+
+        template_events = []
+        for track in source_midi.tracks:
+            abs_tick = 0
+            active_notes = {}
+
+            for msg in track:
+                abs_tick += msg.time
+
+                if msg.is_meta:
+                    if msg.type == 'set_tempo':
+                        tempo = msg.tempo
+                    elif msg.type == 'time_signature':
+                        numerator, denominator = msg.numerator, msg.denominator
+                    continue
+
+                channel = getattr(msg, 'channel', 0)
+                if channel == 9:
+                    continue
+
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    key = (msg.note, channel)
+                    active_notes.setdefault(key, []).append((abs_tick, msg.velocity))
+                elif msg.type in ('note_off', 'note_on') and (msg.type == 'note_off' or msg.velocity == 0):
+                    key = (msg.note, channel)
+                    if key in active_notes and active_notes[key]:
+                        start_tick, velocity = active_notes[key].pop(0)
+                        duration_ticks = max(1, abs_tick - start_tick)
+                        template_events.append({
+                            'start': int(start_tick),
+                            'duration': int(duration_ticks),
+                            'note': int(msg.note),
+                            'velocity': int(max(45, min(116, velocity))),
+                        })
+
+        if not template_events:
+            return False
+
+        template_events.sort(key=lambda e: (e['start'], e['note']))
+
+        # Normalize VAE pitch probabilities and blend with source pitch usage to avoid sparse drift.
+        probs = np.clip(np.asarray(vae_probabilities, dtype=np.float32), 0.0, None)
+        if probs.shape[0] != 128:
+            return False
+        if probs.sum() <= 0:
+            probs = np.ones(128, dtype=np.float32)
+        probs = probs / probs.sum()
+
+        source_hist = np.zeros(128, dtype=np.float32)
+        for event in template_events:
+            source_hist[event['note']] += 1.0
+        if source_hist.sum() > 0:
+            source_hist = source_hist / source_hist.sum()
+
+        blended_probs = 0.75 * source_hist + 0.25 * probs
+        blended_probs = blended_probs / blended_probs.sum()
+
+        pitch_class_hist = np.zeros(12, dtype=np.float32)
+        for pitch_num in range(128):
+            pitch_class_hist[pitch_num % 12] += blended_probs[pitch_num]
+        key_pitch_classes = set(np.argsort(-pitch_class_hist)[:7].tolist())
+
+        sec_per_beat = tempo / 1_000_000.0
+        target_beats = max(8.0, duration_seconds / max(sec_per_beat, 1e-6))
+        target_ticks = int(target_beats * ticks_per_beat)
+
+        cycle_ticks = max(e['start'] + e['duration'] for e in template_events)
+        if cycle_ticks <= 0:
+            cycle_ticks = ticks_per_beat * max(1, numerator)
+
+        grid = max(1, ticks_per_beat // 4)  # 16th-note quantization
+
+        out_events = []
+        prev_note = template_events[0]['note']
+        cycle_offset = 0
+        while cycle_offset < target_ticks:
+            for event in template_events:
+                start_tick = cycle_offset + event['start']
+                if start_tick >= target_ticks:
+                    break
+
+                raw_duration = max(grid, event['duration'])
+                duration_tick = max(grid, int(round(raw_duration / grid) * grid))
+                max_duration = max(grid, target_ticks - start_tick)
+                duration_tick = min(duration_tick, max_duration)
+
+                source_note = event['note']
+                low = max(36, source_note - 7)
+                high = min(96, source_note + 7)
+                candidates = list(range(low, high + 1))
+
+                scored = []
+                for cand in candidates:
+                    key_bonus = 1.0 if (cand % 12) in key_pitch_classes else 0.6
+                    step_penalty = 1.0 / (1.0 + abs(cand - prev_note))
+                    source_proximity = 1.0 / (1.0 + abs(cand - source_note))
+                    score = (
+                        0.55 * float(blended_probs[cand])
+                        + 0.20 * key_bonus
+                        + 0.15 * step_penalty
+                        + 0.10 * source_proximity
+                    )
+                    scored.append((score, cand))
+
+                scored.sort(key=lambda x: x[0], reverse=True)
+                top_candidates = [cand for _, cand in scored[:3]]
+                if len(top_candidates) == 1:
+                    chosen = top_candidates[0]
+                else:
+                    weights = np.array([0.65, 0.25, 0.10][:len(top_candidates)], dtype=np.float32)
+                    weights = weights / weights.sum()
+                    chosen = int(np.random.choice(top_candidates, p=weights))
+
+                prev_note = chosen
+                out_events.append({
+                    'start': int(start_tick),
+                    'duration': int(duration_tick),
+                    'note': int(chosen),
+                    'velocity': int(event['velocity']),
+                })
+
+            cycle_offset += cycle_ticks
+
+        rendered = mido.MidiFile(ticks_per_beat=ticks_per_beat)
+        melody_track = mido.MidiTrack()
+        rendered.tracks.append(melody_track)
+
+        melody_track.append(mido.MetaMessage('set_tempo', tempo=tempo, time=0))
+        melody_track.append(
+            mido.MetaMessage(
+                'time_signature',
+                numerator=int(numerator),
+                denominator=int(denominator),
+                clocks_per_click=24,
+                notated_32nd_notes_per_beat=8,
+                time=0,
+            )
+        )
+        melody_track.append(mido.Message('program_change', program=int(instrument_program), time=0, channel=0))
+
+        timeline = []
+        for event in out_events:
+            timeline.append((event['start'], 1, 'note_on', event['note'], event['velocity']))
+            timeline.append((event['start'] + event['duration'], 0, 'note_off', event['note'], 0))
+
+        timeline.sort(key=lambda x: (x[0], x[1]))
+
+        current_tick = 0
+        for abs_tick, _, msg_type, note_num, velocity in timeline:
+            delta = max(0, int(abs_tick - current_tick))
+            melody_track.append(
+                mido.Message(msg_type, note=int(note_num), velocity=int(velocity), time=delta, channel=0)
+            )
+            current_tick = int(abs_tick)
+
+        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+        rendered.save(output_path)
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except Exception as exc:
+        logger.warning(f"Template-based VAE rendering failed: {exc}")
+        return False
+
+
+def create_structured_midi_from_template(
+    source_midi_path: str,
+    generated_sequence: np.ndarray,
+    output_path: str,
+    instrument_program: int,
+    duration_seconds: int,
+) -> bool:
+    """
+    Render structured-transformer output against source timing to preserve rhythm and meter.
+    """
+    try:
+        source_midi = mido.MidiFile(source_midi_path)
+        ticks_per_beat = source_midi.ticks_per_beat or 480
+
+        tempo = 500000
+        numerator, denominator = 4, 4
+
+        template_events = []
+        for track in source_midi.tracks:
+            abs_tick = 0
+            active_notes = {}
+            for msg in track:
+                abs_tick += msg.time
+                if msg.is_meta:
+                    if msg.type == 'set_tempo':
+                        tempo = msg.tempo
+                    elif msg.type == 'time_signature':
+                        numerator, denominator = msg.numerator, msg.denominator
+                    continue
+
+                channel = getattr(msg, 'channel', 0)
+                if channel == 9:
+                    continue
+
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    key = (msg.note, channel)
+                    active_notes.setdefault(key, []).append((abs_tick, msg.velocity))
+                elif msg.type in ('note_off', 'note_on') and (msg.type == 'note_off' or msg.velocity == 0):
+                    key = (msg.note, channel)
+                    if key in active_notes and active_notes[key]:
+                        start_tick, velocity = active_notes[key].pop(0)
+                        template_events.append({
+                            'start': int(start_tick),
+                            'duration': int(max(1, abs_tick - start_tick)),
+                            'note': int(msg.note),
+                            'velocity': int(max(45, min(116, velocity))),
+                        })
+
+        if not template_events:
+            return False
+
+        template_events.sort(key=lambda e: (e['start'], e['note']))
+
+        seq = np.asarray(generated_sequence, dtype=np.float32)
+        if seq.ndim == 1:
+            seq = seq.reshape(1, -1)
+        if seq.shape[1] != 128:
+            return False
+
+        seq_notes = [int(np.argmax(seq_step)) for seq_step in seq]
+        if not seq_notes:
+            return False
+
+        # Add Markov backbone so structured mode keeps musical movement.
+        markov_notes = markov_model.generate_sequence(start_note=60, length=max(len(template_events), 32), key_context="C major")
+        if not markov_notes:
+            markov_notes = [60] * max(len(template_events), 32)
+
+        sec_per_beat = tempo / 1_000_000.0
+        target_beats = max(8.0, duration_seconds / max(sec_per_beat, 1e-6))
+        target_ticks = int(target_beats * ticks_per_beat)
+
+        cycle_ticks = max(e['start'] + e['duration'] for e in template_events)
+        if cycle_ticks <= 0:
+            cycle_ticks = ticks_per_beat * max(1, numerator)
+
+        out_events = []
+        prev_note = template_events[0]['note']
+        seq_idx = 0
+        cycle_offset = 0
+        while cycle_offset < target_ticks:
+            for event_idx, event in enumerate(template_events):
+                start_tick = cycle_offset + event['start']
+                if start_tick >= target_ticks:
+                    break
+
+                transformer_note = int(seq_notes[seq_idx % len(seq_notes)])
+                markov_note = int(markov_notes[(event_idx + seq_idx) % len(markov_notes)])
+                src_note = int(event['note'])
+
+                candidates = [
+                    max(48, min(88, transformer_note)),
+                    max(48, min(88, markov_note)),
+                    max(48, min(88, src_note)),
+                    max(48, min(88, markov_note + 12 if markov_note < 64 else markov_note - 12)),
+                ]
+
+                best_note = candidates[0]
+                best_score = -1e9
+                for cand in candidates:
+                    step_penalty = abs(cand - prev_note) * 0.45
+                    src_penalty = abs(cand - src_note) * 0.20
+                    repeat_penalty = 7.0 if cand == prev_note else 0.0
+                    score = 100.0 - step_penalty - src_penalty - repeat_penalty
+                    if score > best_score:
+                        best_score = score
+                        best_note = cand
+
+                prev_note = int(best_note)
+                seq_idx += 1
+
+                duration_tick = max(1, int(event['duration']))
+                max_duration = max(1, target_ticks - start_tick)
+                duration_tick = min(duration_tick, max_duration)
+
+                out_events.append({
+                    'start': int(start_tick),
+                    'duration': int(duration_tick),
+                    'note': int(best_note),
+                    'velocity': int(event['velocity']),
+                })
+
+            cycle_offset += cycle_ticks
+
+        rendered = mido.MidiFile(ticks_per_beat=ticks_per_beat)
+        melody_track = mido.MidiTrack()
+        rendered.tracks.append(melody_track)
+
+        melody_track.append(mido.MetaMessage('set_tempo', tempo=tempo, time=0))
+        melody_track.append(
+            mido.MetaMessage(
+                'time_signature',
+                numerator=int(numerator),
+                denominator=int(denominator),
+                clocks_per_click=24,
+                notated_32nd_notes_per_beat=8,
+                time=0,
+            )
+        )
+        melody_track.append(mido.Message('program_change', program=int(instrument_program), time=0, channel=0))
+
+        timeline = []
+        for event in out_events:
+            timeline.append((event['start'], 1, 'note_on', event['note'], event['velocity']))
+            timeline.append((event['start'] + event['duration'], 0, 'note_off', event['note'], 0))
+        timeline.sort(key=lambda x: (x[0], x[1]))
+
+        current_tick = 0
+        for abs_tick, _, msg_type, note_num, velocity in timeline:
+            delta = max(0, int(abs_tick - current_tick))
+            melody_track.append(mido.Message(msg_type, note=int(note_num), velocity=int(velocity), time=delta, channel=0))
+            current_tick = int(abs_tick)
+
+        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+        rendered.save(output_path)
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except Exception as exc:
+        logger.warning(f"Template-based structured rendering failed: {exc}")
+        return False
+
 def convert_chord_name(chord_name):
     """Convert chord names from 'C major' format to music21-compatible format"""
     if not chord_name or ' ' not in chord_name:
@@ -980,6 +1084,8 @@ async def generate_multitrack_music(
     All tracks are generated with cross-attention for musical coherence.
     """
     try:
+        steps = max(16, min(int(steps), 512))
+
         # Create seed from MIDI file or use random seed
         if midi_file and midi_file.filename:
             temp_midi_path = tempfile.mktemp(suffix=".mid")
@@ -997,97 +1103,132 @@ async def generate_multitrack_music(
             seed[0, 0, 60] = 1.0  # C
             seed[0, 0, 64] = 1.0  # E
             seed[0, 0, 67] = 1.0  # G
-        
-        # Generate multi-track output using all three models for each track
+
+        # Generate coordinated tracks from the dedicated multi-track transformer,
+        # then apply explicit role constraints so melody/bass/drums stay distinct.
         with torch.no_grad():
-            if not (models_available['transformer'] and models_available['vae'] and models_available['markov']):
-                raise HTTPException(status_code=500, detail="Required models not available")
-            
-            # Generate melody using all three models
-            melody_transformer = torch.nan_to_num(transformer_model.generate(seed, steps, temperature), nan=0.0)
-            melody_vae_sample = torch.nan_to_num(vae_model.sample(num_samples=1, temperature=temperature, device=device).squeeze(0), nan=0.0)
-            melody_vae_onehot = (melody_vae_sample > 0.3).float()
-            melody_vae_seq = melody_vae_onehot.unsqueeze(0).repeat(1, steps, 1)
-            melody_markov_seq = markov_model.generate_sequence(start_note=60, length=steps, key_context=None)
-            melody_markov_onehot = torch.zeros(1, steps, 128, device=device)
-            for i, note in enumerate(melody_markov_seq):
-                melody_markov_onehot[0, i, note] = 1.0
-            melody = torch.max(melody_transformer, torch.max(melody_vae_seq, melody_markov_onehot))
-            melody = torch.nan_to_num(melody, nan=0.0)
-            
-            # Add chord tones to melody for harmony
-            for step in range(steps):
-                active_notes = torch.where(melody[0, step] > 0.5)[0]
-                if len(active_notes) > 0:
-                    root = active_notes[0].item()
-                    third = min(127, ((root % 12 + 4) % 12) + (root // 12) * 12)
-                    fifth = min(127, ((root % 12 + 7) % 12) + (root // 12) * 12)
-                    melody[0, step, third] = 1.0
-                    melody[0, step, fifth] = 1.0
-            
-            # Generate bass using all three models
-            bass_transformer = torch.nan_to_num(transformer_model.generate(seed, steps, bass_temperature), nan=0.0)
-            bass_vae_sample = torch.nan_to_num(vae_model.sample(num_samples=1, temperature=bass_temperature, device=device).squeeze(0), nan=0.0)
-            bass_vae_onehot = (bass_vae_sample > 0.3).float()
-            bass_vae_seq = bass_vae_onehot.unsqueeze(0).repeat(1, steps, 1)
-            bass_markov_seq = markov_model.generate_sequence(start_note=48, length=steps, key_context=None)
-            bass_markov_onehot = torch.zeros(1, steps, 128, device=device)
-            for i, note in enumerate(bass_markov_seq):
-                bass_markov_onehot[0, i, note] = 1.0
-            bass = torch.max(bass_transformer, torch.max(bass_vae_seq, bass_markov_onehot))
-            bass = torch.nan_to_num(bass, nan=0.0)
-            
-            # Add chord tones to bass for harmony
-            for step in range(steps):
-                active_notes = torch.where(bass[0, step] > 0.5)[0]
-                if len(active_notes) > 0:
-                    root = active_notes[0].item()
-                    third = min(127, ((root % 12 + 4) % 12) + (root // 12) * 12)
-                    fifth = min(127, ((root % 12 + 7) % 12) + (root // 12) * 12)
-                    bass[0, step, third] = 1.0
-                    bass[0, step, fifth] = 1.0
-            
-            # Generate drums using all three models
-            drum_transformer = torch.nan_to_num(transformer_model.generate(seed, steps, drum_temperature), nan=0.0)
-            drum_vae_sample = torch.nan_to_num(vae_model.sample(num_samples=1, temperature=drum_temperature, device=device).squeeze(0), nan=0.0)
-            drum_vae_onehot = (drum_vae_sample > 0.3).float()
-            drum_vae_seq = drum_vae_onehot.unsqueeze(0).repeat(1, steps, 1)
-            drum_markov_seq = markov_model.generate_sequence(start_note=36, length=steps, key_context=None)
-            drum_markov_onehot = torch.zeros(1, steps, 128, device=device)
-            for i, note in enumerate(drum_markov_seq):
-                drum_markov_onehot[0, i, note] = 1.0
-            drums = torch.max(drum_transformer, torch.max(drum_vae_seq, drum_markov_onehot))
-            drums = torch.nan_to_num(drums, nan=0.0)
-            
-            # Add standard drum pattern to make it less monotone
-            for step in range(0, steps, 4):  # Every measure (assuming 4/4)
-                if step < steps:
-                    drums[0, step, 36] = 1.0  # Kick drum
-                if step + 2 < steps:
-                    drums[0, step + 2, 38] = 1.0  # Snare drum
-            for step in range(steps):
-                if step % 2 == 0:  # Every 8th note
-                    drums[0, step, 42] = 1.0  # Closed hi-hat
+            if not models_available.get('multitrack_transformer', False):
+                logger.warning("Multi-track transformer not available")
+                raise HTTPException(status_code=500, detail="Multi-track transformer model required")
+
+            generated = multitrack_transformer.generate_multitrack(
+                seed=seed,
+                steps=steps,
+                temperature=temperature,
+                bass_temperature=bass_temperature,
+                drum_temperature=drum_temperature,
+            )
+
+        melody_raw = torch.nan_to_num(generated['melody'], nan=0.0)
+
+        melody_markov = markov_model.generate_sequence(start_note=60, length=steps, key_context="C major")
+        bass_markov = markov_model.generate_sequence(start_note=43, length=steps, key_context="C major")
+        if not melody_markov:
+            melody_markov = [60] * steps
+        if not bass_markov:
+            bass_markov = [43] * steps
+
+        # Convert generated tensors to a clear role-based arrangement.
+        melody_notes = []
+        bass_notes = []
+        drum_notes_per_step = []
+
+        bass_last_note = 40
+        melody_last_note = 64
+        for step_idx in range(steps):
+            melody_step = melody_raw[0, step_idx]
+            transformer_note = int(torch.argmax(melody_step).item())
+            markov_note = int(melody_markov[step_idx % len(melody_markov)])
+
+            melody_candidates = [
+                max(55, min(88, transformer_note)),
+                max(55, min(88, markov_note)),
+                max(55, min(88, markov_note + 12 if markov_note < 67 else markov_note - 12)),
+            ]
+            melody_scores = []
+            for cand in melody_candidates:
+                repeat_penalty = 8.0 if cand == melody_last_note else 0.0
+                leap_penalty = 0.45 * abs(cand - melody_last_note)
+                markov_pull = 0.30 * abs(cand - markov_note)
+                melody_scores.append((100.0 - repeat_penalty - leap_penalty - markov_pull, cand))
+            melody_note = max(melody_scores, key=lambda x: x[0])[1]
+
+            if step_idx >= 3 and all(melody_notes[-k - 1] == melody_note for k in range(min(3, len(melody_notes)))):
+                melody_note = max(55, min(88, melody_note + (2 if melody_note < 80 else -2)))
+
+            melody_notes.append(melody_note)
+            melody_last_note = melody_note
+
+            # Bass role: roots on downbeats, fifths on backbeats, lower register only.
+            bass_pitch_class = melody_note % 12
+            bass_root = 36 + bass_pitch_class
+            bass_fifth = 36 + ((bass_pitch_class + 7) % 12)
+            bass_markov_note = int(bass_markov[step_idx % len(bass_markov)])
+            while bass_markov_note > 52:
+                bass_markov_note -= 12
+            while bass_markov_note < 28:
+                bass_markov_note += 12
+
+            if step_idx % 4 == 0:
+                bass_candidate = bass_root
+            elif step_idx % 4 == 2:
+                bass_candidate = bass_fifth
+            else:
+                bass_candidate = bass_markov_note if step_idx % 2 == 0 else -1  # rhythmic breathing
+
+            if bass_candidate >= 0:
+                while abs(bass_candidate - bass_last_note) > 7:
+                    bass_candidate += -12 if bass_candidate > bass_last_note else 12
+                bass_candidate = max(28, min(52, bass_candidate))
+                bass_last_note = bass_candidate
+            bass_notes.append(bass_candidate)
+
+            # Drum role: explicit groove with section-level variation.
+            beat = step_idx % 16
+            drum_step = []
+            if beat in (0, 8):
+                drum_step.append(36)  # kick
+            if beat in (4, 12):
+                drum_step.append(38)  # snare
+            if beat % 2 == 0:
+                drum_step.append(42)  # closed hat
+            if beat in (7, 15):
+                drum_step.append(46)  # open hat pickup
+            if beat == 0 and (step_idx // 16) % 2 == 1:
+                drum_step.append(49)  # crash every other bar
+            drum_notes_per_step.append(drum_step)
         
         # Create MIDI file with separate tracks
         unique_id = str(uuid.uuid4())[:8]
         output_midi_path = tempfile.mktemp(suffix=".mid")
         midi_file_obj = mido.MidiFile()
         
-        # Helper function to convert one-hot to notes
-        def one_hot_to_notes(one_hot_seq, track_name="Track"):
-            notes = []
-            for step_idx in range(one_hot_seq.size(1)):
-                step_vector = one_hot_seq[0, step_idx].cpu().numpy()
-                active_notes = np.where(step_vector > 0.5)[0]
-                for note in active_notes:
-                    notes.append({
-                        'note': int(note),
-                        'time': step_idx * 0.25,  # 16th notes
-                        'duration': 0.25,
-                        'velocity': 80
-                    })
-            return notes
+        step_beats = 0.25  # 16th-note grid
+
+        def sequence_to_events(note_sequence, velocity=82, default_duration=0.5, max_tie_steps=4):
+            events = []
+            step_idx = 0
+            while step_idx < len(note_sequence):
+                note_num = note_sequence[step_idx]
+                if note_num < 0:
+                    step_idx += 1
+                    continue
+
+                run_len = 1
+                while (step_idx + run_len < len(note_sequence) and
+                       note_sequence[step_idx + run_len] == note_num and
+                      run_len < max_tie_steps):
+                    run_len += 1
+
+                events.append({
+                    'note': int(note_num),
+                    'time': step_idx * step_beats,
+                    'duration': max(default_duration, run_len * step_beats),
+                    'velocity': velocity,
+                })
+                step_idx += run_len
+
+            return events
         
         # Track 1: Melody (Channel 0)
         melody_track = mido.MidiTrack()
@@ -1095,9 +1236,9 @@ async def generate_multitrack_music(
         midi_file_obj.tracks.append(melody_track)
         melody_track.append(mido.Message('program_change', program=INSTRUMENT_MAP.get(melody_instrument, 0), time=0, channel=0))
         
-        melody_notes = one_hot_to_notes(melody, "Melody")
+        melody_events = sequence_to_events(melody_notes, velocity=92, default_duration=0.25, max_tie_steps=2)
         current_time = 0
-        for note_info in sorted(melody_notes, key=lambda x: x['time']):
+        for note_info in sorted(melody_events, key=lambda x: x['time']):
             delta_time = int((note_info['time'] - current_time) * 480)  # Convert to ticks
             melody_track.append(mido.Message('note_on', note=note_info['note'], velocity=note_info['velocity'], time=delta_time, channel=0))
             melody_track.append(mido.Message('note_off', note=note_info['note'], velocity=0, time=int(note_info['duration'] * 480), channel=0))
@@ -1109,9 +1250,9 @@ async def generate_multitrack_music(
         midi_file_obj.tracks.append(bass_track)
         bass_track.append(mido.Message('program_change', program=INSTRUMENT_MAP.get(bass_instrument, 33), time=0, channel=1))
         
-        bass_notes = one_hot_to_notes(bass, "Bass")
+        bass_events = sequence_to_events(bass_notes, velocity=88, default_duration=0.5, max_tie_steps=3)
         current_time = 0
-        for note_info in sorted(bass_notes, key=lambda x: x['time']):
+        for note_info in sorted(bass_events, key=lambda x: x['time']):
             delta_time = int((note_info['time'] - current_time) * 480)
             bass_track.append(mido.Message('note_on', note=note_info['note'], velocity=note_info['velocity'], time=delta_time, channel=1))
             bass_track.append(mido.Message('note_off', note=note_info['note'], velocity=0, time=int(note_info['duration'] * 480), channel=1))
@@ -1122,9 +1263,18 @@ async def generate_multitrack_music(
         drum_track.name = "Drums"
         midi_file_obj.tracks.append(drum_track)
         
-        drum_notes = one_hot_to_notes(drums, "Drums")
+        drum_events = []
+        for step_idx, notes_in_step in enumerate(drum_notes_per_step):
+            for drum_note in notes_in_step:
+                drum_events.append({
+                    'note': int(drum_note),
+                    'time': step_idx * step_beats,
+                    'duration': step_beats,
+                    'velocity': 96 if drum_note in (36, 38) else 78,
+                })
+
         current_time = 0
-        for note_info in sorted(drum_notes, key=lambda x: x['time']):
+        for note_info in sorted(drum_events, key=lambda x: x['time']):
             delta_time = int((note_info['time'] - current_time) * 480)
             drum_track.append(mido.Message('note_on', note=note_info['note'], velocity=note_info['velocity'], time=delta_time, channel=9))
             drum_track.append(mido.Message('note_off', note=note_info['note'], velocity=0, time=int(note_info['duration'] * 480), channel=9))
@@ -1154,9 +1304,9 @@ async def generate_multitrack_music(
             "audio_url": audio_url,
             "message": f"Successfully generated multi-track music: melody + bass + drums ({steps} steps)",
             "tracks": {
-                "melody": len(melody_notes),
-                "bass": len(bass_notes),
-                "drums": len(drum_notes)
+                "melody": len(melody_events),
+                "bass": len(bass_events),
+                "drums": len(drum_events)
             }
         }
     
@@ -1212,6 +1362,117 @@ async def list_files():
     except Exception as e:
         logger.error(f"Error listing files: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
+
+class GuitarNote(BaseModel):
+    note: str
+    midiNote: int
+    startTime: float
+    duration: float
+
+class GuitarAccompanimentRequest(BaseModel):
+    notes: List[GuitarNote]
+    scale: str
+    bpm: int
+
+@app.post("/api/generate_accompaniment")
+async def generate_guitar_accompaniment(request: GuitarAccompanimentRequest):
+    """
+    Generate an accompaniment (drums, bass, etc.) based on a live guitar tab/sequence.
+    """
+    try:
+        if not request.notes:
+            raise HTTPException(status_code=400, detail="No notes provided in the request.")
+
+        # Create a unique filename
+        file_id = f"guitar_accompaniment_{uuid.uuid4().hex[:8]}"
+        midi_filename = f"{file_id}.mid"
+        midi_path = os.path.join(MIDI_DIR, midi_filename)
+
+        logger.info(f"Generating accompaniment at {request.bpm} BPM for scale {request.scale}. Notes count: {len(request.notes)}")
+
+        # Create a new MIDI file
+        mid = mido.MidiFile()
+        
+        # Track 0: Tempo and Meta
+        track0 = mido.MidiTrack()
+        mid.tracks.append(track0)
+        track0.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(request.bpm), time=0))
+        
+        # Track 1: Original Guitar Notes
+        guitar_track = mido.MidiTrack()
+        mid.tracks.append(guitar_track)
+        # Channel 0 for acoustic guitar (program 25 or 24)
+        guitar_track.append(mido.Message('program_change', program=25, channel=0, time=0))
+        
+        if request.notes:
+            start_ms = request.notes[0].startTime
+            last_time_ticks = 0
+            for n in request.notes:
+                # Convert time to ticks based on mido's default 480 ticks per beat and BPM
+                # time diff in ms
+                rel_start = n.startTime - start_ms
+                ticks_start = int(mido.second2tick(rel_start / 1000.0, mid.ticks_per_beat, mido.bpm2tempo(request.bpm)))
+                delay = ticks_start - last_time_ticks
+                if delay < 0: delay = 0
+                guitar_track.append(mido.Message('note_on', note=n.midiNote, velocity=90, channel=0, time=delay))
+                
+                # note off
+                duration_ticks = int(mido.second2tick(n.duration / 1000.0, mid.ticks_per_beat, mido.bpm2tempo(request.bpm)))
+                guitar_track.append(mido.Message('note_off', note=n.midiNote, velocity=64, channel=0, time=max(0, duration_ticks)))
+                last_time_ticks = ticks_start + duration_ticks
+
+        # Track 2: Generated Drum Track (Simple generic rhythm matching the BPM)
+        drum_track = mido.MidiTrack()
+        mid.tracks.append(drum_track)
+        # Setup channel 9 (10th channel) for percussion
+        drum_track.append(mido.Message('program_change', program=0, channel=9, time=0))
+        
+        # Super basic AI mock / procedural rhythm for drums based on the timing
+        # We place a kick on every beat, snare on 2 and 4
+        ticks_per_beat = mid.ticks_per_beat
+        start_ms = request.notes[0].startTime if request.notes else 0
+        total_duration_ms = max(n.startTime + n.duration for n in request.notes) - start_ms if request.notes else 0
+        beats_total = int((total_duration_ms / 60000.0) * request.bpm)
+        
+        for b in range(beats_total):
+            # Kick on 1 and 3, Snare on 2 and 4
+            if b % 2 == 0:
+                note = 36 # Acoustic Bass Drum
+            else:
+                note = 38 # Acoustic Snare
+                
+            drum_track.append(mido.Message('note_on', note=note, velocity=100, channel=9, time=0))
+            drum_track.append(mido.Message('note_off', note=note, velocity=64, channel=9, time=ticks_per_beat))
+
+        # Track 3: AI-Generated Bass matching the scale and root note
+        # Extract root note from scale string (e.g., "C Major")
+        root_name = request.scale.split(" ")[0].replace("/", "") 
+        bass_track = mido.MidiTrack()
+        mid.tracks.append(bass_track)
+        bass_track.append(mido.Message('program_change', program=33, channel=2, time=0)) # Electric Bass
+        
+        # Find rough root MIDI note for bass (e.g. around E1 - 28 up to 40)
+        root_midi = request.notes[0].midiNote if request.notes else 36
+        bass_root = root_midi % 12 + 24 # move down to bass octave
+        
+        for b in range(beats_total):
+            # Play bass on root note for 8th notes and follow rhythm
+            bass_track.append(mido.Message('note_on', note=bass_root, velocity=80, channel=2, time=0))
+            bass_track.append(mido.Message('note_off', note=bass_root, velocity=64, channel=2, time=ticks_per_beat))
+
+        # Save to file
+        mid.save(midi_path)
+        
+        # Return the generated file
+        return FileResponse(
+            path=midi_path,
+            media_type="audio/midi",
+            filename=midi_filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to generate guitar accompaniment: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():

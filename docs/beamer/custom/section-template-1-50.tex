@@ -1,0 +1,31 @@
+% Section 1 slide frame
+\begin{frame}[plain]
+\begin{tikzpicture}[remember picture,overlay]
+% Background image
+\node[above right,inner sep=0pt] at (current page.south west)
+{
+    \includegraphics[width=\paperwidth]{img/blueCS_background.png}
+};
+
+% Center logos around the middle
+% Left logo at x=6cm, right logo at x=10cm would be symmetric (X=8 is center).
+\node[anchor=center] at ([yshift=1.5cm, xshift=-2cm]current page.center)
+{
+    \includegraphics[width=1.85cm]{img/facultatea de matematica_alba_transp.png}
+};
+
+\node[anchor=center] at ([yshift=1.5cm, xshift=2cm]current page.center)
+{
+    \includegraphics[width=2cm]{img/CS_white_logo.png}
+};
+
+% Separator Line
+\draw[yellowCS, ultra thick] ([yshift=0cm, xshift=-4cm]current page.center) -- ([yshift=0cm, xshift=4cm]current page.center);
+  
+% section title
+\node[anchor=north, color=white, align=center, text width=14cm] at ([yshift=-1cm]current page.center) {\huge \sectionTitle};
+\node[anchor=north, color=white, align=center, text width=14cm] at ([yshift=-2.5cm]current page.center) {\Large \sectionSubtitle};
+
+
+\end{tikzpicture}
+\end{frame}

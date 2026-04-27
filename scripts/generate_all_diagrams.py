@@ -6,10 +6,10 @@ Creates publication-ready figures for all TODO placeholders
 Requirements:
     pip install matplotlib seaborn numpy torch
 
-Run immediately (no training required):
+Run after metrics/training artifacts exist:
     python scripts/generate_all_diagrams.py
 
-Generates 24 diagrams total (all use simulated data, no trained models needed!)
+Generates thesis diagrams using available real artifacts.
 Output: output/figures/thesis/{architecture,markov,vae,transformer,multitrack,system}/
 """
 
@@ -45,7 +45,6 @@ def main():
     scripts_dir = Path(__file__).parent
     
     # Diagram generation scripts in execution order
-    # ALL scripts now use simulated data - no training required!
     diagram_scripts = [
         # Core architecture diagrams (6 diagrams)
         "diagrams/generate_architecture_diagrams.py",
@@ -69,7 +68,7 @@ def main():
     print("="*80)
     print("THESIS DIAGRAM GENERATION - MASTER SCRIPT")
     print("="*80)
-    print(f"\nALL SCRIPTS NOW COMPLETE - NO TRAINING REQUIRED!")
+    print("\nREAL-DATA POLICY: scripts should use tracked artifacts or report unavailable.")
     print(f"\nWill run {len(diagram_scripts)} diagram generation scripts:\n")
     for i, script in enumerate(diagram_scripts, 1):
         script_name = Path(script).stem.replace('generate_', '').replace('_diagrams', '')

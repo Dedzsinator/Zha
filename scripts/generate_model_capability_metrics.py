@@ -154,12 +154,8 @@ class ModelCapabilityEvaluator:
                             if hasattr(model, 'generate'):
                                 seq = model.generate(max_length=100, device=device)
                             else:
-                                # Fallback: generate random latent vector and decode
-                                z = torch.randn(1, 128, device=device)
-                                if hasattr(model.model, 'decode'):
-                                    seq = model.model.decode(z)
-                                else:
-                                    seq = model(z)
+                                # Strict real-data policy: skip synthetic latent fallbacks.
+                                raise RuntimeError("Transformer generate() is not available")
                             
                             if isinstance(seq, torch.Tensor):
                                 seq = seq.cpu().numpy().flatten()
@@ -374,33 +370,11 @@ class ModelCapabilityEvaluator:
         return metrics
     
     def _estimate_reconstruction_quality(self, model, device) -> Dict:
-        """Estimate VAE reconstruction quality (simplified)."""
-        try:
-            # Generate test data and measure reconstruction
-            test_samples = 10
-            reconstruction_errors = []
-            
-            with torch.no_grad():
-                for _ in range(test_samples):
-                    # Create random input
-                    x = torch.randn(1, 128, device=device)
-                    
-                    # Encode and decode
-                    z_mean, z_logvar = model.model.encode(x)
-                    z = z_mean + torch.randn_like(z_logvar) * torch.exp(0.5 * z_logvar)
-                    recon = model.model.decode(z)
-                    
-                    # Compute error
-                    error = float(torch.mean((x - recon) ** 2).cpu().numpy())
-                    reconstruction_errors.append(error)
-            
-            return {
-                "mean_mse": float(np.mean(reconstruction_errors)),
-                "std_mse": float(np.std(reconstruction_errors)),
-                "estimated_kl_divergence": "N/A (requires full reconstruction)"
-            }
-        except Exception as e:
-            return {"error": str(e)}
+        """Reconstruction quality requires real held-out validation inputs."""
+        return {
+            "status": "unavailable",
+            "reason": "No held-out reconstruction dataset provided; synthetic probing is disabled.",
+        }
 
 
 def plot_capability_comparison(all_metrics: Dict):
