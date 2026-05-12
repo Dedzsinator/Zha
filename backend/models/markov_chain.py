@@ -564,17 +564,19 @@ class MarkovChain:
             return 0.5
     
     def _fallback_note_prediction(self, note_sequence):
-        """Simple fallback prediction when HMM fails"""
+        """Pure stochastic sample when context is totally unavailable"""
         if not note_sequence:
-            return 60, 0.3
+            import random
+            return random.randint(48, 84), 0.3
             
         last_note = note_sequence[-1]
         if isinstance(last_note, (list, tuple)):
             last_note = last_note[0]
             
-        # Simple random walk
-        interval = np.random.choice([-2, -1, 0, 1, 2], p=[0.1, 0.2, 0.4, 0.2, 0.1])
-        next_note = max(0, min(127, last_note + interval))
+        # Draw a wider distribution purely mathematically, not rigid hardcoded [-2, -1, 0, 1, 2]
+        import random
+        # Just return a randomly selected valid note if we totally fail
+        next_note = max(0, min(127, last_note + int(random.gauss(0, 4))))
         
         return next_note, 0.3
     
@@ -1121,25 +1123,26 @@ class MarkovChain:
             
         return adjusted_notes
 
-    def _generate_fallback_sequence(self, length):
-        """Generate a simple sequence when other methods fail"""
-        # Create a C major scale
-        c_major = [60, 62, 64, 65, 67, 69, 71, 72]
-        
-        # Generate random notes from the scale
+    def _generate_pure_stochastic_sequence(self, length, key_context=None):
+        """Generate a stochastically random sequence using available context"""
         import random
-        notes = [random.choice(c_major) for _ in range(length)]
+        # Get scale pitches or default to full piano range
+        scale_pitches = self._get_scale_pitches(key_context)
+        if not scale_pitches:
+            scale_pitches = list(range(48, 84))
+            
+        notes = [random.choice(scale_pitches) for _ in range(length)]
+        durations = [random.choices([0.25, 0.5, 0.75, 1.0], weights=[0.4, 0.3, 0.1, 0.2])[0] for _ in range(length)]
         
-        # Generate simple durations (quarter and eighth notes)
-        durations = [0.5 if random.random() > 0.5 else 0.25 for _ in range(length)]
+        # Generate some stochastic diatonic chords instead of fixed ones
+        chords = self._generate_diatonic_chords(key.Key('C').getScale(), length // 4 + 1)
         
-        # Create simple output
         return {
             'notes': notes,
             'durations': durations,
-            'chords': ['C', 'G', 'Am', 'F'] * (length // 4 + 1),
+            'chords': chords,
             'beat_positions': [i % 4 for i in range(length)],
-            'key': 'C major',
+            'key': key_context if key_context else 'C major',
             'time_signature': '4/4'
         }
 
@@ -1158,7 +1161,7 @@ class MarkovChain:
             )
         except Exception as e:
             logger.error(f"Error in generate_expressive_sequence: {e}")
-            return self._generate_fallback_sequence(length)
+            return self._generate_pure_stochastic_sequence(length, key_context)
         
     def _convert_sequences_to_streams(self, midi_sequences):
         """Convert MIDI sequences to music21 streams efficiently"""
@@ -1558,7 +1561,7 @@ class MarkovChain:
         """Generate a chord progression using learned transitions"""
         if not self.trained:
             logger.warning("Model not trained for chord progression generation")
-            return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1)
+            return self._generate_diatonic_chords(key.Key('C').getScale(), num_chords)
             
         cleaned_key = self._clean_key_context(key_context)
         
@@ -1595,7 +1598,7 @@ class MarkovChain:
         except Exception as e:
             # Handle any errors in chord progression generation
             logger.error(f"Error generating chord progression: {e}")
-            return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1)
+            return self._generate_diatonic_chords(key.Key('C').getScale(), num_chords)
 
     def _generate_with_roman_numerals(self, key_name, k, num_chords):
         """Generate chord progression using Roman numerals"""
@@ -1661,7 +1664,7 @@ class MarkovChain:
         all_first_chords = list(set(pair[0] for pair in self.musical_features['common_chord_progressions']))
         
         if not all_first_chords:
-            return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1)
+            return self._generate_diatonic_chords(key.Key('C').getScale(), num_chords)
             
         current_chord = random.choice(all_first_chords)
         progression.append(current_chord)
@@ -1694,7 +1697,7 @@ class MarkovChain:
         diatonic_chords = self._get_diatonic_chords(scale_obj)
         
         if not diatonic_chords:
-            return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1)
+            return ['C major', 'G major', 'A minor', 'F major'] * (num_chords // 4 + 1) if num_chords > 0 else []
             
         progression = []
         
@@ -2243,7 +2246,7 @@ class MarkovChain:
                 length=length,
                 time_signature="4/4",
             )
-            return fallback if fallback is not None else self._generate_fallback_sequence(length)
+            return fallback if fallback is not None else self._generate_pure_stochastic_sequence(length, key_context)
         
         try:
             # Generate hidden state sequence
@@ -2299,7 +2302,7 @@ class MarkovChain:
                 length=length,
                 time_signature="4/4",
             )
-            return fallback if fallback is not None else self._generate_fallback_sequence(length)
+            return fallback if fallback is not None else self._generate_pure_stochastic_sequence(length, key_context)
     
     def _generate_hidden_state_sequence(self, length):
         """Generate sequence of hidden states using HMM"""
@@ -2346,17 +2349,13 @@ class MarkovChain:
                             # Exponentially decay repeated notes
                             probs[note] *= (0.3 ** count)
                     
-                    # Boost melodic intervals (steps and small leaps)
+                    # Subtly adjust melodic intervals
                     for note in range(128):
                         interval = abs(note - current_note)
                         if interval == 0:
-                            probs[note] *= 0.1  # Strongly discourage exact repetition
-                        elif 1 <= interval <= 2:
-                            probs[note] *= 1.5  # Prefer steps
-                        elif 3 <= interval <= 5:
-                            probs[note] *= 1.2  # Allow small leaps
+                            probs[note] *= 0.8  # Slight discourage exact repetition
                         elif interval > 12:
-                            probs[note] *= 0.5  # Discourage large jumps
+                            probs[note] *= 0.8  # Slight discourage large jumps
                     
                     if probs.sum() > 0:
                         probs = probs / probs.sum()
@@ -2412,42 +2411,29 @@ class MarkovChain:
                 if note == last_note:
                     weight *= 0.05
                 
-                # Boost melodic movement (stepwise and small leaps)
+                # Subtly influence melodic movement
                 if last_note is not None:
                     interval = abs(note - last_note)
                     if interval == 0:
-                        weight *= 0.1  # Discourage staying on same note
-                    elif interval <= 2:
-                        weight *= 1.8  # Strong preference for steps
-                    elif interval <= 5:
-                        weight *= 1.3  # Allow small leaps
-                    elif interval <= 7:
-                        weight *= 0.9  # Neutral on medium leaps
-                    else:
-                        weight *= 0.4  # Discourage large jumps
+                        weight *= 0.8  # Mildly discourage staying on same note
+                    elif interval > 12:
+                        weight *= 0.8  # Mildly discourage large jumps
                 
                 # Boost notes in the current key
                 if scale_pitches and note in scale_pitches:
-                    weight *= 1.4
+                    weight *= 1.1
                 
                 # Hidden state preferences for musical expression
                 state_mod = hidden_state % 4
                 if state_mod == 0:  # Stable state - prefer consonant intervals
                     if note % 12 in [0, 4, 7]:  # Root, third, fifth
-                        weight *= 1.2
-                elif state_mod == 1:  # Ascending state
+                        weight *= 1.1
+                elif state_mod == 1:  # Slightly prefer ascending
                     if last_note and note > last_note:
-                        weight *= 1.3
-                    elif last_note and note < last_note:
-                        weight *= 0.7
-                elif state_mod == 2:  # Descending state
+                        weight *= 1.1
+                elif state_mod == 2:  # Slightly prefer descending
                     if last_note and note < last_note:
-                        weight *= 1.3
-                    elif last_note and note > last_note:
-                        weight *= 0.7
-                else:  # Transitional state - prefer stepwise motion
-                    if last_note and abs(note - last_note) <= 2:
-                        weight *= 1.5
+                        weight *= 1.1
                 
                 if weight > 0:
                     weighted[note] = weight

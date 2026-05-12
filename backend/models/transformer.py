@@ -762,30 +762,14 @@ class TransformerModel(nn.Module):
                 # Bass follows melody's harmonic implications
                 # Typically plays root notes, octaves, or fifths
                 bass_probs = F.softmax(bass_logits, dim=-1)
-                melody_pitch_class = melody_note % 12  # Get pitch class (C=0, C#=1, etc.)
                 
-                # Define harmonic bass notes (root, fifth, octave below)
-                # Bass typically plays in lower register (MIDI 28-52, roughly E1-E3)
-                bass_root = 28 + melody_pitch_class.item()  # Root in bass register
-                bass_fifth = bass_root + 7  # Perfect fifth
-                bass_octave_up = bass_root + 12  # Octave
-                
-                # Create weighted distribution favoring harmonic bass notes
+                # Allow model to freely predict based on true logits instead of hardcoded harmonic masks
                 bass_probs_adjusted = bass_probs.clone()
                 
-                # Boost probability of harmonically relevant notes
-                harmonic_boost = 10.0  # Strong bias toward harmonic notes
-                if bass_root < self.input_dim:
-                    bass_probs_adjusted[0, bass_root] *= harmonic_boost
-                if bass_fifth < self.input_dim:
-                    bass_probs_adjusted[0, bass_fifth] *= harmonic_boost / 2
-                if bass_octave_up < self.input_dim:
-                    bass_probs_adjusted[0, bass_octave_up] *= harmonic_boost / 3
-                
-                # Suppress notes outside bass range (keep only MIDI 28-52)
+                # Optionally softly suppress but never flat out zero things
                 bass_mask = torch.ones_like(bass_probs_adjusted)
-                bass_mask[:, :28] = 0.01  # Very low probability for notes too low
-                bass_mask[:, 53:] = 0.01  # Very low probability for notes too high
+                bass_mask[:, :28] = 0.5  # Soft bias, let model decide
+                bass_mask[:, 53:] = 0.5  
                 bass_probs_adjusted *= bass_mask
                 
                 # Renormalize and sample
@@ -796,45 +780,18 @@ class TransformerModel(nn.Module):
                 # Drums constrained to General MIDI drum notes (35-81)
                 # Apply rhythmic patterns based on step position
                 
-                # Create drum-specific probability distribution
+                # Create drum-specific probability distribution using the model's true logits, not hardcoded rhythms
                 drum_probs = F.softmax(drum_logits, dim=-1)
-                drum_probs_adjusted = torch.zeros_like(drum_probs)
                 
-                # Define rhythmic pattern (4/4 time, 16th note resolution)
-                beat_position = step % 16  # Position within a measure
+                # Simply use the scaled distribution
+                drum_probs_adjusted = drum_probs.clone()
                 
-                # Kick drum (strong beats: 0, 8) 
-                if beat_position % 8 == 0:
-                    drum_probs_adjusted[0, DRUM_NOTES['kick']] = 0.8
-                elif beat_position % 4 == 0:
-                    drum_probs_adjusted[0, DRUM_NOTES['kick']] = 0.3
-                
-                # Snare (backbeats: 4, 12)
-                if beat_position in [4, 12]:
-                    drum_probs_adjusted[0, DRUM_NOTES['snare']] = 0.7
-                
-                # Hi-hat (every 2 steps for constant rhythm)
-                if beat_position % 2 == 0:
-                    drum_probs_adjusted[0, DRUM_NOTES['hihat_closed']] = 0.6
-                else:
-                    drum_probs_adjusted[0, DRUM_NOTES['hihat_closed']] = 0.4
-                
-                # Occasional open hi-hat or crash for variation
-                if beat_position == 0 or (beat_position == 8 and step % 32 == 0):
-                    drum_probs_adjusted[0, DRUM_NOTES['crash']] = 0.2
-                
-                # Add some of the model's learned probabilities (weighted by drum_temperature)
-                model_drum_contribution = drum_temperature * 0.1
-                for note_idx in DRUM_NOTES.values():
-                    if note_idx < self.input_dim:
-                        drum_probs_adjusted[0, note_idx] += model_drum_contribution * drum_probs[0, note_idx]
-                
-                # Renormalize
+                # Keep a slight fallback so nan/zero sums don't crash
                 drum_probs_sum = drum_probs_adjusted.sum(dim=-1, keepdim=True)
                 if drum_probs_sum > 0:
                     drum_probs_adjusted = drum_probs_adjusted / drum_probs_sum
                 else:
-                    # Fallback: uniform over drum notes
+                    # Stochastic fallback over valid drums if model completely fails
                     for note_idx in DRUM_NOTES.values():
                         if note_idx < self.input_dim:
                             drum_probs_adjusted[0, note_idx] = 1.0 / len(DRUM_NOTES)
