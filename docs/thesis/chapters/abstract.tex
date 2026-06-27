@@ -2,10 +2,8 @@
 
 \chapter{Abstract}
 
-Ez a dolgozat mély tanulási módszerek alkalmazását vizsgálja szimbolikus zenei művek generálásában. A kutatás fókuszában három modell kombinálása áll: Markov láncok, variációs autoenkóderek (VAE) és Transformer hálózatok. A Zha rendszer ezeket az eltérő mesterséges intelligencia megközelítéseket kapcsolja össze a zenei alkotás folyamatának modellezésére.
+Ez a dolgozat egy hibrid szimbolikus zenegeneráló rendszert, a Zha-t mutatja be, amely három különböző generatív modellt oszt szét a zenei generálás három különböző aspektusa között. A Markov-lánc (és annak HMM-kiterjesztése) hangnemben tartott, monofón dallami vonalat ad. A variációs autoenkóder (VAE) és annak saját kiterjesztése, a GOLC-VAE (Group-Orbital Latent Consistency), a pitch-eloszlások látens manipulációját végzi transzpozíció-invariáns módon. A Transformer pedig polifón kísérőszólamokat és többsávos struktúrát (dallam, basszus, dobok) szintetizál cross-attention mechanizmussal.
 
-Mindhárom modell elméleti hátterét és gyakorlati implementációját részletesen tárgyalom. Bemutatom, hogy ezek hogyan kapcsolódnak a zeneelmélethez: a Markov láncok statisztikai elemzést végeznek zenei mintázatokon, a VAE újraszervezési technikákat alkalmaz, a Transformer pedig memóriaalapú stratégiákat használ. Különös figyelmet fordítok arra, hogyan lehet strukturált, hosszú távon koherens zenét létrehozni, és ezt hatékonyan számítógépen implementálni.
+A három modell kimenete súlyozott keverékkel (0,5 / 0,3 / 0,2) áll össze, majd skála- és regiszter-szűrésen átesve kerül MIDI fájlba. Bemutatom a három modell elméleti hátterét, a Zha-specifikus kiterjesztéseket (GOLC orbitális konzisztencia veszteség, szomszéd-hangokra vonatkozó simasági regularizáció, szekció-alapú memória), valamint a FastAPI alapú inferencia-pipeline-t.
 
-A Zha rendszer újdonsága, hogy több mesterséges intelligencia réteget integrál, fejlett tanulási infrastruktúrát és intelligens modellkapcsolási megoldásokat alkalmazva. A kísérletek azt mutatják, hogy ez a kombinált megközelítés jobb minőségű és változatosabb zenét eredményez, mint az egyetlen modellre épülő hagyományos megoldások.
-
-A kutatás hozzájárul a számítógépes zenei alkotás területéhez azzal, hogy bemutatja a különböző mély tanulási módszerek hatékony kombinálását és a zenei szerkezet modellezésének komplex kihívásaira adott megoldásokat.
+A fő hozzájárulások: (i) a GOLC-VAE módszer formalizálása és implementálása a transzpozíció-invariáns látens reprezentáció tanulására; (ii) a multitrack Transformer architektúra cross-attention koordinációval a dallam, basszus és dob sávok között; (iii) a három modell integrációja egyetlen, REST API-n keresztül elérhető generatív rendszerbe.

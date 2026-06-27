@@ -1,0 +1,55 @@
+This is BibTeX, Version 0.99e (TeX Live 2026/Arch Linux)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+A level-1 auxiliary file: chapters/intro.aux
+A level-1 auxiliary file: chapters/theory.aux
+A level-1 auxiliary file: chapters/markov.aux
+A level-1 auxiliary file: chapters/vae.aux
+A level-1 auxiliary file: chapters/transformer.aux
+A level-1 auxiliary file: chapters/train.aux
+A level-1 auxiliary file: chapters/zha.aux
+A level-1 auxiliary file: chapters/conclusion.aux
+A level-1 auxiliary file: chapters/appendix.aux
+The style file: abbrvnat_hu.bst
+Database file #1: dolgozat.bib
+You've used 30 entries,
+            2767 wiz_defined-function locations,
+            790 strings with 11509 characters,
+and the built_in function-call counts, 16131 in all, are:
+= -- 1468
+> -- 1094
+< -- 25
++ -- 369
+- -- 338
+* -- 1263
+:= -- 2526
+add.period$ -- 118
+call.type$ -- 30
+change.case$ -- 169
+chr.to.int$ -- 29
+cite$ -- 60
+duplicate$ -- 684
+empty$ -- 1151
+format.name$ -- 388
+if$ -- 3419
+int.to.chr$ -- 2
+int.to.str$ -- 1
+missing$ -- 31
+newline$ -- 185
+num.names$ -- 122
+pop$ -- 393
+preamble$ -- 1
+purify$ -- 142
+quote$ -- 0
+skip$ -- 582
+stack$ -- 0
+substring$ -- 511
+swap$ -- 130
+text.length$ -- 9
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 320
+warning$ -- 0
+while$ -- 129
+width$ -- 0
+write$ -- 442

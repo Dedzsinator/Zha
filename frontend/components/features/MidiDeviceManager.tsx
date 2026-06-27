@@ -47,19 +47,26 @@ export default function MidiDeviceManager({
     useEffect(() => {
         async function requestMidiAccess() {
             try {
-                if (navigator.requestMIDIAccess) {
-                    const access = await navigator.requestMIDIAccess({ sysex: false });
+                const isSupported =
+                    typeof navigator !== 'undefined' &&
+                    typeof navigator.requestMIDIAccess === 'function' &&
+                    typeof window !== 'undefined' &&
+                    window.isSecureContext;
 
-                    // Update device lists
-                    updateDeviceLists(access);
-
-                    // Listen for device connection/disconnection
-                    access.onstatechange = () => {
-                        updateDeviceLists(access);
-                    };
-                } else {
-                    setMidiError('WebMIDI is not supported in your browser.');
+                if (!isSupported) {
+                    setMidiError('WebMIDI requires a secure context and is not supported in this browser.');
+                    return;
                 }
+
+                const access = await navigator.requestMIDIAccess({ sysex: false });
+
+                // Update device lists
+                updateDeviceLists(access);
+
+                // Listen for device connection/disconnection
+                access.onstatechange = () => {
+                    updateDeviceLists(access);
+                };
             } catch (err) {
                 setMidiError(`Failed to access MIDI devices: ${err}`);
                 console.error(err);

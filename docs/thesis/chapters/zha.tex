@@ -1,6 +1,6 @@
 %!TEX root = ../main.tex
 
-\chapter{A Zha rendszer tervezése}
+\chapter{A rendszer tervezése}
 
 \section{A rendszer magas szintű áttekintése}
 
@@ -24,7 +24,7 @@ Kezdetben a Markov lánc egy kiinduló véletlenszerű hangmagasságot jósol, m
 
 A VAE kreatív variációkat hoz létre a Markov modell által megadott dallamból. A látens térben történő mintavételezés lehetővé teszi a kreativitás mértékének szabályozását. Itt az $\epsilon$ paraméter normális eloszlásból származik, nullás középértékkel és a kreativitás négyzetével arányos szórással.
 
-A Transformer polifón zenei struktúrákat hoz létre. Akordokat ad a dallamhoz, ismétlődő motívumokat generál, és többsávos kompozíciókat állít elő (melódiát, basszust, dobokat). A többfejű figyelem mechanizmusa kapcsolatokat épít a távoli zenei események között, ezzel megkísérelve biztosítani a generált zene konzisztenciáját és harmonikus gazdagságát.
+A Transformer polifón zenei struktúrákat hoz létre. Akkordokat ad a dallamhoz, ismétlődő motívumokat generál, és többsávos kompozíciókat állít elő (melódiát, basszust, dobokat). A többfejű figyelem mechanizmusa kapcsolatokat épít a távoli zenei események között, ezzel megkísérelve biztosítani a generált zene konzisztenciáját és harmonikus gazdagságát.
 
 \subsection{Kombinált generálási algoritmus}
 
@@ -43,7 +43,7 @@ A Markov szakaszban monofón dallam jön létre adott hangnemben, 64 egység hos
 
 A VAE szakaszban a dallam jellemzővektor enkódolása után látens térben történő mintavételezés zajlik. Itt a kreativitási paraméter skálázza a szórást. A dekódolt vektor ezután skála szerinti szűrésen esik át.
 
-A Transformer szakaszban polifón gazdagítás történik. Akordok hozzáadása, többsávos struktúra kialakítása, ismétlődő motívumok generálása. A bemeneti adatok alapján strukturális finomítás történik, ahol a hangterjedelem korlátozása biztosítja a megfelelő regisztert.
+A Transformer szakaszban polifón gazdagítás történik. Akkordok hozzáadása, többsávos struktúra kialakítása, ismétlődő motívumok generálása. A bemeneti adatok alapján strukturális finomítás történik, ahol a hangterjedelem korlátozása biztosítja a megfelelő regisztert.
 
 Végül a súlyozott kombináció egyesíti a három modell kimenetét: 50 százalék Markov, 30 százalék VAE és 20 százalék Transformer. A nem negatív értékek biztosítása és normalizálás után a rendszer MIDI formátumba exportálja az eredményt, polifón akkordszerkezetekkel együtt.
 
@@ -85,7 +85,7 @@ Az adatfolyam részletei a következőképpen alakulnak. A nyers MIDI fájlok az
 \label{fig:midi_preprocessing}
 \end{figure}
 
-Minden MIDI fájlt a music21 segítségével elemezek intelligens sávszétválasztással. Először eldobjuk azokat a sávokat, amelyek kevesebb mint tíz hangjegyből állnak. A tempót globálisan 120 BPM-re normalizálom a variancia csökkentése érdekében. Eltávolítom a nem hangjegy eseményeket, kivéve a sustain pedál vezérléseket.
+Minden MIDI fájlt a \texttt{music21} könyvtárral \cite{music21} elemzek heurisztikus sávszétválasztással. Először eldobjuk azokat a sávokat, amelyek kevesebb mint tíz hangjegyből állnak. A tempót globálisan 120 BPM-re normalizálom a variancia csökkentése érdekében. Eltávolítom a nem hangjegy eseményeket, kivéve a sustain pedál vezérléseket.
 
 A sávokat három kategóriába sorolom. A melódia kategória a basszustartomány feletti hangokat foglalja magában (MIDI 55 felett), amelyek nem ütős jellegűek. A basszus kategória az alacsony hangokat tartalmazza (MIDI 21-55, körülbelül E0-G3). A dobok kategóriája az ütős sávokat jelenti (MIDI 10-es csatorna vagy nagy sebességű rövid hangok).
 
@@ -103,13 +103,13 @@ Az időt 16-os hang rácsra diszkretizálom. Minden hangjegy eseményre:
 Ez biztosítja, hogy minden kezdési és befejezési idő diszkrét intervallumokra essen.
 
 \subsection{Tokenizációs séma}
-A kiterjesztett REMI reprezentációt használom. A $\texttt{NOTE\_ON}_p$ és $\texttt{NOTE\_OFF}_p$ tokenek a hangmagasságokra vonatkoznak, ahol $p$ 0 és 127 közötti értékeket vesz fel. A $\texttt{TIME\_SHIFT}_i$ tokenek 1 és 32 közötti értékekkel jelölik a 16-os hang lépéseket. A $\texttt{VELOCITY}_b$ tokenek nyolc sebesség intervallumra vonatkoznak, amelyeket kvantilisek alapján számítok. A \texttt{CONTROL\_SUSTAIN\_ON} és \texttt{CONTROL\_SUSTAIN\_OFF} tokenek a vezérléseket képviselik.
+A kiterjesztett REMI reprezentációt használom \cite{huang2020pop}. A $\texttt{NOTE\_ON}_p$ és $\texttt{NOTE\_OFF}_p$ tokenek a hangmagasságokra vonatkoznak, ahol $p$ 0 és 127 közötti értékeket vesz fel. A $\texttt{TIME\_SHIFT}_i$ tokenek 1 és 32 közötti értékekkel jelölik a 16-os hang lépéseket. A $\texttt{VELOCITY}_b$ tokenek nyolc sebesség intervallumra vonatkoznak, amelyeket kvantilisek alapján számítok. A \texttt{CONTROL\_SUSTAIN\_ON} és \texttt{CONTROL\_SUSTAIN\_OFF} tokenek a vezérléseket képviselik.
 
 A teljes szókincs méret 176: 128 hang, 32 idő, 8 sebesség, 4 vezérlés és 4 speciális token. Korai kísérletekben próbáltam egyszerűbb tokenizációt használni, de az REMI változat sokkal jobb eredményeket adott.
 
 \subsection{Adathalmaz statisztikái}
 
-A Tanítási adatok a \textbf{Lakh MIDI Dataset Clean} Kaggle adatbázisából származnak, amely több mint 176,000 tisztított MIDI fájlt tartalmaz különböző műfajokból és időszakokból.
+A tanítási adatok a \textbf{Lakh MIDI Dataset Clean} Kaggle-adatbázisából származnak, amely az eredeti Lakh MIDI Dataset \cite{raffel2016learning} egy tisztított részhalmaza --- több mint 176\,000 MIDI fájl különböző műfajokból és időszakokból.
 
 \begin{table}[ht]
   \centering
@@ -167,39 +167,16 @@ A kombinált generálási folyamat a következő lépésekből áll:
 \item \textbf{MIDI export}: Végleges zenei fájl generálása
 \end{enumerate}
 
-A rendszer teljes generálási ideje átlagosan 400 milliszekundum 30 másodperces zenei tartalom előállítására, amelyből a Transformer szerkezetgazdagítás teszi ki a legnagyobb részt (200 ms, 50\%).
+A teljes generálási idő egy 30 másodperces darabra fogyasztói RTX 3090 GPU-n nagyságrendileg fél másodperc körül mozog, amelynek a legnagyobb részét a Transformer szerkezet-gazdagítása teszi ki. Pontos benchmarkot nem közlök, mert a futási idő erősen függ a szekvenciahossztól, a memória pufferben felhalmozódott kontextustól és a multitrack mód be- vagy kikapcsolásától.
 
 \section{Értékelés és kísérletek}
 
-A rendszer értékelését külön fejezet tárgyalja. A Zha rendszer esetében a hangsúly a kombinált pipeline teljesítményén van, ahol a három modell együttműködése hozza létre a végleges eredményt.
+A három modell külön-külön és kombinációkban is futtatható --- a \texttt{scripts/generate\_*\_metrics.py} szkriptek a Markov, VAE és Transformer komponensek külön értékelésére szolgálnak. Kvantitatív ablation-eredményeket a baseline VAE vs.\ GOLC-VAE összehasonlításáról a \texttt{scripts/compare\_vae\_models.py} segédszkript tud előállítani.
 
-\begin{table}[ht]
-  \centering
-  \begin{tabular}{lcccc}
-    \toprule
-    Model Configuration        & Perplexity & Pitch Entropy & Harmonic Coherence & Time/Sample \\
-    \midrule
-    Markov only               & 2.48       & 3.2 bits      & 0.72               & 0.5 ms      \\
-    VAE only                  & 1.95       & 4.1 bits      & 0.58               & 2.0 ms      \\
-    Transformer only          & 1.60       & 3.8 bits      & 0.81               & 4.0 ms      \\
-    \midrule
-    Markov + VAE              & 1.82       & 3.9 bits      & 0.79               & 2.5 ms      \\
-    Markov + Transformer      & 1.55       & 3.5 bits      & 0.86               & 4.5 ms      \\
-    VAE + Transformer         & 1.68       & 3.7 bits      & 0.83               & 6.0 ms      \\
-    \midrule
-    \textbf{Combined (All 3)} & \textbf{1.52} & \textbf{3.6 bits} & \textbf{0.88} & \textbf{7.0 ms} \\
-    \bottomrule
-  \end{tabular}
-  \caption{Kombinált pipeline teljesítménye különböző modellkonfigurációkra.}
-  \label{tab:combined_performance}
-\end{table}
-
-A különböző modell-konfigurációk összehasonlítása azt mutatja, hogy a teljes kombinált pipeline (Markov + VAE + Transformer) éri el a legjobb általános teljesítményt alacsony perplexitással (1,52) és kiemelkedő harmonikus koherenciával (0,88). Ez a konfiguráció hatékonyan egyesíti a Markov strukturális erejét, a VAE kreativitását és a Transformer hosszú távú modellezési képességét.
+A jelen dolgozatban szándékosan nem közlök egységes táblázatot a teljes pipeline perplexitás- és harmonikus koherencia-méréseivel. Ennek két oka van: egyrészt a metrikák (pl.\ ,,harmonic coherence'') definíciói önmagukban is implementációfüggők, és nem szeretnék összehasonlító számokat adni, amelyek a kiértékelő szkript egyes implementációs döntéseire érzékenyek; másrészt a kvantitatív összehasonlítás teljes körű reprodukálható futtatását időkereten belül nem stabilizáltam. A pipeline minőségi értékelése (a generált MIDI hallgatása) az \texttt{output/} könyvtárba mentett konkrét futási példák alapján ellenőrizhető.
 
 \section{Összefoglalás}
 
-A Zha rendszer egy hierarchikus pipeline-t valósít meg, amely három különböző neurális hálózat-modellt integrál egy koherens zenei generálási folyamatba. A rendszer MIDI fájlokból indul ki, amelyeket Markov láncok dolgoznak fel harmonikus struktúrák létrehozására, majd VAE-k variációkat adnak a kreativitás növelésére, végül Transformer modellek biztosítják a hosszú távú koherenciát és polifón gazdagítást.
+A Zha rendszer egy hierarchikus pipeline-t valósít meg, amely három különböző generatív modellt integrál egyetlen, REST API-n keresztül elérhető zenei generálási folyamatba. A bemeneti MIDI fájl hangnemét a music21 detektálja; ezt használja a Markov-lánc a monofón dallam előállítására, a VAE/GOLC-VAE a pitch-eloszlás látens variálására, a Transformer pedig a polifón kíséret és többsávos struktúra generálására. A három kimenet rögzített súlyozással (0,5 / 0,3 / 0,2) keveredik, és skála- és regiszter-szűrésen átesve kerül a végső MIDI fájlba.
 
-A kombinált megközelítés előnye, hogy egyesíti a különböző modellek erősségeit: a Markov-láncok biztosítják a harmonikus alapot, a VAE-k kreatív variációkat tesznek lehetővé, míg a Transformer modellek strukturális konzisztenciát és többsávos generálást biztosítanak. A rendszer FastAPI alapú REST API-n keresztül érhető el, amely lehetővé teszi a valós idejű zenei generálást különböző paraméterezéssel.
-
-Az eredmények azt mutatják, hogy a hierarchikus integráció hatékony módszer a zenei tartalom generálására, egyensúlyt teremtve a kreativitás és a strukturális koherencia között. A teljes kombinált pipeline (Markov + VAE + Transformer) éri el a legjobb teljesítményt mind objektív metrikákban (perplexity: 1,52, harmonikus koherencia: 0,88), mind pedig a felhasználói értékelések alapján.
+A felelősség-megosztás motivációja az, hogy egyetlen modell nehezen tud egyszerre lokális dallami statisztikát, transzpozíció-invariáns stílust és hosszabb távú szerkezetet kezelni: a Zha ezt explicit szétosztással próbálja egyszerűbbé tenni. A FastAPI alapú REST API kreativitás-, időtartam- és hangszer-paraméterekkel teszi vezérelhetővé a generálást.

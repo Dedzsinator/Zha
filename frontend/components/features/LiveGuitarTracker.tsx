@@ -13,7 +13,8 @@ export default function LiveGuitarTracker({ onMidiGenerated }: LiveGuitarTracker
         stopTracking,
         detectedNotes,
         currentBpm,
-        currentScale
+        currentScale,
+        error
     } = useGuitarTracker();
 
     const [isGenerating, setIsGenerating] = useState(false);
@@ -62,7 +63,7 @@ export default function LiveGuitarTracker({ onMidiGenerated }: LiveGuitarTracker
             onMidiGenerated(guitarFile);
 
             // Call backend to generate accompaniment based on guitar tab
-            const response = await axios.post('http://localhost:8000/api/generate_accompaniment', payload, {
+            const response = await axios.post('/api/generate_accompaniment', payload, {
                 responseType: 'blob'
             });
 
@@ -112,6 +113,12 @@ export default function LiveGuitarTracker({ onMidiGenerated }: LiveGuitarTracker
                     {isGenerating ? 'Generating...' : 'Generate Accompaniment'}
                 </button>
             </div>
+
+            {error ? (
+                <div className="mb-4 rounded border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+                    {error}
+                </div>
+            ) : null}
 
             <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="bg-gray-900 p-3 rounded">

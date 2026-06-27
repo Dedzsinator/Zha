@@ -2,123 +2,135 @@
 \chapter{Markov láncok dallamgeneráláshoz}
 \label{chap:markov}
 
-\section{Bevezetés}
+\section{Szerepe}
 
-A Markov láncok alapvető szerepet játszanak a Zha rendszerben a dallamgenerálás területén. A modell elsődleges feladata monofón dallamok generálása adott hangnemekben, figyelembe véve a zenei skálák és ritmikai minták jellemzőit. Ellentétben a bonyolultabb modellekkel, amelyek polifón struktúrákat és akkordokat hoznak létre, a Markov-modul fókuszál a dallami vonal koherenciájára és a zenei kulcsok tiszteletben tartására.
+A Markov-lánc a Zha rendszer dallami komponense. Feladata, hogy egy adott hangnemben (és skálában) monofón dallamot generáljon: ez kerül a pipeline elejére, és erre építenek később a VAE és a Transformer modulok. A bonyolultabb modellektől ezt a komponenst két dolog különbözteti meg. Egyrészt nem szekvenciális neurális hálózat, így a tanítása egyszerű frekvencia-számolás, gyorsan futtatható és értelmezhető. Másrészt zeneelméleti tudás (skála, akkordfunkció, intervallum-korlátok) közvetlenül beilleszthető a mintavételezésbe, anélkül hogy újra kellene tanítani a modellt.
 
-A rendszerben megvalósított Markov-modul két fő újítást hoz: hierarchikus állapotmodellezést használ a harmonikus kontextus kezelésére, valamint GPU-gyorsított algoritmusokat a nagy adathalmazok hatékony feldolgozására. Ezek az optimalizációk lehetővé teszik a valós idejű generálást anélkül, hogy kompromisszumot kötnénk a zenei minőségben.
+A modul két szempontból tér el a tankönyvi Markov-lánctól: egyrészt hierarchikus, magasabb rendű állapotmodellt használ a kontextus szélesítésére; másrészt egy \texttt{hmmlearn}-alapú rejtett Markov-modellel egészül ki \cite{rabiner1989tutorial}, amely a hang-emissziókat egy rejtett zenei állapot (például emelkedő vagy ereszkedő mozgás) feltételes kibocsátásaként modellezi.
 
 \section{Elméleti alapok}
 
 \subsection{A Markov-tulajdonság zenei alkalmazása}
 
-Egy $\{X_t\}_{t \geq 0}$ diszkrét idejű sztochasztikus folyamat akkor rendelkezik a Markov-tulajdonsággal, ha a következő állapot csak az aktuális állapottól függ:
+Egy $\{X_t\}_{t \geq 0}$ diszkrét idejű sztochasztikus folyamat akkor rendelkezik a Markov-tulajdonsággal, ha a következő állapot csak az aktuális állapottól függ \cite{norris1998markov}:
 \[
-P(X_{t+1} = s_j \mid X_t = s_i, X_{t-1} = s_k, \ldots) = P(X_{t+1} = s_j \mid X_t = s_i) = p_{ij}
+P(X_{t+1} = s_j \mid X_t = s_i, X_{t-1} = s_k, \ldots) = P(X_{t+1} = s_j \mid X_t = s_i) = p_{ij}.
 \]
 
-Zenei kontextusban az állapotok MIDI hangmagasságokat képviselnek (0-127), ahol az átmeneti valószínűségek a dallami folytonosságot modellezik. A Zha implementáció 2-6. rendű Markov-modelleket használ, amelyek hosszabb zenei kontextust vesznek figyelembe anélkül, hogy exponenciálisan megnőne a paramétertér.
+Zenei kontextusban az állapotok MIDI hangmagasságokat képviselnek (0--127), és az átmeneti valószínűségek a helyi dallami folytonosságot modellezik. A Zha implementáció a rendet konfigurálhatóan 2 és 6 között veszi fel (a kódban a felső korlát: \texttt{max\_order = min(6, self.order)}), alapértelmezetten 3-mal. A magasabb rend hosszabb dallami kontextust enged, de exponenciálisan növeli a meg nem figyelt $n$-esek számát, ezért a rend választása mindig kompromisszum.
 
 \subsection{Magasabb rendű Markov-modellek}
 
 Az $n$-edrendű Markov-modell az előző $n$ állapotra támaszkodik:
 \[
-P(X_{t+1} \mid X_t, X_{t-1}, \ldots, X_{t-n+1})
+P(X_{t+1} \mid X_t, X_{t-1}, \ldots, X_{t-n+1}).
 \]
 
-Ez lehetővé teszi összetett dallami minták, mint az ismétlések vagy motívumok modellezését. A gyakorlati implementációban ritkás mátrixokat és visszalépési mechanizmusokat alkalmazunk a memória-hatékonyság érdekében.
+Az implementációban ezeket a magasabb rendű átmeneteket szótár-alapú (sparse) tárolással valósítom meg, mert a 128-as alapállapot-térrel egy 6-rendű mátrix teljes alakban $128^7 \approx 5{,}6 \cdot 10^{14}$ cellát igényelne. A szótár csak a tényleges tanítási adatban előforduló $n$-eseket tartja meg.
+
+\subsection{Laplace add-$\alpha$ simítás}
+
+A ritka, magasabb rendű táblákban a számlálók többsége 0 vagy 1, így a soha meg nem figyelt folytatások a generálás során nulla valószínűségűek maradnak, és teljes egészében kizáródnak a mintavételezésből. Ennek enyhítésére Laplace add-$\alpha$ simítást alkalmazok az $\alpha \geq 0$ paraméterrel:
+\[
+\hat{p}(s' \mid \mathbf{s}) = \frac{N(\mathbf{s}, s') + \alpha}{\sum_{s''} N(\mathbf{s}, s'') + \alpha \cdot |V|},
+\]
+ahol $|V| = 128$ a MIDI hangmagasság-szókincs mérete és $\alpha$ a \texttt{MarkovChain} konstruktorának \texttt{laplace\_alpha} paramétere. Az alapérték $0$, ami a simítás nélküli, korábbi viselkedést őrzi meg. A $0{,}1$ és $1{,}0$ közötti értékek mellett a generálás az olyan ritka, csak egyszer-kétszer megfigyelt magasabb rendű kontextusokban is megőriz némi mintavételi diverzitást, amelyek egyébként determinisztikussá zsugorodnának.
 
 \section{Optimalizált algoritmusok}
 
 \subsection{Vektorizált számítások}
 
-A hagyományos Markov-generálás sorozatos valószínűség-számítással működik, ami nagy szekvenciák esetén lassú. Vektorizált megközelítéssel egyetlen mátrix-szorzással számoljuk ki az összes következő állapot valószínűségét:
+A hagyományos Markov-generálás soros valószínűség-számítással működik. A teljes 128-es átmeneti vektort egyetlen NumPy/PyTorch indexeléssel olvasom ki, és egyetlen \texttt{np.random.choice} hívással mintavételezek:
 
 \begin{lstlisting}
-# Vektorizált átmenet-számítás
-next_probs = transitions[current_state] * scale_mask
-next_note = np.random.choice(128, p=next_probs/next_probs.sum())
+next_probs = transitions[current_state]
+next_note = np.random.choice(128, p=next_probs / next_probs.sum())
 \end{lstlisting}
-
-Ez a technika jelentősen felgyorsítja a generálást, különösen GPU-k esetében.
 
 \subsection{GPU-gyorsítás}
 
-Nagy állapotterek esetén PyTorch-alapú GPU-gyorsítást alkalmazunk:
-
-\begin{lstlisting}
-# GPU-gyorsított valószínűségszámítás
-probs_gpu = transitions_gpu[current_state]
-next_note = torch.multinomial(probs_gpu, 1).cpu().item()
-\end{lstlisting}
-
-Ez 10-50x sebességnövekedést eredményez nagy adathalmazokon.
+Nagy állapotterek esetén PyTorch CUDA tenzorokra is fel tudja venni az átmeneti mátrixot. A \texttt{CUDAOptimizer} osztály (\texttt{markov\_chain.py}) ezt a be- és kipakolást kezeli; a CuPy backend opcionális, és ha nem érhető el, az implementáció PyTorch tenzorokkal dolgozik tovább. Reprezentatív benchmarkot nem futtattam, ezért konkrét gyorsulási arányt nem közlök.
 
 \section{Zenei predikció és generálás}
 
 \subsection{Skálatudatos generálás}
 
-A generált dallamok mindig egy adott zenei skálához igazodnak. A skálaszűrés biztosítja, hogy csak a kulcshoz tartozó hangok kerüljenek kiválasztásra:
+A dallam mindig egy adott zenei skálához igazodik. A bemeneti MIDI fájl hangnemét a \texttt{music21.analyze('key')} hívás adja meg \cite{music21}; a \texttt{music21} ezt a Krumhansl-féle kulcsprofil-illesztésre építi \cite{krumhansl1990cognitive}, amely a 12 pitch class tonális hierarchia szerinti súlyait illeszti a bemenet hangmagasság-eloszlására. A kimenetből a \texttt{\_get\_scale\_pitches} függvény bontja ki a megengedett pitch class halmazt. Ez a halmaz aztán maszkként szűri az átmeneti valószínűségeket:
 
 \begin{lstlisting}
-scale_notes = get_scale_notes(key_context)  # pl. C-dúr: [0,2,4,5,7,9,11]
-filtered_probs = probs * (np.arange(128) % 12 in scale_notes)
+scale_pitches = self._get_scale_pitches(key)  # pl. C-dur: {0,2,4,5,7,9,11}
+mask = np.isin(np.arange(128) % 12, list(scale_pitches))
+filtered_probs = probs * mask
 \end{lstlisting}
 
-\subsection{Hőmérséklet-vezérelt mintavételezés}
+A gyakorlatban a Markov-lánc néha mégis skálán kívüli hangokat ad ki: ez akkor fordul elő, amikor a tanult magasabb rendű kontextus felülírja az egyszerű skálamaszkot (intervallum-alapú átmeneten keresztül). Ezt a kromatikus kilengést meghagytam, mert zeneileg gyakran érdekes átmeneti hangokat termel.
 
-A dallam diverzitását a hőmérséklet paraméter szabályozza:
+\subsection{Intervallum-alapú reprezentáció}
+
+A pitch-alapú átmenetek mellett a modul intervallum-alapú átmeneteket is tanul: $i_j = p_{j+1} - p_j$, $i \in [-12, +12]$ félhang tartományra korlátozva. Ennek két előnye van: (i) transzpozíció-invariáns (egy más hangnembe transzponált dallam ugyanazokat az intervallumokat adja, lásd a \ref{proof:interval_transposition}.\ függeléket), és (ii) a tárhelyigény $|S|^2 = 128^2$-ről $|S| \cdot 25$-re csökken.
+
+\subsection{Hőmérséklet-vezérelt mintavételezés és top-K szűrés}
+
+A skálaszűrés és az ismétlés-büntetés után, közvetlenül a kategorikus mintavétel előtt két további alakítást végzek a valószínűségi vektoron, az \texttt{\_apply\_temperature\_topk} statikus segédmetóduson keresztül.
+
+A \emph{hőmérséklet} az eloszlás élességét szabályozza:
 \[
-p'_i = \frac{p_i^{1/T}}{\sum_j p_j^{1/T}}
+p'_i \propto p_i^{1/T},
 \]
+ahol $T < 1$ élesít (a valószínűbb hangok aránya tovább nő), $T > 1$ pedig laposít. Alapértéke $0{,}8$, egyezésben a Transformer modul mintavételezőjével; ez enyhén determinisztikus irányba tolt eloszlást ad.
 
-ahol $T \in [0.7, 1.3]$ biztosítja az egyensúlyt a koherencia és változatosság között.
+A \emph{top-K szűrés} a természetes nyelvi generálásból átvett technika \cite{fan2018hierarchical}: csak a $K$ legmagasabb valószínűségű hangot tartja meg, a többit nullára állítja, majd újra normalizál:
+\[
+p'_i = \begin{cases} p_i / Z & \text{ha } i \in \mathrm{TopK}(p), \\ 0 & \text{egyébként}, \end{cases}
+\]
+ahol $Z = \sum_{i \in \mathrm{TopK}(p)} p_i$. A $K = 0$ érték kikapcsolja a szűrőt (a korábbi viselkedéssel azonos); a $K = 5$--$10$ tartomány meggátolja, hogy a ritka, magasabb rendű kontextusok zeneileg nem megfelelő, alacsony valószínűségű hangokat adjanak ki.
 
-\subsection{Top-K szűrés}
+Mindkét paraméter szerepel a fő generáló függvények (\texttt{generate\_sequence}, \texttt{generate\_interval\_sequence}, \texttt{generate\_with\_adaptive\_order}) szignatúrájában. Ezzel a Markov-modul a Transformer modullal egységes módon vezérelhető a determinisztikus és a véletlenszerű mintavétel közötti spektrumon.
 
-A zenei minőség javítása érdekében csak a legvalószínűbb következő hangjegyeket tartjuk meg:
+\subsection{Ismétlés-büntetés}
 
-\begin{lstlisting}
-top_k_indices = np.argsort(probs)[-k:]
-filtered = probs[top_k_indices] / np.sum(probs[top_k_indices])
-\end{lstlisting}
+A Markov-generálás gyakran rövid ciklusokba ragad, ami zeneileg mechanikusan hangzik. A modul az utoljára kiadott hangokra exponenciálisan csökkenő büntetést alkalmaz (\texttt{markov\_chain.py:2344--2350}): minél frissebben szólalt meg egy hang, annál erősebben csökken a valószínűsége. Ezt a lépést a hőmérséklet-skálázás és a top-K szűrés \emph{előtt} végzem, így a hőmérséklet az ismétlés-büntetett eloszlást élesíti.
+
+\subsection{Határjelölő szimbólumok}
+
+A \texttt{use\_boundary\_tokens=True} paraméterrel a modul két határjelölő szimbólumot vezet be a tanítási szekvenciák köré: \texttt{START\_TOKEN} ($=-1$) a sorozat eleje előtt, \texttt{END\_TOKEN} ($=-2$) a sorozat végén. Mindkettő a 0--127 MIDI tartományon kívül esik, így a $128 \times 128$ átmeneti mátrix indexelését nem zavarja.
+
+A tanítás során minden szekvenciát $n$ darab \texttt{START} szimbólummal előzök meg ($n$ a kontextus rendje), majd a végéhez egy \texttt{END} szimbólumot fűzök. Így a magasabb rendű átmeneti táblákban a kezdő és záró kontextusok is megjelennek, például $(\texttt{START}, \texttt{START}, 60) \to 64$ formában; ez egy konkrét dallami nyitás statisztikai leírása.
+
+Generáláskor az adaptív rendű generáló (\texttt{generate\_with\_adaptive\_order}) ugyanezzel az $n$ darab \texttt{START} kontextussal indul, mielőtt a kezdő hangmagasságot hozzáfűzné. Így az első ténylegesen generált hang a tanult kezdő kontextusból mintavételezett, nem pedig egy szekvencia belsejéből származó, szemantikailag eltérő állapotból. Ha a mintavétel az \texttt{END} szimbólumot adja, a generálás korábban véget ér; ezt zeneileg természetes zárásként kezelem. A határjelölő szimbólumokat a visszaadás előtt eltávolítom a kimenetből.
 
 \section{Implementációs részletek}
 
 \subsection{Markov-lánc implementáció}
 
-A Markov-lánc modell a \texttt{backend/models/markov\_chain.py} fájlban található. Támogat $n$-ed rendű láncokat, ahol $n$ legfeljebb 4. A Python \texttt{defaultdict(Counter)} struktúrát használom a számláláshoz. Laplace simítást alkalmazok konfigurálható $\alpha$ paraméterrel.
+A Markov-lánc modell a \texttt{backend/models/markov\_chain.py} fájlban található. A fő átmeneti mátrix egy $128 \times 128$ NumPy tömb (a GPU változatban PyTorch tenzor); a magasabb rendű átmenetek számlálását tanítás közben \texttt{defaultdict(Counter)} segédstruktúra végzi, a normalizált eredmény pedig egy \texttt{higher\_order\_transitions[order]} szótárba kerül.
 
 \subsubsection{Mintavételezési algoritmus}
 
-A mintavételezési algoritmus a következő lépésekből áll:
+A mintavételezés a következő lépésekből áll:
 
-1. Először a kontextus inicializálása START tokenekkel történik
-2. Minden lépésben a valószínűségi eloszlás lekérése történik a kontextus alapján  
-3. A következő token kumulatív multinomiális mintavételezéssel kerül kiválasztásra
-4. A kontextus ablak ezután eltolódik előre
-5. A folyamat befejeződik END tokennél vagy hosszlimitnél
+\begin{enumerate}
+\item Inicializálom a szekvenciát: ha \texttt{use\_boundary\_tokens=True}, $n$ darab \texttt{START} szimbólummal és egy kezdő hangmagassággal; ellenkező esetben csak a kezdő hangmagassággal.
+\item Minden lépésben kiolvasom az aktuális rendnek megfelelő átmeneti eloszlást.
+\item A skálamaszkkal és az ismétlés-büntetéssel megszorzom a valószínűségeket.
+\item Az \texttt{\_apply\_temperature\_topk} segédfüggvénnyel hőmérséklet-skálázást és top-K szűrést alkalmazok.
+\item Az \texttt{np.random.choice} hívással mintavételezek a kapott eloszlásból.
+\item A kontextusablakot előre tolom. Ha a mintavétel az \texttt{END} szimbólumot adja, a generálást korábban befejezem; ellenkező esetben addig folytatom, amíg el nem érem a kívánt hosszt.
+\item Visszaadás előtt eltávolítom a határjelölő szimbólumokat a kimenetből.
+\end{enumerate}
+
+\subsection{Rejtett Markov-modell kiegészítés}
+
+A HMM-komponens (\texttt{hmmlearn.GaussianHMM}, diagonális kovarianciával, alapértelmezésben 16 rejtett állapottal) a dallamot egy magasabb absztrakciós rétegen modellezi: a megfigyelés egy 7-dimenziós jellemzővektor (hangmagasság-átlag, -szórás, -terjedelem, átlagos intervallum, intervallum-szórás, ritmus-átlag, illetve az emelkedő és ereszkedő mozgások aránya; a részletes definíciókat lásd a \ref{proof:hmm_features}.\ függelékben). A rejtett állapotokat tanítás előtt K-means klaszterezéssel inicializálom (cuML-lel ha elérhető, különben a \texttt{scikit-learn} könyvtárral \cite{pedregosa2011scikit}). Ezek az állapotok zeneileg gyakran értelmezhetők úgy mint ,,emelkedő mozgás'', ,,stabil tartás'' vagy ,,ereszkedő figura''; a Viterbi-dekódolás \cite{viterbi1967error} ezen állapotok mentén szegmentálja a dallamot, ami zeneileg a frázis-szintű tagolásnak felel meg.
 
 \subsection{Tanítási folyamat}
 
-A Markov lánc modell tanítása egyszerű és hatékony folyamatot követ. Minden token szekvenciát feldolgoz, felépíti a valószínűségi mátrixot ($\text{P}_{\text{mátrix}}$), majd menti azt NumPy formátumban a későbbi használathoz. A validálás során 100 szekvencia generálásával ellenőrzöm a modell teljesítményét, különös tekintettel az egyedi átmenetek lefedettségére, hogy biztosítsam a megfelelő diverzitást és a ritka események kezelését.
-
-\subsection{GPU-gyorsítás}
-
-Nagy állapotterek esetén PyTorch-alapú GPU-gyorsítást alkalmazunk:
-
-\begin{lstlisting}
-# GPU-gyorsított valószínűség-számítás
-probs_gpu = transitions_gpu[current_state]
-next_note = torch.multinomial(probs_gpu, 1).cpu().item()
-\end{lstlisting}
-
-Ez 10-50x sebességnövekedést eredményez nagy adathalmazokon.
+A tanítás a következő lépésekből áll: végigmegyek a tokenizált szekvenciákon, és minden $n$-esnél növelem a \texttt{defaultdict(Counter)} megfelelő bejegyzését; az iteráció végén soronkénti összeg-normalizálással kapom az átmeneti valószínűségeket. A HMM külön, a Baum--Welch (EM) algoritmussal tanul. Az eredmény NumPy formátumban, a teljes átmeneti szótár-szerkezettel együtt, \texttt{np.save(..., allow\_pickle=True)} hívással kerül lemezre.
 
 \section{Korlátozások}
 
-A Markov-modellek lokális nézőpontja miatt nehezen kezelik a hosszú távú zenei szerkezeteket. Ez motiválta a Transformer modell integrálását, amely globális összefüggéseket modellez és polifón struktúrákat hoz létre akkordokkal együtt.
+A Markov-modellek lokális nézőpontja miatt nehezen kezelik a hosszú távú zenei szerkezeteket. A HMM-kiterjesztés ezen a problémán frázis-szinten enyhít, de a több perces formák (például a szonáta-forma) konzisztens generálását továbbra sem oldja meg. Ezt a korlátot a Zha pipeline-ban a VAE és a Transformer modulok hivatottak ellensúlyozni.
 
 \section{Összefoglalás}
 
-A Markov-modul biztosítja a Zha rendszer dallami alapját, gyors és koherens monofón szekvenciák generálásával adott hangnemekben. Az optimalizációk lehetővé teszik a valós idejű használatot, míg a zenei tudás integrálása biztosítja a megfelelő minőségű kimenetet.
+A Markov-modul biztosítja a dallami alapját: gyors, értelmezhető és könnyen ellenőrizhető. A skálatudatos mintavételezés biztosítja a hangnem-koherenciát, az intervallum-alapú átmenetek pedig a transzpozíció-invariáns dallami ívet. A HMM-kiterjesztés a frázis-szintű struktúrát modellezi anélkül, hogy a tanítás bonyolultabbá válna egy klasszikus EM-iterációnál.

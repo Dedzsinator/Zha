@@ -31,6 +31,9 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
   const isRecordingRef = useRef(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [detectedNotes, setDetectedNotesState] = useState<DetectedNote[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>('');
   const detectedNotesRef = useRef<DetectedNote[]>([]);
 
   const setDetectedNotes = (updater: (prev: DetectedNote[]) => DetectedNote[]) => {
@@ -42,7 +45,7 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
   };
   const [currentBpm, setCurrentBpm] = useState<number>(120);
   const [currentScale, setCurrentScale] = useState<string>('C Major');
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const analyserRef = useRef<AnalyserNode | null>(null);
   const previousNotesRef = useRef<Set<number>>(new Set());
@@ -52,24 +55,107 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
 
   const threshold = options.threshold || 0.01;
 
+  const refreshAudioInputs = useCallback(async () => {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.enumerateDevices !== 'function'
+    ) {
+      setAudioInputs([]);
+      return;
+    }
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((device) => device.kind === 'audioinput');
+    setAudioInputs(inputs);
+
+    const preferredInput =
+      inputs.find((device) => /focusrite|scarlett|inst|instrument/i.test(device.label)) ||
+      inputs[0] ||
+      null;
+
+    setSelectedAudioInputId((currentSelected) => {
+      if (currentSelected && inputs.some((device) => device.deviceId === currentSelected)) {
+        return currentSelected;
+      }
+
+      return preferredInput?.deviceId || '';
+    });
+  }, []);
+
+  useEffect(() => {
+    void refreshAudioInputs();
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+      return;
+    }
+
+    const handleDeviceChange = () => {
+      void refreshAudioInputs();
+    };
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [refreshAudioInputs]);
+
   const startTracking = async () => {
     try {
+      setError(null);
+
+      if (
+        typeof navigator === 'undefined' ||
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== 'function'
+      ) {
+        throw new Error('Audio input is not supported in this browser.');
+      }
+
       // Get audio from the Audio Interface (e.g. Focusrite Scarlett)
-      const userStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          autoGainControl: false,
-          noiseSuppression: false,
-          latency: 0,
-        },
-      });
+      const audioConstraints = {
+        echoCancellation: false,
+        autoGainControl: false,
+        noiseSuppression: false,
+        ...(selectedAudioInputId
+          ? { deviceId: { exact: selectedAudioInputId } }
+          : {}),
+      } as MediaTrackConstraints;
+
+      let userStream: MediaStream;
+
+      try {
+        userStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      } catch (deviceError) {
+        if (!selectedAudioInputId) {
+          throw deviceError;
+        }
+
+        console.warn('Falling back to default audio input after selected device failed:', deviceError);
+        userStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            autoGainControl: false,
+            noiseSuppression: false,
+          },
+        });
+      }
 
       setStream(userStream);
       setIsRecording(true);
       isRecordingRef.current = true;
 
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      setAudioContext(ctx);
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+      if (!AudioContextClass) {
+        throw new Error('Web Audio API is not supported in this browser.');
+      }
+
+      const ctx = new AudioContextClass();
+      audioContextRef.current = ctx;
 
       const source = ctx.createMediaStreamSource(userStream);
       const analyser = ctx.createAnalyser();
@@ -82,6 +168,8 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
 
       detectPitch();
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to start guitar tracking.';
+      setError(message);
       console.error('Error accessing audio device:', err);
     }
   };
@@ -93,9 +181,9 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
-    if (audioContext) {
-      audioContext.close();
-      setAudioContext(null);
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
     }
     if (requestAnimationFrameRef.current) {
       cancelAnimationFrame(requestAnimationFrameRef.current);
@@ -106,7 +194,8 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
 
   const detectPitch = () => {
     const isActuallyRecording = isRecordingRef.current;
-    if (!analyserRef.current || !audioContext || !isActuallyRecording) return;
+    const activeAudioContext = audioContextRef.current;
+    if (!analyserRef.current || !activeAudioContext || !isActuallyRecording) return;
 
     const buffer = new Float32Array(analyserRef.current.fftSize);
     analyserRef.current.getFloatTimeDomainData(buffer);
@@ -123,7 +212,7 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
       const freqData = new Float32Array(bufferLength);
       analyserRef.current.getFloatFrequencyData(freqData);
       
-      const sampleRate = audioContext.sampleRate;
+      const sampleRate = activeAudioContext.sampleRate;
       const binWidth = sampleRate / analyserRef.current.fftSize;
 
       const peaks: { frequency: number, bin: number, magnitude: number }[] = [];
@@ -227,7 +316,7 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
     if (currentNotes.length < 2) return;
 
     // Estimate BPM from inter-onset intervals
-    let intervals = [];
+    const intervals: number[] = [];
     for (let i = 1; i < currentNotes.length; i++) {
       intervals.push(currentNotes[i].timeStart - currentNotes[i-1].timeStart);
     }
@@ -281,6 +370,10 @@ export const useGuitarTracker = (options: GuitarTrackerOptions = {}) => {
     stopTracking,
     detectedNotes,
     currentBpm,
-    currentScale
+    currentScale,
+    error,
+    audioInputs,
+    selectedAudioInputId,
+    setSelectedAudioInputId,
   };
 };

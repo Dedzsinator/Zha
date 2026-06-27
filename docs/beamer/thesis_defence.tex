@@ -128,9 +128,9 @@ P(X_{t+1} = s_j \mid X_t = s_i) = p_{ij}
 
 \textbf{Implementáció}:
 \begin{itemize}
-    \item Magasabb rendű (2-6. rend)
-    \item Hidden Markov Model (HMM)
-    \item GPU gyorsítás, Sparse mátrix
+    \item Magasabb rendű (2--6, default 3)
+    \item HMM kiterjesztés frázis-állapotokra
+    \item Intervallum-alapú átmenetek (transzpozíció-invariáns)
 \end{itemize}
 \end{column}
 
@@ -373,32 +373,26 @@ $\text{Attention}(Q,K,V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$
 \end{frame}
 
 %10. EREDMÉNYEK 1
-\begin{frame}{Eredmények: Összehasonlítás}
-\textbf{Értékelési metrikák}:
+\begin{frame}{Eredmények: Megfigyelések}
+\textbf{Értékelési szempontok}:
 \begin{itemize}
-    \item \textbf{Rekonstrukciós hiba}: Mennyire jól rekonstruálja az eredeti zenét
-    \item \textbf{Pitch distribution}: A hangmagasságok eloszlása
-    \item \textbf{Orbitális konzisztencia}: Transzpozíciós invariancia mértéke
+    \item \textbf{Rekonstrukciós BCE}: a tanult pitch-eloszlás illeszkedése
+    \item \textbf{Orbit-távolság}: $\|\mu(x) - \mu(g \cdot x)\|_2$, transzpozíciós invariancia mértéke
+    \item \textbf{Hangzás}: a kombinált pipeline kimeneteinek subjective ellenőrzése
 \end{itemize}
 
 \vspace{0.5em}
-\begin{table}[h]
-\centering
-\footnotesize
-\begin{tabular}{|l|c|c|c|}
-\hline
-\textbf{Modell} & \textbf{Recon. Loss} & \textbf{Orbit Cons.} & \textbf{Minőség} \\
-\hline
-Markov & - & - & Közepes \\
-Baseline VAE & 0.082 & 2.34 & Jó \\
-\alert{GOLC-VAE} & \alert{0.078} & \alert{0.45} & \alert{Nagyon jó} \\
-Transformer & 0.075 & - & Nagyon jó \\
-\hline
-\end{tabular}
-\end{table}
+\textbf{Fő empirikus megfigyelés (GOLC vs.\ baseline VAE)}:
+\begin{itemize}
+    \item Az orbit-távolság a $\beta_{\text{orbit}} > 0$ esetben \emph{lényegesen} gyorsabban csökken --- ez a GOLC regularizáció közvetlen hatása.
+    \item A baseline VAE-vel ellentétben a GOLC-VAE különböző transzpozíciókra konzisztensebben ugyanazt a látens pontot adja.
+    \item Az ablation futtatható a \texttt{scripts/compare\_vae\_models.py} szkripttel.
+\end{itemize}
 
 \vspace{0.5em}
-\alert{GOLC-VAE: 5.2× jobb orbitális konzisztencia!}
+\begin{center}
+\textit{A kvantitatív összevetést a függelékben részletezem;\\itt a koncepcionális hatást emelem ki.}
+\end{center}
 \end{frame}
 
 %11. EREDMÉNYEK 2
@@ -475,10 +469,10 @@ Transformer & 0.075 & - & Nagyon jó \\
 \begin{frame}{Konklúzió és jövőbeli munka}
 \textbf{Elért eredmények}:
 \begin{itemize}
-    \item[\checkmark] Több generatív modell összehasonlító implementációja
-    \item[\checkmark] \alert{GOLC-VAE}: Új módszer a zenei szimmetriák beépítésére
-    \item[\checkmark] Jelentős javulás az orbitális konzisztenciában (5.2×)
-    \item[\checkmark] Működő rendszer zenei generálásra
+    \item[\checkmark] Három generatív modell (Markov + HMM, VAE, Transformer) integrált implementációja
+    \item[\checkmark] \alert{GOLC-VAE}: regularizációs alapú transzpozíció-invariancia tanulás
+    \item[\checkmark] Multitrack Transformer cross-attention koordinációval (dallam / basszus / dobok)
+    \item[\checkmark] FastAPI alapú, valós időhöz közeli generálási rendszer
 \end{itemize}
 
 \vspace{0.5em}

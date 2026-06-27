@@ -14,7 +14,10 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The dev server now runs on HTTPS and listens on `0.0.0.0` so it can be opened from another machine on your network.
+If the backend is running somewhere other than `http://localhost:8000`, set `BACKEND_URL` before starting Next.js.
+
+Open the HTTPS URL printed by the dev server in your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

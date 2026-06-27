@@ -15,7 +15,7 @@ export function useMidiGeneration() {
     
     try {
       const response = await axios.post<GenerationResponse>(
-        `http://localhost:8000/generate/${model}`,
+        `/generate/${model}`,
         params,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
@@ -24,9 +24,10 @@ export function useMidiGeneration() {
       
       // Process response based on model type
       if (response.data.midi_url) {
-        const url = `http://localhost:8000${response.data.midi_url}`;
+        const url = new URL(response.data.midi_url, window.location.origin);
+        const proxyUrl = `${url.pathname}${url.search}${url.hash}`;
         
-        const midiResponse = await axios.get(url, { responseType: 'blob' });
+        const midiResponse = await axios.get(proxyUrl, { responseType: 'blob' });
         const midiFile = new File(
           [midiResponse.data],
           (response.data.midi_url.split('/').pop() || 'output.mid'),

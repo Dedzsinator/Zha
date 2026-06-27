@@ -10,6 +10,7 @@ import { Midi } from '@tonejs/midi';
 export default function Home() {
   const [midiData, setMidiData] = useState<Midi | null>(null);
   const [selectedChannel, setSelectedChannel] = useState(1);
+  const isSecureContext = typeof window !== 'undefined' && window.isSecureContext;
 
   const handleMidiGenerated = async (file: File) => {
     try {
@@ -34,6 +35,14 @@ export default function Home() {
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-center mb-8">MIDI Player & Editor</h1>
+
+        {!isSecureContext ? (
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+            <strong className="block mb-1">WebMIDI is unavailable on this origin.</strong>
+            This browser requires HTTPS or localhost for MIDI access. If you are opening the app from another
+            machine or over plain HTTP, WebMIDI will stay disabled.
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Left Panel - Device Manager and Generation */}

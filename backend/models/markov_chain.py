@@ -67,7 +67,13 @@ class MarkovChain:
     """
     Enhanced musical Markov Chain model with HMM capabilities, GPU acceleration, and high-order transitions.
     """
-    def __init__(self, order=3, max_interval=12, n_hidden_states=16, use_gpu=True):
+    # Sentinel pitch IDs used as START/END tokens.
+    # MIDI uses 0..127, so any out-of-range integer is unambiguous.
+    START_TOKEN = -1
+    END_TOKEN = -2
+
+    def __init__(self, order=3, max_interval=12, n_hidden_states=16, use_gpu=True,
+                 laplace_alpha=0.0, use_boundary_tokens=False):
         # Enhanced model configuration
         self.order = max(order, 3)  # Increase minimum order to 3
         self.max_interval = max_interval
@@ -75,6 +81,14 @@ class MarkovChain:
         self.n_hidden_states = n_hidden_states
         self.use_gpu = use_gpu and torch.cuda.is_available()
         self.trained = False
+
+        # Laplace smoothing constant applied to higher-order transition counts.
+        # 0.0 = no smoothing (default, backwards-compatible).
+        self.laplace_alpha = float(laplace_alpha)
+
+        # Whether to insert START/END sentinels around sequences during training
+        # and use them to seed/terminate generation.
+        self.use_boundary_tokens = bool(use_boundary_tokens)
         
         # Initialize GPU optimizer
         self.gpu_opt = CUDAOptimizer()
@@ -137,6 +151,30 @@ class MarkovChain:
         # Feature scaling stats used for HMM train/inference consistency
         self.hmm_feature_mean = None
         self.hmm_feature_std = None
+
+    @staticmethod
+    def _apply_temperature_topk(probs, temperature=1.0, top_k=0):
+        """Reshape a probability vector with temperature and top-K filtering.
+
+        - temperature != 1.0 sharpens (T<1) or flattens (T>1) the distribution
+          via the standard `p ** (1/T)` rule.
+        - top_k > 0 keeps only the K highest-probability entries; the rest are
+          zeroed before renormalization.
+        Returns a renormalized 1-D NumPy float array of the same length.
+        """
+        p = np.asarray(probs, dtype=np.float64)
+        if p.sum() <= 0:
+            # Degenerate input: fall back to uniform over support.
+            return np.ones_like(p) / max(1, p.size)
+        if temperature != 1.0 and temperature > 0:
+            p = np.power(p, 1.0 / temperature)
+        if top_k and top_k > 0 and top_k < p.size:
+            cutoff = np.partition(p, -top_k)[-top_k]
+            p = np.where(p >= cutoff, p, 0.0)
+        s = p.sum()
+        if s <= 0:
+            return np.ones_like(p) / p.size
+        return p / s
 
     def _prepare_hmm_observations(self, observations):
         """Prepare and normalize HMM observations using training-time stats."""
@@ -977,32 +1015,53 @@ class MarkovChain:
                         first_note = note_data[0]
                         if isinstance(first_note, int):
                             pitches.append(first_note)
-                        
+
+                # Optionally wrap the sequence with START/END sentinels so the
+                # model learns explicit boundary contexts.
+                if self.use_boundary_tokens:
+                    pitches = [self.START_TOKEN] * order + pitches + [self.END_TOKEN]
+
                 if len(pitches) <= order:
                     continue
-                    
+
                 for i in range(len(pitches) - order):
                     context = tuple(pitches[i:i+order])
                     next_note = pitches[i+order]
-                    
+
                     # Ensure all elements are integers before comparison
                     if not isinstance(next_note, int):
                         continue
                     if not all(isinstance(n, int) for n in context):
                         continue
-                    if all(0 <= n < 128 for n in context) and 0 <= next_note < 128:
+                    # Accept the START/END sentinels alongside valid MIDI pitches.
+                    sentinels = (self.START_TOKEN, self.END_TOKEN)
+                    def _valid(n):
+                        return (0 <= n < 128) or n in sentinels
+                    if all(_valid(n) for n in context) and _valid(next_note):
                         transition_counts[context][next_note] += 1
                         
                 total_processed += 1
                 
-            # Normalize and store
+            # Normalize and store, optionally with Laplace add-alpha smoothing.
+            # Smoothing reserves probability mass for unseen pitches in this
+            # context, which matters for high-order tables where most counts are
+            # zero or one.
             normalized_transitions = {}
+            alpha = self.laplace_alpha
+            vocab = 128  # MIDI pitch vocabulary
             for context, transitions in transition_counts.items():
                 total = sum(transitions.values())
                 if total > 3:  # Only keep contexts with sufficient data
-                    normalized_transitions[context] = {
-                        note: count/total for note, count in transitions.items()
-                    }
+                    if alpha > 0.0:
+                        denom = total + alpha * vocab
+                        normalized_transitions[context] = {
+                            note: (count + alpha) / denom
+                            for note, count in transitions.items()
+                        }
+                    else:
+                        normalized_transitions[context] = {
+                            note: count / total for note, count in transitions.items()
+                        }
             
             if normalized_transitions:
                 self.higher_order_transitions[order] = normalized_transitions
@@ -1750,20 +1809,28 @@ class MarkovChain:
                 
         return diatonic_chords
         
-    def generate_interval_sequence(self, start_note=60, length=32, key_context=None):
-        """Generate a sequence using interval transitions with scale awareness"""
+    def generate_interval_sequence(self, start_note=60, length=32, key_context=None,
+                                   temperature=1.0, top_k=0):
+        """Generate a sequence using interval transitions with scale awareness.
+
+        ``temperature`` and ``top_k`` are forwarded to the interval-level
+        sampling step the same way as in :meth:`generate_sequence`.
+        """
         if not self.trained:
             return [start_note] * length
-            
+
         if not self.interval_transitions:
-            return self.generate_sequence(start_note, length, key_context)
-            
+            return self.generate_sequence(
+                start_note, length, key_context,
+                temperature=temperature, top_k=top_k,
+            )
+
         sequence = [start_note]
         current_note = start_note
-        
+
         # Get scale pitches for filtering
         scale_pitches = self._get_scale_pitches(key_context)
-        
+
         for _ in range(length - 1):
             if current_note not in self.interval_transitions:
                 # Fallback for missing note
@@ -1771,7 +1838,7 @@ class MarkovChain:
                 next_note = current_note + next_interval
             else:
                 probs = np.array(self.interval_transitions[current_note])
-                
+
                 # Apply scale filtering if available
                 if scale_pitches:
                     filtered_probs = np.zeros_like(probs)
@@ -1781,54 +1848,68 @@ class MarkovChain:
                             potential_note = current_note + interval_val
                             if potential_note in scale_pitches:
                                 filtered_probs[interval_idx] = prob
-                                
+
                     # Use filtered probabilities if any remain
                     sum_filtered = filtered_probs.sum()
                     if sum_filtered > 0:
                         probs = filtered_probs / sum_filtered
-                        
+
+                # Apply temperature and top-K to the interval distribution
+                probs = self._apply_temperature_topk(probs, temperature=temperature, top_k=top_k)
+
                 # Sample the interval
                 try:
                     interval_idx = np.random.choice(self.interval_range, p=probs)
                     next_interval = interval_idx - self.max_interval
                 except ValueError:
                     next_interval = 0  # Default to repeating the note
-                    
+
                 next_note = current_note + next_interval
-                
+
             # Keep within MIDI range
             next_note = max(0, min(127, next_note))
             sequence.append(next_note)
             current_note = next_note
-            
+
         return sequence
         
-    def generate_sequence(self, start_note=60, length=32, key_context=None):
-        """Generate a sequence using note transitions"""
+    def generate_sequence(self, start_note=60, length=32, key_context=None,
+                          temperature=1.0, top_k=0):
+        """Generate a sequence using note transitions.
+
+        Args:
+            start_note: initial MIDI pitch (ignored if ``use_boundary_tokens``
+                is enabled and a START context is available).
+            length: requested sequence length.
+            key_context: optional key string for scale filtering.
+            temperature: sampling temperature; <1 sharpens, >1 flattens.
+            top_k: if >0, keep only the K most likely pitches before sampling.
+        Generation stops early if the END sentinel is sampled.
+        """
         if not self.trained:
             return [start_note] * length
-            
+
         sequence = [start_note]
         current_note = start_note
-        
+
         # Get scale pitches for filtering
         scale_pitches = self._get_scale_pitches(key_context)
-        
+
         recent_notes_history = []
-        
+
         for i in range(length - 1):
             if current_note >= self.transitions.shape[0]:
                 current_note = random.randint(48, 72)
-                
+
             probs = self.transitions[current_note].copy()
-            
+
             # Apply scale filtering if available
             if scale_pitches:
                 filtered_probs = np.zeros_like(probs)
                 for note_idx, prob in enumerate(probs):
                     if prob > 0 and note_idx in scale_pitches:
                         filtered_probs[note_idx] = prob
-                        
+
                 if filtered_probs.sum() > 0:
                     probs = filtered_probs / filtered_probs.sum()
 
@@ -1838,11 +1919,10 @@ class MarkovChain:
                 penalty_factor = 0.5 + (0.5 * min(1.0, past_idx / 8.0))
                 if past_note < len(probs):
                     probs[past_note] *= penalty_factor
-            
-            # Normalize after penalties
-            if probs.sum() > 0:
-                probs = probs / probs.sum()
-                    
+
+            # Apply temperature and top-K before final normalization
+            probs = self._apply_temperature_topk(probs, temperature=temperature, top_k=top_k)
+
             # Sample next note
             if probs.sum() == 0:
                 # Fallback random selection
@@ -1855,11 +1935,11 @@ class MarkovChain:
                     next_note = np.random.choice(128, p=probs)
                 except ValueError:
                     next_note = np.argmax(probs)
-                    
+
             next_note = max(0, min(127, next_note))
             sequence.append(next_note)
             current_note = next_note
-            
+
             recent_notes_history.append(next_note)
             if len(recent_notes_history) > 8:
                 recent_notes_history.pop(0)
@@ -2469,17 +2549,28 @@ class MarkovChain:
         
         return durations
     
-    def generate_with_adaptive_order(self, length=64, key_context=None, complexity=0.7):
-        """Generate sequence with adaptive order selection based on context"""
+    def generate_with_adaptive_order(self, length=64, key_context=None, complexity=0.7,
+                                     temperature=1.0, top_k=0):
+        """Generate sequence with adaptive order selection based on context.
+
+        ``temperature`` and ``top_k`` apply to both the higher-order categorical
+        sampling and the interval-based fallback. If ``use_boundary_tokens`` is
+        enabled, generation stops early when the END sentinel is sampled.
+        """
         if not self.trained:
             return self.generate_expressive_sequence(key_context, length)
-        
+
         sequence = []
+        # When boundary tokens are enabled, prime the context with START
+        # sentinels so the model sees the same beginning as during training.
+        if self.use_boundary_tokens:
+            primer = [self.START_TOKEN] * max(1, self.order)
+            sequence.extend(primer)
         start_note = self._determine_start_note(key_context)
         sequence.append(start_note)
-        
+
         scale_pitches = self._get_scale_pitches(key_context)
-        
+
         for i in range(1, length):
             # Adaptively choose order based on position and complexity
             max_available_order = min(len(sequence), 6)
@@ -2523,13 +2614,24 @@ class MarkovChain:
                     if transitions:
                         notes_list = list(transitions.keys())
                         probs_list = list(transitions.values())
-                        next_note = random.choices(notes_list, weights=probs_list)[0]
+                        probs_arr = self._apply_temperature_topk(
+                            np.array(probs_list, dtype=np.float64),
+                            temperature=temperature, top_k=top_k,
+                        )
+                        next_note = int(np.random.choice(notes_list, p=probs_arr))
                         break
-            
+
+            # Stop early on END sentinel
+            if self.use_boundary_tokens and next_note == self.END_TOKEN:
+                break
+
             # Fallback to interval-based generation
             if next_note is None:
                 if sequence[-1] in self.interval_transitions:
-                    interval_probs = self.interval_transitions[sequence[-1]]
+                    interval_probs = np.array(self.interval_transitions[sequence[-1]])
+                    interval_probs = self._apply_temperature_topk(
+                        interval_probs, temperature=temperature, top_k=top_k,
+                    )
                     interval_idx = np.random.choice(len(interval_probs), p=interval_probs)
                     interval = interval_idx - self.max_interval
                     next_note = max(0, min(127, sequence[-1] + interval))
@@ -2544,9 +2646,14 @@ class MarkovChain:
                     else:
                         next_note = sequence[-1] + random.randint(-5, 5)
                         next_note = max(0, min(127, next_note))
-            
+
             sequence.append(next_note)
-        
+
+        # Strip internal sentinels before returning so callers see only valid
+        # MIDI pitches.
+        if self.use_boundary_tokens:
+            sequence = [n for n in sequence
+                        if n != self.START_TOKEN and n != self.END_TOKEN]
         return sequence
     
     def generate_structured_piece(self, length=128, key_context=None, sections=4):

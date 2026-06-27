@@ -62,32 +62,24 @@ Zha is a neural network-based music synthesis project that allows you to generat
 
 ## Training the Model
 
-1. **Basic training**
+Each model has its own trainer script under `backend/trainers/`:
 
-   ```bash
-   python train.py
-   ```
+```bash
+# Train Markov chain model
+python backend/trainers/train_markov.py
 
-2. **Train individual models**
+# Train VAE model
+python backend/trainers/train_vae.py
 
-   ```bash
-   # Train Markov chain model
-   python backend/trainers/train_markov.py
-   
-   # Train VAE model
-   python backend/trainers/train_vae.py
-   
-   # Train Transformer model
-   python backend/trainers/train_transformer.py
-   
-   # Train Diffusion model
-   python backend/trainers/train_diffusion.py
-   ```
+# Train GOLC-VAE model
+python backend/trainers/train_golc_vae.py
 
-3. **Advanced training options**
+# Train Transformer model
+python backend/trainers/train_transformer.py
+```
 
-   Available models: markov, vae, golc_vae, transformer, diffusion
-   Use `--help` with any training script for full options.
+Available models: `markov`, `vae`, `golc_vae`, `transformer`.
+Use `--help` with any training script for full options.
 
 ## Generating Music
 
@@ -155,7 +147,7 @@ Zha/
 ### Example 1: Training on MIDI dataset
 
 ```bash
-python train.py
+python backend/trainers/train_transformer.py
 ```
 
 ### Example 2: Generating music via API
@@ -173,8 +165,8 @@ Then make API requests as shown in the "Generating Music" section above.
 ### Common Issues
 
 1. **CUDA out of memory**
-   - Decrease batch size: `python train.py --batch-size 16`
-   - Use gradient accumulation: `python train.py --gradient-accumulation 4`
+   - Decrease batch size: `python backend/trainers/train_transformer.py --batch-size 16`
+   - Use gradient accumulation: `python backend/trainers/train_transformer.py --gradient-accumulation 4`
 
 2. **Poor quality generated music**
    - Adjust creativity parameter in API calls (0.0-1.0)

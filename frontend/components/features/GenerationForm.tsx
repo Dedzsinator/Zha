@@ -132,15 +132,16 @@ export default function GenerationForm({ onMidiGenerated }: GenerationFormProps)
             const formData = getFormData();
 
             const response = await axios.post<GenerationResponse>(
-                `http://localhost:8000/generate/${model}`,
+                `/generate/${model}`,
                 formData,
                 { headers: { 'Content-Type': 'multipart/form-data' } }
             );
 
             // Get the MIDI file from the response
             if (response.data.midi_url) {
-                const midiUrl = `http://localhost:8000${response.data.midi_url}`;
-                const midiResponse = await axios.get(midiUrl, { responseType: 'blob' });
+                const midiUrl = new URL(response.data.midi_url, window.location.origin);
+                const proxyUrl = `${midiUrl.pathname}${midiUrl.search}${midiUrl.hash}`;
+                const midiResponse = await axios.get(proxyUrl, { responseType: 'blob' });
                 const midiBlob = new Blob([midiResponse.data], { type: 'audio/midi' });
                 const midiFileName = response.data.midi_url.split('/').pop() || 'generated.mid';
                 const midiFile = new File([midiBlob], midiFileName, { type: 'audio/midi' });

@@ -40,41 +40,28 @@ A konzisztencia veszteség gradiense a dekóder paramétereire nézve:
 
 Ez a gradiens ösztönzi a modellt arra, hogy kisebb ugrásokat generáljon az egymást követő hangjegyek között, így zeneileg koherensebb átmeneteket eredményez.
 
-\section{Memória mechanizmus zenei struktúrához}
+\section{Szekció-alapú memória és átmenet-simítás}
 \label{proof:memory_mechanism}
 
-A strukturált zenei generáláshoz egy új memória mechanizmust implementáltunk a Transformer architektúrában, amely szekció-specifikus információkat tart fenn.
+A Transformer modulban a \texttt{generate\_with\_structure} függvény egy egyszerű, paraméter nélküli memória-mechanizmust használ a több szakaszból álló kompozíciók szakaszhatárainak simítására. Ez nem szekció-típus szerinti rögzített $M_s$ mátrix, hanem index-alapú állapotmegőrzés.
 
 \subsection{Memória reprezentáció}
 
-Minden zenei szekcióhoz ($s \in \{intro, verse, chorus, bridge, outro\}$) egy memória mátrixot definiálunk $M_s \in \mathbb{R}^{L_s \times d}$, ahol $L_s$ a memória hossza és $d$ a modell dimenziója.
+Az implementáció (\texttt{transformer.py:583--642}) egy \texttt{section\_memories} szótárt vezet, amely a szakasz-indexhez ($s \in \{0, 1, 2, \ldots, n-1\}$) a szakasz generálása \emph{után} eltárolt belső állapotot (a globális \texttt{self.memory} pufferét) rendeli hozzá. Ennek mérete $L_s \times d$, ahol $d = d_{\text{model}}$ és $L_s$ legfeljebb 1024 (a globális memória puffer korlátja).
 
-\subsection{Attention mechanizmus memóriával}
+\subsection{Átmeneti simítás}
 
-A standard attention mechanizmust kiterjesztjük a memória integrálásával:
-
-\begin{equation}
-\text{kimenet} = \text{Attention}(Q, [K; M_s], [V; M_s])
-\end{equation}
-
-ahol $[K; M_s]$ jelöli a kulcs mátrix és a memória szekvencia dimenzió mentén történő összefűzését.
-
-Részletezve:
-\begin{equation}
-\text{Attention}(Q, K_{\text{aug}}, V_{\text{aug}}) = \text{softmax}\left(\frac{QK_{\text{aug}}^T}{\sqrt{d_k}}\right)V_{\text{aug}}
-\end{equation}
-
-ahol $K_{\text{aug}} = [K; M_s]$ és $V_{\text{aug}} = [V; M_s]$.
-
-\subsection{Memória frissítési szabály}
-
-A memóriák exponenciális mozgóátlag (EMA) alapján frissülnek a tanítás során:
+A $s$-edik szakasz generálásakor (ahol $s > 0$) az előző szakasz memóriájának hátsó $\lfloor L_{s-1} \cdot \tau \rfloor$ tokenje előtag-kontextusként visszatöltődik, ahol $\tau \in [0, 1]$ a \texttt{transition\_smoothness} paraméter (alapérték 0,7):
 
 \begin{equation}
-M_s^{(t+1)} = \alpha M_s^{(t)} + (1-\alpha) \frac{1}{N_s} \sum_{i \in \mathcal{S}_s} h_i
+\text{self.memory} \leftarrow M_{s-1}\bigl[-\lfloor L_{s-1} \cdot \tau \rfloor : \,\bigr].
 \end{equation}
 
-ahol $\alpha \in [0,1]$ a momentum paraméter, $\mathcal{S}_s$ a $s$ szekcióhoz tartozó példák halmaza, és $h_i$ az $i$-edik példány rejtett reprezentációja.
+Ez a részleges visszatöltés a Transformer normál \texttt{forward(use\_memory=True)} ágához kapcsolódik, ami a betöltött memóriát egyszerűen prepend-eli az aktuális bemenethez a \texttt{torch.cat([self.memory, x], dim=1)} hívással. Tehát \emph{nincs} külön $[K; M_s]$-augmentált attention vagy EMA-frissítés: a szakaszok közti memória átadása strukturálisan a normál puffer-mechanizmuson keresztül történik, csak a tartalom (utolsó szakasz hátsó része) van szelektíven megválasztva.
+
+\subsection{Komplexitás}
+
+A mechanizmus tárolási igénye $O(n \cdot L_{\max} \cdot d)$, ahol $n$ a szakaszok száma. Futási idő szempontjából a szakaszváltás ingyenes (csak szótár-műveletek és tenzor-slice); a számítási költség teljes egészében a normál Transformer forward pass-é. Ennek a megoldásnak az az előnye, hogy egyetlen új tanítható paramétert sem vezet be, és tisztán inferencia-időben működik.
 
 \section{HMM integráció zenei jellemzőkkel}
 \label{proof:hmm_features}
